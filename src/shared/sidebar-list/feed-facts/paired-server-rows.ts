@@ -35,6 +35,7 @@ const PairedServerWorkspaceRowSchema = z
     worktreeId: z.string(),
     repoId: z.string(),
     kind: z.enum(['git', 'folder']),
+    sidebarUngrouped: WorkspaceRowSchema.shape.sidebarUngrouped,
     path: z.string(),
     branch: z.string(),
     displayName: z.string(),
@@ -163,17 +164,23 @@ export function buildPairedServerRows(catalog: {
   lineageById: Readonly<Record<string, WorktreeLineage>>
 }): Map<string, PairedServerWorkspaceRow> {
   const rows = new Map<string, PairedServerWorkspaceRow>()
-  const add = (worktree: Worktree, kind: PairedServerWorkspaceRow['kind']): void => {
+  const add = (
+    worktree: Worktree,
+    kind: PairedServerWorkspaceRow['kind'],
+    sidebarUngrouped?: true
+  ): void => {
     if (parseExecutionHostId(worktree.hostId)?.kind === 'runtime') {
       const repo = catalog.repos.find(
         (entry) => entry.id === worktree.repoId && getRepoExecutionHostId(entry) === worktree.hostId
       )
       const row = pairedServerRowOfWorktree(worktree, kind, repo, catalog.lineageById[worktree.id])
-      rows.set(row.key, row)
+      rows.set(row.key, sidebarUngrouped ? { ...row, sidebarUngrouped } : row)
     }
   }
   catalog.worktrees.forEach((worktree) => add(worktree, 'git'))
-  catalog.folderWorkspaces.forEach((folder) => add(folderWorkspaceToWorktree(folder), 'folder'))
+  catalog.folderWorkspaces.forEach((folder) =>
+    add(folderWorkspaceToWorktree(folder), 'folder', folder.sidebarUngrouped)
+  )
   return rows
 }
 
@@ -182,6 +189,7 @@ const ServerWorktreePsRowSchema = z.object({
   worktreeId: z.string().min(1),
   repoId: z.string(),
   workspaceKind: openEnum(['git', 'folder-workspace'], 'git').optional(),
+  sidebarUngrouped: WorkspaceRowSchema.shape.sidebarUngrouped,
   path: z.string().catch(''),
   branch: z.string().catch(''),
   displayName: z.string().catch(''),

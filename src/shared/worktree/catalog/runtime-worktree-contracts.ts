@@ -79,6 +79,7 @@ export type RuntimeWorktreeAgentRow = {
 }
 
 export type RuntimeWorktreePsSummary = {
+  sidebarUngrouped?: true
   workspaceKind?: 'git' | 'folder-workspace'
   worktreeId: string
   repoId: string

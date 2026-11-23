@@ -18,6 +18,7 @@ import {
   type FolderHostCatalog,
   type FolderHostRepo
 } from '../../folder-workspaces/folder-workspace-execution-host'
+import { getInheritedFolderGroupExecutionHostId } from '../../folder-workspaces/folder-workspace-host-id'
 
 export type AiVaultResumeTargetStatus = 'local' | 'ssh' | 'runtime' | 'unknown'
 
@@ -183,7 +184,9 @@ function getAiVaultResumeFolderTargetStatus<R extends FolderHostRepo>(
   }
 
   const group = catalog.projectGroups.find((entry) => entry.id === workspace.projectGroupId)
-  const groupHostId = normalizeExecutionHostId(workspace.executionHostId ?? group?.executionHostId)
+  const groupHostId = normalizeExecutionHostId(
+    workspace.executionHostId ?? getInheritedFolderGroupExecutionHostId(group)
+  )
   if (groupHostId) {
     return getAiVaultResumeExecutionHostTargetStatus(groupHostId)
   }
@@ -207,7 +210,9 @@ function getAiVaultResumeFolderExecutionHostId<R extends FolderHostRepo>(
   }
 
   const group = catalog.projectGroups.find((entry) => entry.id === workspace.projectGroupId)
-  const groupHostId = normalizeExecutionHostId(workspace.executionHostId ?? group?.executionHostId)
+  const groupHostId = normalizeExecutionHostId(
+    workspace.executionHostId ?? getInheritedFolderGroupExecutionHostId(group)
+  )
   if (groupHostId) {
     return groupHostId
   }

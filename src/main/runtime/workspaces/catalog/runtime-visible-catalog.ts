@@ -20,10 +20,8 @@ import {
   visibleRepos
 } from '../../../persistence/migrating-orcad-catalog/source/catalog/orcad-source-visibility'
 import { isBotsProjectGroup } from '../../../bots/bot-home'
-import {
-  isGeneralChatFolderWorkspace,
-  isGeneralChatProjectGroup
-} from '../../../general-chat/general-chat-home'
+import { findGeneralChatHome } from '../../../general-chat/general-chat-home'
+import { deriveFolderWorkspaceHost } from './workspace-selector-candidates'
 import type { RuntimeStore } from '../../construction/runtime-store-contract'
 
 type CatalogSource = Pick<
@@ -47,11 +45,14 @@ export function runtimeVisibleRepos(store: CatalogSource | null): Repo[] {
 }
 
 export function runtimeVisibleProjectGroups(store: CatalogSource | null): ProjectGroup[] {
-  return store
-    ? visibleProjectGroups(catalogStore(store)).filter(
-        (group) => !isBotsProjectGroup(group) && !isGeneralChatProjectGroup(group)
-      )
-    : []
+  if (!store) {
+    return []
+  }
+  const catalog = catalogStore(store)
+  const home = findGeneralChatHome(catalog.getProjectGroups(), catalog.getFolderWorkspaces())
+  return visibleProjectGroups(catalog).filter(
+    (group) => !isBotsProjectGroup(group) && group.id !== home.group?.id
+  )
 }
 
 export function runtimeVisibleProjectHostSetups(store: CatalogSource | null): ProjectHostSetup[] {
@@ -67,14 +68,32 @@ export function runtimeVisibleFolderWorkspaces(store: CatalogSource | null): Fol
   if (folders.length === 0) {
     return folders
   }
-  const groups = new Map(catalog.getProjectGroups().map((group) => [group.id, group]))
+  const folderCatalog = {
+    folderWorkspaces: catalog.getFolderWorkspaces(),
+    projectGroups: catalog.getProjectGroups(),
+    repos: catalog.getRepos()
+  }
+  const { group, workspace } = findGeneralChatHome(
+    folderCatalog.projectGroups,
+    folderCatalog.folderWorkspaces
+  )
+  if (!group) {
+    return folders
+  }
   return folders.flatMap((folder) => {
-    const group = groups.get(folder.projectGroupId)
-    if (isGeneralChatFolderWorkspace(folder, group)) {
+    if (folder.id === workspace?.id) {
       return []
     }
+    if (folder.projectGroupId !== group.id) {
+      return [folder]
+    }
+    const host = deriveFolderWorkspaceHost(folderCatalog, folder)
     return [
-      group && isGeneralChatProjectGroup(group) ? { ...folder, sidebarUngrouped: true } : folder
+      {
+        ...folder,
+        ...(host ? { executionHostId: host.hostId, connectionId: host.connectionId } : {}),
+        sidebarUngrouped: true
+      }
     ]
   })
 }

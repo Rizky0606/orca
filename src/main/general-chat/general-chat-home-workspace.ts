@@ -4,7 +4,7 @@ import { folderWorkspaceKey } from '../../shared/workspace/identity/workspace-sc
 import type { GeneralChatHomeStore } from '../runtime/construction/runtime-store-contract'
 import { getCanonicalUserDataPath } from '../persistence/loading-store/user-data-path'
 import { loadOrCreateHostInstallationId } from '../runtime/hosts/platform-probe/host-descriptor'
-import { isGeneralChatFolderWorkspace, isGeneralChatProjectGroup } from './general-chat-home'
+import { findGeneralChatHome } from './general-chat-home'
 
 type HomeIdentity = { folderWorkspaceId: string; worktreeId: string }
 
@@ -32,7 +32,7 @@ async function acquireGeneralChatHome(
   if (
     !store.getProjectGroups ||
     !store.createProjectGroup ||
-    !store.updateProjectGroup ||
+    !store.repairGeneralChatProjectGroup ||
     !store.getFolderWorkspaces ||
     !store.createFolderWorkspace ||
     !store.updateFolderWorkspace
@@ -44,20 +44,11 @@ async function acquireGeneralChatHome(
   const installationId = await loadOrCreateHostInstallationId(
     store.getProfileStorageDirectory?.() ?? getCanonicalUserDataPath()
   )
-  const groups = store.getProjectGroups().filter((group) => isGeneralChatProjectGroup(group, root))
-  const groupsById = new Map(groups.map((group) => [group.id, group]))
-  const candidates = store
-    .getFolderWorkspaces()
-    .filter(
-      (workspace) =>
-        groupsById.has(workspace.projectGroupId) &&
-        isGeneralChatFolderWorkspace(workspace, groupsById.get(workspace.projectGroupId), root)
-    )
-  const existing =
-    candidates.find((workspace) => workspace.internalPurpose === 'general-chat') ?? candidates[0]
-  const existingGroup = existing
-    ? groupsById.get(existing.projectGroupId)
-    : (groups.find((group) => group.internalPurpose === 'general-chat') ?? groups[0])
+  const { group: existingGroup, workspace: existing } = findGeneralChatHome(
+    store.getProjectGroups(),
+    store.getFolderWorkspaces(),
+    root
+  )
   const group =
     existingGroup ??
     store.createProjectGroup({
@@ -79,7 +70,7 @@ async function acquireGeneralChatHome(
     group.internalPurpose !== 'general-chat' ||
     group.executionHostId !== LOCAL_EXECUTION_HOST_ID
   ) {
-    store.updateProjectGroup(group.id, { parentPath: root, internalPurpose: 'general-chat' })
+    store.repairGeneralChatProjectGroup(group.id, root)
   }
   const workspace =
     existing ??

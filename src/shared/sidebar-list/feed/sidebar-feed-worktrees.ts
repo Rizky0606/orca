@@ -49,6 +49,7 @@ type FeedRowFields = Pick<
     Pick<
       WorkspaceRow,
       | 'isMainWorktree'
+      | 'sidebarUngrouped'
       | 'removing'
       | 'removalRecorded'
       | 'removalError'
@@ -137,7 +138,8 @@ function readFeedRow(
     identity,
     worktree,
     facts: { defaultBranch, automationCreated, cliCreated, detachedHead, creatorProvenance },
-    folderWorkspace: row.kind === 'folder' ? folderWorkspaceOf(worktree, ownerHostId) : null,
+    folderWorkspace:
+      row.kind === 'folder' ? folderWorkspaceOf(worktree, ownerHostId, row.sidebarUngrouped) : null,
     ...(row.crossStoreParent ? { crossStoreParent: row.crossStoreParent } : {}),
     ...(row.workspaceLineage ? { workspaceLineage: row.workspaceLineage } : {}),
     ...(row.legacyLineage ? { legacyLineage: row.legacyLineage } : {})
@@ -146,7 +148,8 @@ function readFeedRow(
 
 function folderWorkspaceOf(
   worktree: Worktree,
-  ownerHostId: ExecutionHostId
+  ownerHostId: ExecutionHostId,
+  sidebarUngrouped: FolderWorkspace['sidebarUngrouped']
 ): FolderWorkspace | null {
   const id = parseWorkspaceKey(worktree.id)
   const projectGroupId = projectGroupIdFromRepoId(worktree.repoId)
@@ -156,6 +159,7 @@ function folderWorkspaceOf(
   return {
     id: id.folderWorkspaceId,
     projectGroupId,
+    ...(sidebarUngrouped ? { sidebarUngrouped } : {}),
     name: worktree.displayName,
     folderPath: worktree.path,
     executionHostId: ownerHostId,

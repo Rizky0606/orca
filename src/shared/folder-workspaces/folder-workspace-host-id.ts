@@ -8,6 +8,14 @@ import {
   type ExecutionHostId
 } from '../execution-host/execution-host'
 
+export function getInheritedFolderGroupExecutionHostId(
+  group:
+    | { executionHostId?: string | null; internalPurpose?: ProjectGroup['internalPurpose'] }
+    | undefined
+): string | null | undefined {
+  return group?.internalPurpose === 'general-chat' ? undefined : group?.executionHostId
+}
+
 export function getFolderWorkspaceHostId(
   workspace: FolderWorkspace,
   projectGroups: readonly ProjectGroup[]

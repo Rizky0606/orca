@@ -85,14 +85,16 @@ export function getFolderWorkspaceExecutionHostIdForRows({
   defaultHostId
 }: {
   folderWorkspace: Pick<FolderWorkspace, 'connectionId' | 'executionHostId'>
-  projectGroup: Pick<ProjectGroup, 'connectionId' | 'executionHostId'> | undefined
+  projectGroup:
+    | Pick<ProjectGroup, 'connectionId' | 'executionHostId' | 'internalPurpose'>
+    | undefined
   defaultHostId: ExecutionHostId
 }): ExecutionHostId {
   const explicitFolderHostId = normalizeExecutionHostId(folderWorkspace.executionHostId)
   if (explicitFolderHostId) {
     return explicitFolderHostId
   }
-  if (projectGroup) {
+  if (projectGroup && projectGroup.internalPurpose !== 'general-chat') {
     const explicitProjectGroupHostId = normalizeExecutionHostId(projectGroup.executionHostId)
     if (explicitProjectGroupHostId) {
       return explicitProjectGroupHostId

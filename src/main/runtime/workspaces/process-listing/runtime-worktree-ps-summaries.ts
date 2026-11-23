@@ -28,8 +28,22 @@ import type { ExecutionHostId } from '../../../../shared/execution-host/executio
 import type { WorktreeMeta } from '../../../../shared/worktree/meta-types'
 import { runtimeWorktreePsRowKey } from './runtime-worktree-summary-paths'
 
+type ProcessSummaryStore = Pick<
+  RuntimeStore,
+  | 'getRepos'
+  | 'getProjectGroups'
+  | 'getFolderWorkspaces'
+  | 'getSshTargets'
+  | 'getAllWorktreeMeta'
+  | 'getAllWorktreeMetaForHost'
+  | 'getAllCrossStoreWorkspaceLineage'
+  | 'getAllWorkspaceLineage'
+  | 'getBots'
+> &
+  Partial<Pick<RuntimeStore, 'getGitHubCache' | 'getWorktreeMeta'>>
+
 export function buildRuntimeWorktreePsSummaries(args: {
-  store: RuntimeStore | null
+  store: ProcessSummaryStore | null
   resolvedWorktrees: readonly ResolvedWorktree[]
   platformByRepoId: ReadonlyMap<string, NodeJS.Platform>
   /** Only this workspace's rows (every host's copy); PTY liveness still reads every worktree. */
@@ -175,7 +189,8 @@ export function buildRuntimeWorktreePsSummaries(args: {
       repoId: worktree.repoId,
       // The phone names a row's machine from hostId; without it an SSH folder reads as local.
       hostId: worktree.hostId,
-      repo: projectGroup.name,
+      repo: folderWorkspace.sidebarUngrouped ? folderWorkspace.name : projectGroup.name,
+      ...(folderWorkspace.sidebarUngrouped ? { sidebarUngrouped: true } : {}),
       path: worktree.path,
       branch: worktree.branch,
       isArchived: worktree.isArchived,
@@ -218,7 +233,10 @@ export function buildRuntimeWorktreePsSummaries(args: {
 
 /** The bot a workspace is under: the nearest bot home among the folders the sidebar's own parent
  * rules nest it beneath, however it got there. */
-function botOwnerLookup(store: RuntimeStore | null, worktrees: readonly Worktree[]) {
+function botOwnerLookup(
+  store: Pick<RuntimeStore, 'getAllWorkspaceLineage' | 'getBots' | 'getFolderWorkspaces'> | null,
+  worktrees: readonly Worktree[]
+) {
   const lineage = store?.getAllWorkspaceLineage?.() ?? {}
   const botByHome = new Map(
     (store?.getBots?.() ?? []).map((bot) => [folderWorkspaceKey(bot.folderWorkspaceId), bot.name])

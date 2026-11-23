@@ -140,6 +140,10 @@ export class ProjectCollectionOperations {
     return getProjectGroupOperations(this).updateProjectGroup(groupId, updates)
   }
 
+  repairGeneralChatProjectGroup(groupId: string, root: string): ProjectGroup | null {
+    return getProjectGroupOperations(this).repairGeneralChatProjectGroup(groupId, root)
+  }
+
   setProjectGroupParents(
     moves: Parameters<ProjectGroupPersistenceOperations['setProjectGroupParents']>[0]
   ): ProjectGroup[] {

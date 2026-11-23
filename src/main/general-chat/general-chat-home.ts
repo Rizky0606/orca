@@ -24,20 +24,37 @@ export function isGeneralChatProjectGroup(
   )
 }
 
-export function isGeneralChatFolderWorkspace(
-  workspace: FolderWorkspace,
-  group: ProjectGroup | undefined,
+export function findGeneralChatHome(
+  groups: readonly ProjectGroup[],
+  workspaces: readonly FolderWorkspace[],
   root?: string
-): boolean {
-  return (
-    isLocal(workspace) &&
-    (workspace.internalPurpose === 'general-chat' ||
-      // Adopt the first build's unmarked row only at the reserved local path.
-      (group !== undefined &&
-        !group.internalPurpose &&
-        isGeneralChatProjectGroup(group, root) &&
-        isGeneralChatRootPath(workspace.folderPath, root)))
+): { group?: ProjectGroup; workspace?: FolderWorkspace } {
+  for (const workspace of workspaces) {
+    if (workspace.internalPurpose === 'general-chat' && isLocal(workspace)) {
+      const group = groups.find((group) => group.id === workspace.projectGroupId && isLocal(group))
+      if (group) {
+        return { group, workspace }
+      }
+    }
+  }
+  const markedGroup = groups.find(
+    (group) => group.internalPurpose === 'general-chat' && isLocal(group)
   )
+  if (markedGroup) {
+    return { group: markedGroup }
+  }
+  const legacyGroups = groups.filter((group) => isGeneralChatProjectGroup(group, root))
+  if (legacyGroups.length !== 1) {
+    return {}
+  }
+  const [group] = legacyGroups
+  const legacyWorkspaces = workspaces.filter(
+    (workspace) =>
+      workspace.projectGroupId === group.id &&
+      isLocal(workspace) &&
+      isGeneralChatRootPath(workspace.folderPath, root)
+  )
+  return legacyWorkspaces.length <= 1 ? { group, workspace: legacyWorkspaces[0] } : {}
 }
 
 function isLocal(row: Pick<ProjectGroup, 'connectionId' | 'executionHostId'>): boolean {

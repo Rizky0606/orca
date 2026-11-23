@@ -6,7 +6,7 @@ export type GeneralChatHomeStore = Pick<
   RuntimeStore,
   | 'getProjectGroups'
   | 'createProjectGroup'
-  | 'updateProjectGroup'
+  | 'repairGeneralChatProjectGroup'
   | 'getFolderWorkspaces'
   | 'createFolderWorkspace'
   | 'updateFolderWorkspace'
@@ -33,6 +33,7 @@ export type RuntimeStore = {
   getProjectGroups?: Store['getProjectGroups']
   createProjectGroup?: Store['createProjectGroup']
   updateProjectGroup?: Store['updateProjectGroup']
+  repairGeneralChatProjectGroup?: Store['repairGeneralChatProjectGroup']
   updateProjectGroups?: Store['updateProjectGroups']
   setProjectGroupParents?: Store['setProjectGroupParents']
   deleteProjectGroup?: Store['deleteProjectGroup']

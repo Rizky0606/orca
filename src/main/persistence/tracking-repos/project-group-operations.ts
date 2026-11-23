@@ -16,6 +16,7 @@ import { getNextRootProjectOrder } from '../../../shared/sidebar-list/sections/r
 import { folderWorkspaceKey } from '../../../shared/workspace/identity/workspace-scope'
 import { removeWorkspaceSessionOwnersEverywhere } from '../restoring-sessions/session-owner-removal'
 import { LOCAL_EXECUTION_HOST_ID } from '../../../shared/execution-host/execution-host'
+import { findGeneralChatHome } from '../../general-chat/general-chat-home'
 
 export type ProjectGroupMutationOperations = {
   state: PersistedState
@@ -23,9 +24,6 @@ export type ProjectGroupMutationOperations = {
   removeWorkspaceLineageForRemovedFolder: (folderWorkspaceId: string) => void
   pruneMobileClientTabSelections: (matchesWorktreeId: (worktreeId: string) => boolean) => void
 }
-
-type StoredProjectGroupUpdate = ProjectGroupUpdate &
-  Partial<Pick<ProjectGroup, 'parentPath' | 'internalPurpose'>>
 
 export class ProjectGroupPersistenceOperations {
   constructor(private readonly operations: ProjectGroupMutationOperations) {}
@@ -85,9 +83,9 @@ export class ProjectGroupPersistenceOperations {
     return group
   }
 
-  updateProjectGroup(groupId: string, updates: StoredProjectGroupUpdate): ProjectGroup | null {
+  updateProjectGroup(groupId: string, updates: ProjectGroupUpdate): ProjectGroup | null {
     const group = (this.state.projectGroups ?? []).find((entry) => entry.id === groupId)
-    if (!group) {
+    if (!group || group.id === this.generalChatGroupId()) {
       return null
     }
     this.applyGroupUpdate(group, updates)
@@ -95,9 +93,28 @@ export class ProjectGroupPersistenceOperations {
     return group
   }
 
+  repairGeneralChatProjectGroup(groupId: string, root: string): ProjectGroup | null {
+    const group = findGeneralChatHome(
+      this.state.projectGroups ?? [],
+      this.state.folderWorkspaces ?? [],
+      root
+    ).group
+    if (!group || group.id !== groupId) {
+      return null
+    }
+    group.internalPurpose = 'general-chat'
+    group.executionHostId = LOCAL_EXECUTION_HOST_ID
+    group.connectionId = null
+    group.parentPath = root
+    group.updatedAt = Date.now()
+    this.scheduleSave(['projectGroups'])
+    return group
+  }
+
   updateProjectGroups(mutations: readonly ProjectGroupMutation[]): ProjectGroup[] | null {
     const byId = new Map((this.state.projectGroups ?? []).map((group) => [group.id, group]))
-    if (mutations.some(({ groupId }) => !byId.has(groupId))) {
+    const generalChatId = this.generalChatGroupId()
+    if (mutations.some(({ groupId }) => !byId.has(groupId) || groupId === generalChatId)) {
       return null
     }
     const updated = mutations.map(({ groupId, updates }) => {
@@ -114,10 +131,17 @@ export class ProjectGroupPersistenceOperations {
   /** Moves nested groups under other groups in order, skipping unknown groups and moves that would form a cycle. */
   setProjectGroupParents(moves: readonly ProjectGroupParentMove[]): ProjectGroup[] {
     const byId = new Map((this.state.projectGroups ?? []).map((group) => [group.id, group]))
+    const generalChatId = this.generalChatGroupId()
     const moved: ProjectGroup[] = []
     for (const { groupId, parentGroupId } of moves) {
       const group = byId.get(groupId)
-      if (!group || !byId.has(parentGroupId) || group.parentGroupId === parentGroupId) {
+      if (
+        !group ||
+        groupId === generalChatId ||
+        parentGroupId === generalChatId ||
+        !byId.has(parentGroupId) ||
+        group.parentGroupId === parentGroupId
+      ) {
         continue
       }
       // A cycle exists if the group is the new parent or one of its ancestors.
@@ -140,13 +164,12 @@ export class ProjectGroupPersistenceOperations {
     return moved
   }
 
-  private applyGroupUpdate(group: ProjectGroup, updates: StoredProjectGroupUpdate): void {
-    if (updates.internalPurpose === 'general-chat') {
-      group.internalPurpose = updates.internalPurpose
-      group.executionHostId = LOCAL_EXECUTION_HOST_ID
-      group.connectionId = null
-      group.parentPath = updates.parentPath ?? group.parentPath
-    }
+  private generalChatGroupId(): string | undefined {
+    return findGeneralChatHome(this.state.projectGroups ?? [], this.state.folderWorkspaces ?? [])
+      .group?.id
+  }
+
+  private applyGroupUpdate(group: ProjectGroup, updates: ProjectGroupUpdate): void {
     if (updates.name !== undefined) {
       group.name = normalizeProjectGroupName(updates.name, group.name)
     }
@@ -176,6 +199,10 @@ export class ProjectGroupPersistenceOperations {
   deleteProjectGroup(groupId: string): boolean {
     const before = this.state.projectGroups?.length ?? 0
     const deletedGroupIds = getProjectGroupSubtreeIds(this.state.projectGroups ?? [], groupId)
+    const generalChatId = this.generalChatGroupId()
+    if (generalChatId && deletedGroupIds.has(generalChatId)) {
+      return false
+    }
     this.state.projectGroups = (this.state.projectGroups ?? []).filter(
       (group) => !deletedGroupIds.has(group.id)
     )

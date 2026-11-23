@@ -55,6 +55,7 @@ export const WorkspaceRowSchema = z.object({
   id: z.string(),
   hostId: z.string(),
   kind: z.enum(['git', 'folder']),
+  sidebarUngrouped: z.literal(true).optional().catch(undefined),
   repoId: z.string(),
   path: z.string(),
   branch: z.string(),
@@ -244,7 +245,7 @@ export function buildWorkspaceRows(catalog: {
     kind: WorkspaceRow['kind'],
     repo?: Repo,
     lineage?: WorktreeLineage
-  ): void => {
+  ): WorkspaceRow | undefined => {
     const listed = listedRow(worktree, repo)
     if (listed) {
       const crossStoreParent =
@@ -258,25 +259,28 @@ export function buildWorkspaceRows(catalog: {
               worktree.instanceId
             )
           : undefined
-      rows.set(
-        listed.identity,
-        toWorkspaceRow(
-          worktree,
-          listed.hostId,
-          kind,
-          repo,
-          lineage,
-          crossStoreParent,
-          workspaceLineage
-        )
+      const row = toWorkspaceRow(
+        worktree,
+        listed.hostId,
+        kind,
+        repo,
+        lineage,
+        crossStoreParent,
+        workspaceLineage
       )
+      rows.set(listed.identity, row)
+      return row
     }
+    return undefined
   }
   for (const { worktree, repo } of withOwnerRepos(catalog.worktrees, catalog.repos)) {
     add(worktree, 'git', repo, catalog.lineageById[worktree.id])
   }
   for (const folderWorkspace of catalog.folderWorkspaces) {
-    add(folderWorkspaceToWorktree(folderWorkspace), 'folder')
+    const row = add(folderWorkspaceToWorktree(folderWorkspace), 'folder')
+    if (row && folderWorkspace.sidebarUngrouped) {
+      row.sidebarUngrouped = true
+    }
   }
   return rows
 }

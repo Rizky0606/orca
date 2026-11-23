@@ -6,6 +6,7 @@ import type { ProjectGroup } from '../project/groups/project-group-types'
 import type { Repo } from '../repository/repo-types'
 import { isPathInsideOrEqual } from '../file-access/cross-platform-path'
 import { getProjectGroupSubtreeIds } from '../project/groups/project-groups'
+import { getInheritedFolderGroupExecutionHostId } from './folder-workspace-host-id'
 import {
   getRepoExecutionHostId,
   LOCAL_EXECUTION_HOST_ID,
@@ -36,16 +37,12 @@ export type FolderHostWorkspace = Pick<FolderWorkspace, 'id' | 'projectGroupId'>
   executionHostId?: string | null
 }
 
+type FolderHostProjectGroup = Pick<ProjectGroup, 'id' | 'parentGroupId' | 'internalPurpose'> &
+  Pick<FolderHostRepo, 'connectionId' | 'executionHostId'>
+
 export type FolderHostCatalog<R extends FolderHostRepo = Repo> = {
-  folderWorkspaces: readonly (Pick<FolderWorkspace, 'id' | 'folderPath' | 'projectGroupId'> & {
-    connectionId?: string | null
-    executionHostId?: string | null
-  })[]
-  projectGroups: readonly (Pick<ProjectGroup, 'id'> & {
-    parentGroupId: string | null
-    connectionId?: string | null
-    executionHostId?: string | null
-  })[]
+  folderWorkspaces: readonly (FolderHostWorkspace & Pick<FolderWorkspace, 'folderPath'>)[]
+  projectGroups: readonly FolderHostProjectGroup[]
   repos: readonly R[]
 }
 
@@ -149,7 +146,8 @@ export function resolveFolderWorkspaceRowHost<R extends FolderHostRepo>(
     groupHosts.size === 1 &&
     groups.some(
       (group) =>
-        parseExecutionHostId(group.executionHostId) || normalizeHostPart(group.connectionId)
+        parseExecutionHostId(getInheritedFolderGroupExecutionHostId(group)) ||
+        normalizeHostPart(group.connectionId)
     )
       ? parseExecutionHostId([...groupHosts][0])
       : null)
@@ -204,7 +202,7 @@ export function resolveFolderWorkspaceRowHost<R extends FolderHostRepo>(
 
 export type QualifiedFolderHostState<W extends FolderHostWorkspace = FolderHostWorkspace> = {
   folderWorkspaces?: readonly W[]
-  projectGroups?: readonly (Pick<ProjectGroup, 'id' | 'connectionId' | 'executionHostId'> &
+  projectGroups?: readonly (Omit<FolderHostProjectGroup, 'parentGroupId'> &
     Partial<Pick<ProjectGroup, 'parentGroupId'>>)[]
   repos?: readonly FolderHostRepo[]
 }
@@ -238,7 +236,8 @@ export function resolveQualifiedFolderWorkspaceResult<W extends FolderHostWorksp
       normalizeHostPart(workspace.connectionId) ||
       groups?.some(
         (group) =>
-          parseExecutionHostId(group.executionHostId) || normalizeHostPart(group.connectionId)
+          parseExecutionHostId(getInheritedFolderGroupExecutionHostId(group)) ||
+          normalizeHostPart(group.connectionId)
       )
     const incomplete = !explicit && (!state.projectGroups || !state.repos || !workspace.folderPath)
     const host = incomplete
