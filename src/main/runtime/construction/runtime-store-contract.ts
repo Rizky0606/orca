@@ -9,7 +9,7 @@ export type GeneralChatHomeStore = Pick<
   | 'repairGeneralChatProjectGroup'
   | 'getFolderWorkspaces'
   | 'createFolderWorkspace'
-  | 'updateFolderWorkspace'
+  | 'repairGeneralChatFolderWorkspace'
   | 'getProfileStorageDirectory'
 >
 
@@ -42,6 +42,7 @@ export type RuntimeStore = {
   getFolderWorkspaces?: Store['getFolderWorkspaces']
   createFolderWorkspace?: Store['createFolderWorkspace']
   updateFolderWorkspace?: Store['updateFolderWorkspace']
+  repairGeneralChatFolderWorkspace?: Store['repairGeneralChatFolderWorkspace']
   removeFolderWorkspace?: Store['removeFolderWorkspace']
   removeProjectForHost?: Store['removeProjectForHost']
   reorderRepos?: Store['reorderRepos']

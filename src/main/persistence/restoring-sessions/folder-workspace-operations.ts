@@ -9,6 +9,7 @@ import type { Repo } from '../../../shared/repository/repo-types'
 import type { RepoHostTarget } from '../../../shared/repository/repo-host-identity'
 import {
   getRepoExecutionHostId,
+  isRepoOnCatalogHost,
   LOCAL_EXECUTION_HOST_ID
 } from '../../../shared/execution-host/execution-host'
 import { normalizeFolderWorkspaceName } from '../../../shared/folder-workspaces/folder-workspaces'
@@ -36,6 +37,11 @@ export type FolderWorkspaceMutationOperations = {
   pruneMobileClientTabSelections: (matchesWorktreeId: (worktreeId: string) => boolean) => void
   hydrateRepo: (repo: Repo) => Repo
 }
+
+type FolderWorkspaceUpdates = Partial<FolderWorkspaceEditableFields> &
+  Pick<FolderWorkspace, 'smartTier' | 'smartAt' | 'lastTerminalUseAt' | 'externalConversations'> &
+  WorkspaceAttachmentMutation &
+  DiffCommentBaseMutation
 
 export class FolderWorkspacePersistenceOperations {
   constructor(private readonly operations: FolderWorkspaceMutationOperations) {}
@@ -126,31 +132,28 @@ export class FolderWorkspacePersistenceOperations {
     return workspace
   }
 
-  updateFolderWorkspace(
-    id: string,
-    updates: Partial<
-      FolderWorkspaceEditableFields &
-        Pick<
-          FolderWorkspace,
-          | 'smartTier'
-          | 'smartAt'
-          | 'lastTerminalUseAt'
-          | 'externalConversations'
-          | 'internalPurpose'
-        >
-    > &
-      WorkspaceAttachmentMutation &
-      DiffCommentBaseMutation
-  ): FolderWorkspace | null {
+  updateFolderWorkspace(id: string, updates: FolderWorkspaceUpdates): FolderWorkspace | null {
     const workspace = this.getFolderWorkspace(id)
-    if (!workspace) {
+    return workspace ? this.applyFolderWorkspaceUpdate(workspace, updates) : null
+  }
+
+  repairGeneralChatFolderWorkspace(
+    workspace: FolderWorkspace,
+    root: string
+  ): FolderWorkspace | null {
+    if (!this.state.folderWorkspaces?.includes(workspace) || !isRepoOnCatalogHost(workspace)) {
       return null
     }
-    if (updates.internalPurpose === 'general-chat') {
-      workspace.internalPurpose = updates.internalPurpose
-      workspace.executionHostId = LOCAL_EXECUTION_HOST_ID
-      workspace.connectionId = null
-    }
+    workspace.internalPurpose = 'general-chat'
+    workspace.executionHostId = LOCAL_EXECUTION_HOST_ID
+    workspace.connectionId = null
+    return this.applyFolderWorkspaceUpdate(workspace, { folderPath: root })
+  }
+
+  private applyFolderWorkspaceUpdate(
+    workspace: FolderWorkspace,
+    updates: FolderWorkspaceUpdates
+  ): FolderWorkspace {
     const linkedUpdates = normalizeWorkspaceAttachmentUpdate(
       {
         linkedItems: workspace.linkedItems,

@@ -35,7 +35,7 @@ async function acquireGeneralChatHome(
     !store.repairGeneralChatProjectGroup ||
     !store.getFolderWorkspaces ||
     !store.createFolderWorkspace ||
-    !store.updateFolderWorkspace
+    !store.repairGeneralChatFolderWorkspace
   ) {
     throw new Error('runtime_unavailable')
   }
@@ -63,7 +63,7 @@ async function acquireGeneralChatHome(
       existing.internalPurpose !== 'general-chat' ||
       existing.executionHostId !== LOCAL_EXECUTION_HOST_ID)
   ) {
-    store.updateFolderWorkspace(existing.id, { folderPath: root, internalPurpose: 'general-chat' })
+    store.repairGeneralChatFolderWorkspace(existing, root)
   }
   if (
     group.parentPath !== root ||

@@ -181,6 +181,13 @@ export class ProjectCollectionOperations {
     return getFolderWorkspaceOperations(this).updateFolderWorkspace(id, updates)
   }
 
+  repairGeneralChatFolderWorkspace(
+    workspace: FolderWorkspace,
+    root: string
+  ): FolderWorkspace | null {
+    return getFolderWorkspaceOperations(this).repairGeneralChatFolderWorkspace(workspace, root)
+  }
+
   removeFolderWorkspace(id: string): boolean {
     const removed = getFolderWorkspaceOperations(this).removeFolderWorkspace(id)
     if (removed) {

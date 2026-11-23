@@ -45,6 +45,7 @@ function makeStore() {
     hydrateRepo: (repo) => repo
   })
   return {
+    state,
     getProjectGroups: groups.getProjectGroups.bind(groups),
     createProjectGroup: groups.createProjectGroup.bind(groups),
     updateProjectGroup: groups.updateProjectGroup.bind(groups),
@@ -54,6 +55,7 @@ function makeStore() {
     getFolderWorkspaces: folders.getFolderWorkspaces.bind(folders),
     createFolderWorkspace: folders.createFolderWorkspace.bind(folders),
     updateFolderWorkspace: folders.updateFolderWorkspace.bind(folders),
+    repairGeneralChatFolderWorkspace: folders.repairGeneralChatFolderWorkspace.bind(folders),
     getRepos: () => state.repos,
     getAllWorktreeMeta: () => state.worktreeMeta,
     reload() {
@@ -139,6 +141,67 @@ it('hides only the local application group and its folder workspace', async () =
       .map(({ id }) => id)
       .sort()
   ).toEqual(visibleFolders.sort())
+})
+
+it('preserves SSH catalog rows that share IDs with the local home', async () => {
+  const store = makeStore()
+  await ensureGeneralChatHome({ rootFolder: generalChatRootFolder }, store)
+  const [localGroup] = store.getProjectGroups()
+  const [localFolder] = store.getFolderWorkspaces()
+  const sshGroup = {
+    ...localGroup,
+    name: 'Remote project',
+    parentPath: '/srv/project',
+    internalPurpose: undefined,
+    executionHostId: undefined,
+    connectionId: 'ssh-1'
+  }
+  const sshFolder = {
+    ...localFolder,
+    name: 'Remote folder',
+    folderPath: '/srv/project',
+    internalPurpose: undefined,
+    executionHostId: undefined,
+    connectionId: 'ssh-1'
+  }
+  const sshSibling = { ...sshFolder, id: 'remote-sibling', folderPath: '/srv/project/sibling' }
+  store.state.projectGroups.push(sshGroup)
+  store.state.folderWorkspaces.push(sshFolder, sshSibling)
+
+  expect.soft(runtimeVisibleProjectGroups(store)).toEqual([sshGroup])
+  expect.soft(runtimeVisibleFolderWorkspaces(store)).toHaveLength(2)
+  expect(runtimeVisibleFolderWorkspaces(store)).toEqual(
+    expect.arrayContaining([sshFolder, sshSibling])
+  )
+})
+
+it('relocates only the local home when persisted folder IDs collide across hosts', async () => {
+  const store = makeStore()
+  const root = generalChatRootFolder()
+  const home = await ensureGeneralChatHome(
+    { rootFolder: () => join(getCanonicalUserDataPath(), 'previous-general-chat') },
+    store
+  )
+  const [localFolder] = store.getFolderWorkspaces()
+  const sshFolder = {
+    ...localFolder,
+    name: 'Remote folder',
+    folderPath: '/srv/remote',
+    internalPurpose: undefined,
+    executionHostId: undefined,
+    connectionId: 'ssh-1'
+  }
+  const originalSshFolder = { ...sshFolder }
+  store.state.folderWorkspaces.push(sshFolder)
+
+  expect(await ensureGeneralChatHome({ rootFolder: generalChatRootFolder }, store)).toEqual(home)
+  expect.soft(localFolder).toMatchObject({
+    id: home.folderWorkspaceId,
+    folderPath: root,
+    executionHostId: 'local',
+    connectionId: null
+  })
+  expect(sshFolder).toEqual(originalSshFolder)
 })
 
 it('keeps the local routing pin after profile reload even when an SSH repo overlaps', async () => {

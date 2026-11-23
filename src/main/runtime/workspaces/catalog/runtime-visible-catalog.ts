@@ -49,9 +49,10 @@ export function runtimeVisibleProjectGroups(store: CatalogSource | null): Projec
     return []
   }
   const catalog = catalogStore(store)
-  const home = findGeneralChatHome(catalog.getProjectGroups(), catalog.getFolderWorkspaces())
-  return visibleProjectGroups(catalog).filter(
-    (group) => !isBotsProjectGroup(group) && group.id !== home.group?.id
+  const groups = catalog.getProjectGroups()
+  const home = findGeneralChatHome(groups, catalog.getFolderWorkspaces())
+  return visibleProjectGroups({ ...catalog, getProjectGroups: () => groups }).filter(
+    (group) => !isBotsProjectGroup(group) && group !== home.group
   )
 }
 
@@ -64,12 +65,13 @@ export function runtimeVisibleFolderWorkspaces(store: CatalogSource | null): Fol
     return []
   }
   const catalog = catalogStore(store)
-  const folders = visibleFolderWorkspaces(catalog)
+  const allFolders = catalog.getFolderWorkspaces()
+  const folders = visibleFolderWorkspaces({ ...catalog, getFolderWorkspaces: () => allFolders })
   if (folders.length === 0) {
     return folders
   }
   const folderCatalog = {
-    folderWorkspaces: catalog.getFolderWorkspaces(),
+    folderWorkspaces: allFolders,
     projectGroups: catalog.getProjectGroups(),
     repos: catalog.getRepos()
   }
@@ -80,14 +82,22 @@ export function runtimeVisibleFolderWorkspaces(store: CatalogSource | null): Fol
   if (!group) {
     return folders
   }
+  const otherGroupHosts = new Set(
+    folderCatalog.projectGroups
+      .filter((entry) => entry.id === group.id && entry !== group)
+      .map(getRepoExecutionHostId)
+  )
   return folders.flatMap((folder) => {
-    if (folder.id === workspace?.id) {
+    if (folder === workspace) {
       return []
     }
     if (folder.projectGroupId !== group.id) {
       return [folder]
     }
     const host = deriveFolderWorkspaceHost(folderCatalog, folder)
+    if (otherGroupHosts.has(host?.hostId ?? getRepoExecutionHostId(folder))) {
+      return [folder]
+    }
     return [
       {
         ...folder,
