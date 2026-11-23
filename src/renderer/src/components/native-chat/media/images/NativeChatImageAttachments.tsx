@@ -19,16 +19,46 @@ import { NativeChatMarkdownImageOwnerContext } from './native-chat-markdown-imag
 import { isCommittedAgentSessionAttachmentPath } from '../../../../../../shared/agent-session/agent-session-attachments'
 import { isWindowsAbsolutePathLike } from '../../../../../../shared/file-access/cross-platform-path'
 import { getRuntimeEnvironmentRevision } from '@/runtime/rpc/environment-revisions/runtime-environment-revision'
+import { filesystemPathToFileUri } from '../../../../../../shared/file-links/file-uri-path'
+import { resolveImageAbsolutePath } from '@/components/editor/markdown/link-routing/markdown-preview-links'
+
+type ImageRef = Extract<NativeChatBlock, { type: 'image-ref' }>
 
 function renderableImageSource(source: string | undefined): boolean {
   return Boolean(source && /^(?:https?|data|blob):/i.test(source))
+}
+
+function transcriptImageSource(
+  block: ImageRef | undefined,
+  runtimeContext: RuntimeFileOperationArgs | null | undefined
+): string | undefined {
+  const source = block?.url?.trim() || block?.path
+  if (
+    runtimeContext?.target.kind !== 'environment' ||
+    runtimeContext.worktreeId ||
+    renderableImageSource(source)
+  ) {
+    return source
+  }
+  const path = block?.path
+  if (!path || !(path.startsWith('/') || isWindowsAbsolutePathLike(path))) {
+    return undefined
+  }
+  // A paired attachment must stay in the attachment reader after URI normalization.
+  try {
+    const uri = filesystemPathToFileUri(path)
+    const readPath = resolveImageAbsolutePath(uri, path)
+    return readPath && isCommittedAgentSessionAttachmentPath(readPath) ? uri : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function transcriptImageIdentity(
   block: Extract<NativeChatBlock, { type: 'image-ref' }>,
   runtimeContext: RuntimeFileOperationArgs | null | undefined
 ): string {
-  const source = block.url?.trim() || block.path
+  const source = transcriptImageSource(block, runtimeContext)
   const filePath = block.path ?? source ?? ''
   if (renderableImageSource(source)) {
     return `external\0${source ?? ''}`
@@ -45,19 +75,17 @@ function transcriptImageIdentity(
 // Roles do not prove who chose an auto-loaded path; main must validate local images by real file type.
 const TRANSCRIPT_IMAGE_ACCESS = chatImageAccess()
 
-type ImageRef = Extract<NativeChatBlock, { type: 'image-ref' }>
-
 /** One image's bytes while `active`, read from its owner (a URL loads as itself). */
 function useTranscriptImageSrc(
   block: ImageRef | undefined,
   runtimeContext: RuntimeFileOperationArgs | null | undefined,
   active: boolean
 ): { source: string | undefined; displaySrc: string | undefined; external: boolean } {
-  const source = block?.url?.trim() || block?.path
+  const source = transcriptImageSource(block, runtimeContext)
   const filePath = block?.path ?? source ?? ''
   const external = renderableImageSource(source)
   const localSrc = useLocalImageSrc(
-    active && !external && runtimeContext !== undefined ? source : undefined,
+    active && !external && runtimeContext ? source : undefined,
     filePath,
     runtimeContext?.connectionId,
     runtimeContext,
