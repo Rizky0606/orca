@@ -2,6 +2,7 @@ import { MOBILE_AGENT_SESSION_RPC_METHODS } from './runtime-rpc-mobile-agent-ses
 import { PAIRED_DESKTOP_METHODS } from './runtime-rpc-mobile-paired-desktop-methods'
 import { MOBILE_BOT_RPC_METHODS } from './runtime-rpc-mobile-bot-methods'
 import { DEFAULT_SCOPE_HOST_METHODS } from './runtime-rpc-mobile-tracker-methods'
+import { GENERAL_CHAT_ENSURE_HOME_METHOD } from '../../../../shared/general-chat/general-chat-contract'
 
 // Execution-host routes follow the configured target; paired-desktop routes stay with the relaying Mac;
 // default-scope-host routes follow the target, else the Mac's default host. This table also defines mobile allowlisting.
@@ -103,6 +104,7 @@ export const EXECUTION_HOST_METHODS = [
   // A folder row's Delete removes the Orca workspace on its host, as desktop's Remove Workspace does.
   'folderWorkspace.delete',
   'folderWorkspace.list',
+  GENERAL_CHAT_ENSURE_HOME_METHOD,
   'git.abortMerge',
   'git.abortRebase',
   // Read-only: the delete confirm names ignored files (.env) that removing the worktree would lose.
