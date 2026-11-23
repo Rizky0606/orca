@@ -30702,6 +30702,10 @@
     "workspaces": "Workspaces",
     "more": "More"
   },
+  "generalChat": {
+    "title": "General Chat",
+    "emptyDescription": "Conversations here are independent of your projects."
+  },
   "chats": {
     "delete": {
       "updateHost": "Update {{host}} to delete chats",

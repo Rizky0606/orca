@@ -6,6 +6,7 @@ import {
   Files,
   Layers,
   List,
+  MessageSquare,
   Settings,
   Smartphone
 } from 'lucide-react'
@@ -181,6 +182,8 @@ export function AppRail({
   // The list rows' labels and icons, so the rail reads the same.
   const destinationLabel = (id: AppRailDestinationId): string => {
     switch (id) {
+      case 'general-chat':
+        return t('generalChat.title', 'General Chat')
       case 'tasks':
         return t('auto.components.sidebar.SidebarNav.fee535205b', 'Tasks')
       case 'automations':
@@ -195,6 +198,8 @@ export function AppRail({
   }
   const destinationIcon = (id: AppRailDestinationId, size: number): React.ReactNode => {
     switch (id) {
+      case 'general-chat':
+        return <MessageSquare size={size} aria-hidden />
       case 'tasks':
         return <List size={size} aria-hidden />
       case 'automations':

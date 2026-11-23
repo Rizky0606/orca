@@ -6,6 +6,7 @@ export const APP_RAIL_ITEM_ATTRIBUTE = 'data-app-rail-item'
 
 const APP_RAIL_ITEM_IDS = [
   'workspaces',
+  'general-chat',
   'tasks',
   'automations',
   'artifacts',

@@ -127,6 +127,21 @@ export function createUiViewActions(set: UISliceSet, get: UISliceGet): Partial<U
         activeView: state.previousViewBeforeArtifacts,
         worktreeNavHistoryIndex: rewindHistoryIndexPastView(state, 'artifacts')
       })),
+    openGeneralChatPage: () => {
+      get().recordViewVisit('general-chat')
+      set((state) => ({
+        activeView: 'general-chat',
+        previousViewBeforeGeneralChat:
+          state.activeView === 'general-chat'
+            ? state.previousViewBeforeGeneralChat
+            : state.activeView
+      }))
+    },
+    closeGeneralChatPage: () =>
+      set((state) => ({
+        activeView: state.previousViewBeforeGeneralChat,
+        worktreeNavHistoryIndex: rewindHistoryIndexPastView(state, 'general-chat')
+      })),
     openMobilePage: () =>
       set((state) => ({
         activeView: 'mobile',

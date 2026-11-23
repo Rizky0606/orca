@@ -107,6 +107,7 @@ export const FeatureInteractionIdParam = z.custom<FeatureInteractionId>(isFeatur
 export const TopLevelViewSchema = z
   .enum([
     'terminal',
+    'general-chat',
     'settings',
     'tasks',
     'activity',

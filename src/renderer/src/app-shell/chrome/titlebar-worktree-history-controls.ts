@@ -3,6 +3,7 @@ import type { UISlice } from '@/store/slices/ui/ui-slice-contract'
 export function shouldShowWorktreeHistoryControls(activeView: UISlice['activeView']): boolean {
   return (
     activeView === 'terminal' ||
+    activeView === 'general-chat' ||
     activeView === 'tasks' ||
     activeView === 'automations' ||
     activeView === 'artifacts' ||
