@@ -15,6 +15,7 @@ import {
 import { getNextRootProjectOrder } from '../../../shared/sidebar-list/sections/root-project-order'
 import { folderWorkspaceKey } from '../../../shared/workspace/identity/workspace-scope'
 import { removeWorkspaceSessionOwnersEverywhere } from '../restoring-sessions/session-owner-removal'
+import { LOCAL_EXECUTION_HOST_ID } from '../../../shared/execution-host/execution-host'
 
 export type ProjectGroupMutationOperations = {
   state: PersistedState
@@ -22,6 +23,9 @@ export type ProjectGroupMutationOperations = {
   removeWorkspaceLineageForRemovedFolder: (folderWorkspaceId: string) => void
   pruneMobileClientTabSelections: (matchesWorktreeId: (worktreeId: string) => boolean) => void
 }
+
+type StoredProjectGroupUpdate = ProjectGroupUpdate &
+  Partial<Pick<ProjectGroup, 'parentPath' | 'internalPurpose'>>
 
 export class ProjectGroupPersistenceOperations {
   constructor(private readonly operations: ProjectGroupMutationOperations) {}
@@ -54,6 +58,7 @@ export class ProjectGroupPersistenceOperations {
     connectionId?: string | null
     parentGroupId?: string | null
     createdFrom: ProjectGroup['createdFrom']
+    internalPurpose?: ProjectGroup['internalPurpose']
   }): ProjectGroup {
     let maxOrder = -1
     // Large persisted lists can exceed spread argument limits.
@@ -64,6 +69,11 @@ export class ProjectGroupPersistenceOperations {
       ...input,
       tabOrder: maxOrder + 1
     })
+    if (input.internalPurpose === 'general-chat') {
+      group.internalPurpose = input.internalPurpose
+      group.executionHostId = LOCAL_EXECUTION_HOST_ID
+      group.connectionId = null
+    }
     const rootProjectOrder = !group.parentGroupId
       ? getNextRootProjectOrder(this.state.repos, this.state.projectGroups ?? [])
       : undefined
@@ -75,7 +85,7 @@ export class ProjectGroupPersistenceOperations {
     return group
   }
 
-  updateProjectGroup(groupId: string, updates: ProjectGroupUpdate): ProjectGroup | null {
+  updateProjectGroup(groupId: string, updates: StoredProjectGroupUpdate): ProjectGroup | null {
     const group = (this.state.projectGroups ?? []).find((entry) => entry.id === groupId)
     if (!group) {
       return null
@@ -130,7 +140,13 @@ export class ProjectGroupPersistenceOperations {
     return moved
   }
 
-  private applyGroupUpdate(group: ProjectGroup, updates: ProjectGroupUpdate): void {
+  private applyGroupUpdate(group: ProjectGroup, updates: StoredProjectGroupUpdate): void {
+    if (updates.internalPurpose === 'general-chat') {
+      group.internalPurpose = updates.internalPurpose
+      group.executionHostId = LOCAL_EXECUTION_HOST_ID
+      group.connectionId = null
+      group.parentPath = updates.parentPath ?? group.parentPath
+    }
     if (updates.name !== undefined) {
       group.name = normalizeProjectGroupName(updates.name, group.name)
     }

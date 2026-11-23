@@ -1,10 +1,16 @@
 import { FOLDER_WORKSPACE_REMOVAL_DOMAINS, type ProfileSaveDomains } from '../profile-save-domains'
 import { randomUUID } from 'node:crypto'
-import type { FolderWorkspace } from '../../../shared/folder-workspaces/folder-workspace-types'
+import type {
+  FolderWorkspace,
+  FolderWorkspaceEditableFields
+} from '../../../shared/folder-workspaces/folder-workspace-types'
 import type { PersistedState } from '../../../shared/orca-profiles/persisted-state-types'
 import type { Repo } from '../../../shared/repository/repo-types'
 import type { RepoHostTarget } from '../../../shared/repository/repo-host-identity'
-import { getRepoExecutionHostId } from '../../../shared/execution-host/execution-host'
+import {
+  getRepoExecutionHostId,
+  LOCAL_EXECUTION_HOST_ID
+} from '../../../shared/execution-host/execution-host'
 import { normalizeFolderWorkspaceName } from '../../../shared/folder-workspaces/folder-workspaces'
 import { getNextProjectGroupOrder } from '../../../shared/project/groups/project-groups'
 import { normalizeStoredTaskSourceContext } from '../../../shared/work-items/task-source-context'
@@ -60,6 +66,8 @@ export class FolderWorkspacePersistenceOperations {
     creatorProvenance?: FolderWorkspace['creatorProvenance']
     createdWithAgent?: FolderWorkspace['createdWithAgent']
     pendingFirstAgentMessageRename?: boolean
+    internalPurpose?: FolderWorkspace['internalPurpose']
+    id?: string
   }): FolderWorkspace {
     const group = (this.state.projectGroups ?? []).find(
       (entry) => entry.id === input.projectGroupId
@@ -83,12 +91,14 @@ export class FolderWorkspacePersistenceOperations {
             linkedWorkItem: linkedTask,
             linkedTaskSourceContext: sourceContext
           })
+    const internalPurpose = input.internalPurpose
     const workspace: FolderWorkspace = {
-      id: randomUUID(),
+      id: internalPurpose ? (input.id ?? randomUUID()) : randomUUID(),
       projectGroupId: group.id,
       name: normalizeFolderWorkspaceName(input.name, `${group.name} workspace`),
       folderPath,
-      connectionId: input.connectionId ?? group.connectionId ?? null,
+      connectionId: internalPurpose ? null : (input.connectionId ?? group.connectionId ?? null),
+      ...(internalPurpose ? { internalPurpose, executionHostId: LOCAL_EXECUTION_HOST_ID } : {}),
       ...(input.creatorProvenance ? { creatorProvenance: input.creatorProvenance } : {}),
       linkedTask: attachmentUpdates ? (attachmentUpdates.linkedWorkItem ?? null) : linkedTask,
       ...(attachmentUpdates ? { linkedItems: attachmentUpdates.linkedItems } : {}),
@@ -119,30 +129,15 @@ export class FolderWorkspacePersistenceOperations {
   updateFolderWorkspace(
     id: string,
     updates: Partial<
-      Pick<
-        FolderWorkspace,
-        | 'name'
-        | 'folderPath'
-        | 'linkedTask'
-        | 'linkedItems'
-        | 'linkedTaskSourceContext'
-        | 'comment'
-        | 'isArchived'
-        | 'isUnread'
-        | 'isPinned'
-        | 'sortOrder'
-        | 'manualOrder'
-        | 'workspaceStatus'
-        | 'createdWithAgent'
-        | 'pendingFirstAgentMessageRename'
-        | 'firstAgentMessageRenameError'
-        | 'lastActivityAt'
-        | 'smartTier'
-        | 'smartAt'
-        | 'lastTerminalUseAt'
-        | 'diffComments'
-        | 'externalConversations'
-      >
+      FolderWorkspaceEditableFields &
+        Pick<
+          FolderWorkspace,
+          | 'smartTier'
+          | 'smartAt'
+          | 'lastTerminalUseAt'
+          | 'externalConversations'
+          | 'internalPurpose'
+        >
     > &
       WorkspaceAttachmentMutation &
       DiffCommentBaseMutation
@@ -150,6 +145,11 @@ export class FolderWorkspacePersistenceOperations {
     const workspace = this.getFolderWorkspace(id)
     if (!workspace) {
       return null
+    }
+    if (updates.internalPurpose === 'general-chat') {
+      workspace.internalPurpose = updates.internalPurpose
+      workspace.executionHostId = LOCAL_EXECUTION_HOST_ID
+      workspace.connectionId = null
     }
     const linkedUpdates = normalizeWorkspaceAttachmentUpdate(
       {

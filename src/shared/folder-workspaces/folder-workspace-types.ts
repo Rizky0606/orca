@@ -19,8 +19,9 @@ export type FolderWorkspace = {
   folderPath: string
   /** SSH target ID for folder workspaces whose folder path lives remotely. */
   connectionId?: string | null
-  /** Renderer-owned host stamp for host-qualified folder catalogs. */
+  /** Host stamp for catalog rows and durable local ownership of internal workspaces. */
   executionHostId?: ExecutionHostId | null
+  internalPurpose?: 'general-chat'
   /** Authenticated client that created this workspace. Missing means unknown legacy origin. */
   creatorProvenance?: WorkspaceCreatorProvenance
   linkedTask: WorkspaceLinkedItem | null
@@ -49,3 +50,24 @@ export type FolderWorkspace = {
   /** See {@link WorktreeMeta.externalConversations}. */
   externalConversations?: ExternalConversationLink[]
 }
+
+export type FolderWorkspaceEditableFields = Pick<
+  FolderWorkspace,
+  | 'name'
+  | 'folderPath'
+  | 'linkedTask'
+  | 'linkedItems'
+  | 'linkedTaskSourceContext'
+  | 'comment'
+  | 'isArchived'
+  | 'isUnread'
+  | 'isPinned'
+  | 'sortOrder'
+  | 'manualOrder'
+  | 'workspaceStatus'
+  | 'createdWithAgent'
+  | 'pendingFirstAgentMessageRename'
+  | 'firstAgentMessageRenameError'
+  | 'lastActivityAt'
+  | 'diffComments'
+>

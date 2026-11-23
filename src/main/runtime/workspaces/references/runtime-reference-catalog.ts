@@ -23,6 +23,7 @@ import {
 } from '../../../../shared/file-access/cross-platform-path'
 import { parseWslUncPath } from '../../../../shared/file-access/wsl-paths'
 import { branchSelectorMatches, runtimePathsEqual } from '../catalog/runtime-worktree-path-identity'
+import { runtimeVisibleFolderWorkspaces } from '../catalog/runtime-visible-catalog'
 
 export function listReferenceWorkspaces(
   store: Pick<
@@ -32,6 +33,7 @@ export function listReferenceWorkspaces(
     | 'getAllWorktreeMetaForHost'
     | 'getProjectGroups'
     | 'getFolderWorkspaces'
+    | 'getSshTargets'
   >,
   cached: readonly Worktree[] = []
 ): ReferenceWorkspace[] {
@@ -110,7 +112,7 @@ export function listReferenceWorkspaces(
     })
   }
   const groups = new Map((store.getProjectGroups?.() ?? []).map((group) => [group.id, group]))
-  for (const folder of store.getFolderWorkspaces?.() ?? []) {
+  for (const folder of runtimeVisibleFolderWorkspaces(store)) {
     const worktree = folderWorkspaceToWorktree(folder)
     result.push({
       ...worktree,

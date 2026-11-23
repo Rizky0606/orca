@@ -8,8 +8,9 @@ export type ProjectGroup = {
   hookSettings?: RepoHookSettings
   /** SSH target ID for folder-backed groups imported from a remote root. */
   connectionId?: string | null
-  /** Renderer-owned host stamp for groups fetched from a runtime environment. */
+  /** Explicit host ownership for an internal group or a host-qualified catalog row. */
   executionHostId?: string | null
+  internalPurpose?: 'general-chat'
   parentGroupId: string | null
   createdFrom: ProjectGroupCreatedFrom
   tabOrder: number

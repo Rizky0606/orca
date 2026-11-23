@@ -1,5 +1,8 @@
 import { getDefaultRepoHookSettings } from '../../workspace-setup/repo-hook-settings-defaults'
-import { normalizeExecutionHostId } from '../../execution-host/execution-host'
+import {
+  LOCAL_EXECUTION_HOST_ID,
+  normalizeExecutionHostId
+} from '../../execution-host/execution-host'
 import type { ProjectGroup, ProjectGroupCreatedFrom } from './project-group-types'
 import type { Repo } from '../../repository/repo-types'
 import { createNonSecureContextUuid } from '../../identifiers/non-secure-context-uuid'
@@ -91,7 +94,12 @@ export function normalizeProjectGroups(value: unknown): ProjectGroup[] {
       updatedAt:
         typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt) ? raw.updatedAt : now,
       // Why: runtime-owned groups otherwise look local after persistence reload.
-      ...(executionHostId ? { executionHostId } : {})
+      ...(executionHostId ? { executionHostId } : {}),
+      ...(raw.internalPurpose === 'general-chat' &&
+      executionHostId === LOCAL_EXECUTION_HOST_ID &&
+      !raw.connectionId
+        ? { internalPurpose: raw.internalPurpose }
+        : {})
     })
   }
   groups.sort(

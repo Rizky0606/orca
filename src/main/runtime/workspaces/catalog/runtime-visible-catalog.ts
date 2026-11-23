@@ -20,7 +20,10 @@ import {
   visibleRepos
 } from '../../../persistence/migrating-orcad-catalog/source/catalog/orcad-source-visibility'
 import { isBotsProjectGroup } from '../../../bots/bot-home'
-import { isGeneralChatProjectGroup } from '../../../general-chat/general-chat-home'
+import {
+  isGeneralChatFolderWorkspace,
+  isGeneralChatProjectGroup
+} from '../../../general-chat/general-chat-home'
 import type { RuntimeStore } from '../../construction/runtime-store-contract'
 
 type CatalogSource = Pick<
@@ -64,15 +67,10 @@ export function runtimeVisibleFolderWorkspaces(store: CatalogSource | null): Fol
   if (folders.length === 0) {
     return folders
   }
-  const hiddenGroupIds = new Set(
-    catalog
-      .getProjectGroups()
-      .filter((group) => isGeneralChatProjectGroup(group))
-      .map((group) => group.id)
+  const groups = new Map(catalog.getProjectGroups().map((group) => [group.id, group]))
+  return folders.filter(
+    (folder) => !isGeneralChatFolderWorkspace(folder, groups.get(folder.projectGroupId))
   )
-  return hiddenGroupIds.size === 0
-    ? folders
-    : folders.filter((folder) => !hiddenGroupIds.has(folder.projectGroupId))
 }
 
 export type RuntimeHiddenRepos = {

@@ -2,7 +2,10 @@ import type { WorkspaceAttachmentMutation } from '../../../shared/workspace-atta
 import type { DiffCommentBaseMutation } from '../../../shared/file-review/diff-comment-mutation'
 import type { FolderWorkspaceCreateResult } from '../../../shared/folder-workspaces/folder-workspace-create'
 import type { RuntimeGroupFolderCreateInput } from '../workspaces/creation/runtime-group-folder-setup'
-import type { FolderWorkspace } from '../../../shared/folder-workspaces/folder-workspace-types'
+import type {
+  FolderWorkspace,
+  FolderWorkspaceEditableFields
+} from '../../../shared/folder-workspaces/folder-workspace-types'
 import type { ProjectGroup } from '../../../shared/project/groups/project-group-types'
 import type { Repo } from '../../../shared/repository/repo-types'
 import type { RuntimeStore } from '../construction/runtime-store-contract'
@@ -28,27 +31,6 @@ export type RuntimeProjectGroupDependencies = {
   ) => Promise<FolderWorkspaceCreateResult>
 }
 
-export type FolderWorkspaceUpdates = Partial<
-  Pick<
-    FolderWorkspace,
-    | 'name'
-    | 'folderPath'
-    | 'linkedTask'
-    | 'linkedItems'
-    | 'linkedTaskSourceContext'
-    | 'comment'
-    | 'isArchived'
-    | 'isUnread'
-    | 'isPinned'
-    | 'sortOrder'
-    | 'manualOrder'
-    | 'workspaceStatus'
-    | 'createdWithAgent'
-    | 'pendingFirstAgentMessageRename'
-    | 'firstAgentMessageRenameError'
-    | 'lastActivityAt'
-    | 'diffComments'
-  >
-> &
+export type FolderWorkspaceUpdates = Partial<FolderWorkspaceEditableFields> &
   WorkspaceAttachmentMutation &
   DiffCommentBaseMutation

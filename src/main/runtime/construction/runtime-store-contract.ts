@@ -4,7 +4,13 @@ import type { VoiceSettings } from '../../../shared/speech/speech-types'
 
 export type GeneralChatHomeStore = Pick<
   RuntimeStore,
-  'getProjectGroups' | 'createProjectGroup' | 'getFolderWorkspaces' | 'createFolderWorkspace'
+  | 'getProjectGroups'
+  | 'createProjectGroup'
+  | 'updateProjectGroup'
+  | 'getFolderWorkspaces'
+  | 'createFolderWorkspace'
+  | 'updateFolderWorkspace'
+  | 'getProfileStorageDirectory'
 >
 
 export type RuntimeStore = {

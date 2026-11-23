@@ -8,6 +8,7 @@ import { normalizeWorkspaceCreatorProvenance } from '../workspace/identity/works
 import { getWorkspaceAttachments } from '../workspace-attachments/workspace-attachments'
 import { isSmartTier } from '../sidebar-list/sorting/sort-stamps'
 import { normalizeOrcadRetainedMarker } from '../remote-runtime/orcad-lifecycle/orcad-retained-marker'
+import { LOCAL_EXECUTION_HOST_ID } from '../execution-host/execution-host'
 
 export function normalizeFolderWorkspaceName(
   name: string | null | undefined,
@@ -58,8 +59,6 @@ export function normalizeFolderWorkspaces(
     const creatorProvenance = normalizeWorkspaceCreatorProvenance(raw.creatorProvenance)
     const orcadRetained = normalizeOrcadRetainedMarker(raw.orcadRetained)
     seen.add(raw.id)
-    // Do not persist fetch-time executionHostId: it may name an unowned runtime authority and lacks a generation fence.
-    // connectionId is the durable pin main projects from.
     workspaces.push({
       id: raw.id,
       projectGroupId: raw.projectGroupId,
@@ -71,6 +70,12 @@ export function normalizeFolderWorkspaces(
           : raw.connectionId === null
             ? null
             : (group.connectionId ?? null),
+      // Only the host-written application workspace can persist an explicit local pin.
+      ...(raw.internalPurpose === 'general-chat' &&
+      raw.executionHostId === LOCAL_EXECUTION_HOST_ID &&
+      !raw.connectionId
+        ? { internalPurpose: raw.internalPurpose, executionHostId: LOCAL_EXECUTION_HOST_ID }
+        : {}),
       ...(creatorProvenance ? { creatorProvenance } : {}),
       linkedTask,
       ...(raw.linkedItems !== undefined
