@@ -14,7 +14,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../../ui/tooltip'
 import { getChatWidthOptions } from '../../settings/appearance/chat/chat-appearance-search'
 import { writeNativeChatAppearance } from './native-chat-appearance-write'
 
-export function NativeChatSettingsButton(): React.JSX.Element {
+export function NativeChatSettingsButton({
+  standalone = false
+}: {
+  standalone?: boolean
+}): React.JSX.Element {
   const t = useTranslate()
   const width = useAppStore((state) => state.settings?.nativeChatAppearance?.width ?? 'comfortable')
   const label = t('components.native-chat.settings', 'Chat settings')
@@ -26,8 +30,8 @@ export function NativeChatSettingsButton(): React.JSX.Element {
           <DropdownMenuTrigger asChild>
             <Button
               type="button"
-              variant="pane-title"
-              size="icon-xs"
+              variant={standalone ? 'ghost' : 'pane-title'}
+              size={standalone ? 'icon-sm' : 'icon-xs'}
               aria-label={label}
               onClick={(event) => event.stopPropagation()}
             >

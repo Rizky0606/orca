@@ -56,9 +56,10 @@ export function useBotChatIdentity(
 }
 
 export function useBotChatOwner(
-  props: Pick<NativeChatStructuredViewProps, 'tabId' | 'sessionId' | 'target'>
+  props: Pick<NativeChatStructuredViewProps, 'tabId' | 'sessionId' | 'target' | 'worktreeId'>
 ) {
-  const ownerWorktreeId = useNativeChatTabOwnerWorktreeId(props.tabId)
+  const tabWorktreeId = useNativeChatTabOwnerWorktreeId(props.tabId)
+  const ownerWorktreeId = props.worktreeId ?? tabWorktreeId
   const turnBot = useBotChatIdentity(ownerWorktreeId, props.sessionId, props.target)
   const { src, outfit } = useBotAvatarLook(turnBot ?? NO_BOT_AVATAR)
   // Keyed on what it shows, not the Bot object: a re-read bot is a new object, and a new identity here

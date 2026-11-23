@@ -9,7 +9,10 @@ import type {
   StructuredAgentSessionReadOwner,
   StructuredAgentSessionReadSnapshot
 } from '@/components/native-chat/session/structured/read/structured-agent-session-read-owner-contract'
-import { EMPTY_STRUCTURED_AGENT_SESSION } from '../../../shared/agent-session/view/live-read/structured-agent-session-reducer'
+import {
+  EMPTY_STRUCTURED_AGENT_SESSION,
+  type StructuredAgentSessionState
+} from '../../../shared/agent-session/view/live-read/structured-agent-session-reducer'
 import type { AgentJournalRenderItem } from '../../../shared/agent-session/journal/agent-session-journal-types'
 
 export type FixturePrompt =
@@ -45,55 +48,59 @@ function promptItem(sessionId: string, prompt: FixturePrompt): AgentJournalRende
   } as unknown as AgentJournalRenderItem
 }
 
-/**
- * Registers a reader for each chat on this computer, holding its one pending prompt; the returned
- * call swaps a chat's prompt, as a host's update would.
- */
+export function stubStructuredSessionReader(
+  sessionId: string,
+  state: StructuredAgentSessionState
+): (state: StructuredAgentSessionState) => void {
+  let current: StructuredAgentSessionReadSnapshot = {
+    state,
+    loadingOlder: false,
+    olderHistoryGeneration: 0,
+    initialHistoryAutoLoad: false,
+    current: true
+  }
+  const listeners = new Set<() => void>()
+  const none = (): (() => void) => () => {}
+  const owner: StructuredAgentSessionReadOwner = {
+    getSnapshot: () => current,
+    subscribe: (listener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    subscribeCommandsChanged: none,
+    activate: none,
+    retain: none,
+    retainHistory: none,
+    trimHistory: () => {},
+    dispose: () => {},
+    loadOlder: async () => 'exhausted',
+    admit: async () => {},
+    trackSend: () => ({ issue: () => {}, settle: () => {} }),
+    publishCreated: () => {}
+  }
+  const target = botHostTarget('local')
+  retireStructuredAgentSessionReadOwner(sessionId, target)
+  getOrCreateStructuredReadOwner(structuredReadOwnerKey(sessionId, target), () => owner)
+  return (next) => {
+    current = { ...current, state: next }
+    for (const listener of listeners) {
+      listener()
+    }
+  }
+}
+
+/** Registers a reader per chat. The returned call swaps its prompt like a host update. */
 export function stubSessionPrompts(
   prompts: Record<string, FixturePrompt>
 ): (sessionId: string, prompt: FixturePrompt) => void {
   const swaps = new Map<string, (prompt: FixturePrompt) => void>()
   for (const [sessionId, first] of Object.entries(prompts)) {
-    const snapshot = (prompt: FixturePrompt): StructuredAgentSessionReadSnapshot => ({
-      state: {
-        ...EMPTY_STRUCTURED_AGENT_SESSION,
-        currentRequests: [promptItem(sessionId, prompt)]
-      },
-      loadingOlder: false,
-      olderHistoryGeneration: 0,
-      initialHistoryAutoLoad: false,
-      current: true
+    const state = (prompt: FixturePrompt): StructuredAgentSessionState => ({
+      ...EMPTY_STRUCTURED_AGENT_SESSION,
+      currentRequests: [promptItem(sessionId, prompt)]
     })
-    let current = snapshot(first)
-    const listeners = new Set<() => void>()
-    const none = (): (() => void) => () => {}
-    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the Needs you row only reads and subscribes.
-    const owner = {
-      getSnapshot: () => current,
-      subscribe: (listener: () => void) => {
-        listeners.add(listener)
-        return () => listeners.delete(listener)
-      },
-      subscribeCommandsChanged: none,
-      activate: none,
-      retainHistory: none,
-      trimHistory: () => {},
-      dispose: () => {},
-      loadOlder: async () => ({ status: 'empty' }),
-      admit: async () => {},
-      trackSend: () => ({ issue: () => {}, settle: () => {} }),
-      publishCreated: () => {}
-    } as unknown as StructuredAgentSessionReadOwner
-    const target = botHostTarget('local')
-    // A reader an earlier fixture left would answer instead.
-    retireStructuredAgentSessionReadOwner(sessionId, target)
-    getOrCreateStructuredReadOwner(structuredReadOwnerKey(sessionId, target), () => owner)
-    swaps.set(sessionId, (prompt) => {
-      current = snapshot(prompt)
-      for (const listener of listeners) {
-        listener()
-      }
-    })
+    const update = stubStructuredSessionReader(sessionId, state(first))
+    swaps.set(sessionId, (prompt) => update(state(prompt)))
   }
   return (sessionId, prompt) => swaps.get(sessionId)?.(prompt)
 }
