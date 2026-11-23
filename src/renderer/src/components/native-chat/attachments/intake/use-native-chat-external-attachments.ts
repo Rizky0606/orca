@@ -20,7 +20,7 @@ import {
 import {
   resolveNativeChatAttachmentOwner,
   resolveNativeChatAttachmentOwnerForWorktree,
-  resolveNativeChatRuntimeSessionAttachmentOwner
+  resolveNativeChatStructuredSessionAttachmentOwner
 } from '../uploads/native-chat-attachment-owner'
 import type {
   NativeChatAttachmentOwner,
@@ -103,21 +103,11 @@ export function useNativeChatExternalAttachments({
 
   const resolveAttachmentOwner = useCallback((): NativeChatAttachmentOwner => {
     const { structuredWorktreeId, structuredSession, terminalTabId } = workspaceRef.current
-    if (structuredSession?.attachmentStagingScope) {
-      return {
-        kind: 'local',
-        structuredSessionId: structuredSession.sessionId,
-        stagingScope: structuredSession.attachmentStagingScope
+    if (structuredSession) {
+      const sessionOwner = resolveNativeChatStructuredSessionAttachmentOwner(structuredSession)
+      if (sessionOwner) {
+        return sessionOwner
       }
-    }
-    if (structuredWorktreeId && structuredSession?.runtimeEnvironmentId) {
-      if (structuredSession.sessionPending) {
-        return { kind: 'not-ready', notice: structuredSession.sessionPendingNotice }
-      }
-      return resolveNativeChatRuntimeSessionAttachmentOwner({
-        sessionId: structuredSession.sessionId,
-        runtimeEnvironmentId: structuredSession.runtimeEnvironmentId
-      })
     }
     if (!structuredWorktreeId) {
       return resolveNativeChatAttachmentOwner(useAppStore.getState(), terminalTabId)

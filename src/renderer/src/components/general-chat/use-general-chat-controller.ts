@@ -59,6 +59,7 @@ export function useGeneralChatController(hostId: ExecutionHostId, target: Runtim
   const [pickedAgent, setPickedAgent] = useState<TuiAgent | null>(null)
   const mounted = useMountedRef()
   const launchInFlight = useRef(false)
+  const navigationRevision = useRef(0)
 
   useEffect(() => {
     let current = true
@@ -151,6 +152,8 @@ export function useGeneralChatController(hostId: ExecutionHostId, target: Runtim
       return
     }
     launchInFlight.current = true
+    const startingNavigationRevision = navigationRevision.current
+    const selectionUnchanged = () => navigationRevision.current === startingNavigationRevision
     setPickedAgent(provider)
     setLaunch({ kind: 'ensuring' })
     let phase: 'ensure-failed' | 'launch-failed' = 'ensure-failed'
@@ -176,7 +179,9 @@ export function useGeneralChatController(hostId: ExecutionHostId, target: Runtim
         title: structuredAgentLabel(provider),
         agent: provider
       })
-      selectConversation(started.sessionId)
+      if (selectionUnchanged()) {
+        selectConversation(started.sessionId)
+      }
       await started.launchResult
       if (mounted.current) {
         setLaunch({ kind: 'idle' })
@@ -190,7 +195,10 @@ export function useGeneralChatController(hostId: ExecutionHostId, target: Runtim
         }
         if (started) {
           setOpening(null)
-          if (useGeneralChatSelection.getState().sessionId === started.sessionId) {
+          if (
+            selectionUnchanged() &&
+            useGeneralChatSelection.getState().sessionId === started.sessionId
+          ) {
             selectConversation(sessionId)
           }
         }
@@ -207,7 +215,10 @@ export function useGeneralChatController(hostId: ExecutionHostId, target: Runtim
     busy,
     conversations,
     conversation,
-    selectConversation,
+    selectConversation: (id: string | null) => {
+      navigationRevision.current += 1
+      selectConversation(id)
+    },
     providers,
     provider,
     providerReady,

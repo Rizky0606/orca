@@ -31,8 +31,9 @@ export function NativeChatTextAttachmentScope({
 function StructuredAttachmentScope({ children }: { children: ReactNode }) {
   const imageOwner = useContext(NativeChatMarkdownImageOwnerContext)
   const context = imageOwner?.runtimeContext ?? null
+  const target = imageOwner?.attachmentTarget ?? context?.target ?? null
   const visible = imageOwner?.isVisible ?? true
-  const owner = JSON.stringify(context)
+  const owner = JSON.stringify([context, target])
   const [selection, setSelection] = useState<{
     owner: string
     path: string
@@ -58,7 +59,7 @@ function StructuredAttachmentScope({ children }: { children: ReactNode }) {
         <NativeChatTextAttachmentPreview
           key={JSON.stringify([selected.path, context])}
           {...selected}
-          target={context?.target ?? null}
+          target={target}
           onClose={() => setSelection(null)}
         />
       ) : null}
@@ -77,7 +78,8 @@ function AttachmentButton({
   useUiLanguageRevision()
   const [open, setOpen] = useState(false)
   const opener = useContext(NativeChatTextAttachmentOpener)
-  const visible = useContext(NativeChatMarkdownImageOwnerContext)?.isVisible ?? true
+  const imageOwner = useContext(NativeChatMarkdownImageOwnerContext)
+  const visible = imageOwner?.isVisible ?? true
   if (open && !visible) {
     setOpen(false)
   }
@@ -97,7 +99,7 @@ function AttachmentButton({
       {open && visible ? (
         <NativeChatTextAttachmentPreview
           path={path}
-          target={runtimeContext?.target ?? null}
+          target={imageOwner?.attachmentTarget ?? runtimeContext?.target ?? null}
           onClose={() => setOpen(false)}
         />
       ) : null}

@@ -48,17 +48,19 @@ export function NativeChatTabTranscriptScope({
   isVisible,
   sessionId,
   target,
+  attachmentTarget,
   children
 }: {
   tabId: string
   isVisible: boolean
   sessionId: string | null
   target?: RuntimeClientTarget
+  attachmentTarget?: RuntimeClientTarget
   children: ReactNode
 }): React.JSX.Element {
   const visualOwner = useNativeChatTabVisualOwner(target ?? null, sessionId, tabId)
   const existence = useNativeChatTabFileLinkExistence(tabId)
-  const image = useNativeChatTabMarkdownImageOwner(tabId, isVisible, sessionId)
+  const image = useNativeChatTabMarkdownImageOwner(tabId, isVisible, sessionId, attachmentTarget)
   return (
     <NativeChatTranscriptScope value={{ visualOwner, image, existence }}>
       {children}

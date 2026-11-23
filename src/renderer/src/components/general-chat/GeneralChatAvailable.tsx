@@ -283,6 +283,7 @@ export function GeneralChatAvailable({
               <NativeChatHostOutageOwner target={target}>
                 <NativeChatComposerEditorOwner>
                   <NativeChatView
+                    allowWorkspaceIndependentAttachments
                     mode="structured"
                     tabId={conversation.tabId}
                     sessionId={conversation.sessionId}

@@ -8,6 +8,7 @@ import {
   selectWorktreesByRepo
 } from '@/store/workspaces/catalog/workspace-record-fields'
 import type { AppState } from '@/store/types'
+import { useGeneralChatSelection } from '@/components/general-chat/general-chat-selection-store'
 
 export type RuntimeSessionMirrorTargetInputs = Pick<
   AppState,
@@ -46,9 +47,11 @@ export type RuntimeSessionMirrorEnvironmentKeys = {
 }
 
 export function buildRuntimeSessionMirrorEnvironmentKeys(
-  inputs: RuntimeSessionMirrorTargetInputs
+  inputs: RuntimeSessionMirrorTargetInputs,
+  generalChatHostId?: string | null
 ): RuntimeSessionMirrorEnvironmentKeys {
   const targets = getReachableRuntimeSessionMirrorTargets({
+    generalChatHostId,
     settings: { activeRuntimeEnvironmentId: inputs.activeRuntimeEnvironmentId },
     repos: inputs.repos,
     worktreesByRepo: selectWorktreesByRepo(inputs),
@@ -74,37 +77,9 @@ export function buildRuntimeSessionMirrorEnvironmentKeys(
 export function useRuntimeSessionMirrorEnvironmentKeys(): RuntimeSessionMirrorEnvironmentKeys {
   // Agent/tab writes are hot; rescan ownership only when its sources change.
   const inputs = useAppStoreWithHostStatuses(selectRuntimeSessionMirrorTargetInputs, shallow)
-  const {
-    activeRuntimeEnvironmentId,
-    repos,
-    worktreesByRepo,
-    detectedWorktreesByRepo,
-    projectGroups,
-    restoredRuntimeHostIdByWorkspaceSessionKey,
-    runtimeEnvironments,
-    runtimeStatusByEnvironmentId
-  } = inputs
+  const generalChatHostId = useGeneralChatSelection((state) => state.hostId)
   return useMemo(
-    () =>
-      buildRuntimeSessionMirrorEnvironmentKeys({
-        activeRuntimeEnvironmentId,
-        repos,
-        worktreesByRepo,
-        detectedWorktreesByRepo,
-        projectGroups,
-        restoredRuntimeHostIdByWorkspaceSessionKey,
-        runtimeEnvironments,
-        runtimeStatusByEnvironmentId
-      }),
-    [
-      activeRuntimeEnvironmentId,
-      repos,
-      worktreesByRepo,
-      detectedWorktreesByRepo,
-      projectGroups,
-      restoredRuntimeHostIdByWorkspaceSessionKey,
-      runtimeEnvironments,
-      runtimeStatusByEnvironmentId
-    ]
+    () => buildRuntimeSessionMirrorEnvironmentKeys(inputs, generalChatHostId),
+    [inputs, generalChatHostId]
   )
 }

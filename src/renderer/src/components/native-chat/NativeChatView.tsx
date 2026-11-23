@@ -20,6 +20,7 @@ export default function NativeChatView(props: NativeChatViewProps): React.JSX.El
           isVisible={props.isVisible}
           sessionId={props.sessionId}
           target={props.target}
+          attachmentTarget={props.allowWorkspaceIndependentAttachments ? props.target : undefined}
         >
           <NativeChatWorkersProvider
             target={props.target}

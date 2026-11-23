@@ -141,6 +141,7 @@ export function NativeChatUserMessageRow({
             <>
               <NativeChatImageAttachments
                 blocks={prose}
+                userAttachments={structuredAttachments}
                 runtimeContext={runtimeContext}
                 enablePreview={runtimeContext !== undefined}
               />
@@ -171,6 +172,7 @@ export function NativeChatUserMessageRow({
           ) : (
             <NativeChatImageAttachments
               blocks={prose}
+              userAttachments={structuredAttachments}
               runtimeContext={runtimeContext}
               enablePreview={runtimeContext !== undefined}
             />

@@ -32,6 +32,7 @@ export type NativeChatStructuredViewProps = {
   target: RuntimeClientTarget
   agent: AgentType
   worktreeId?: string
+  allowWorkspaceIndependentAttachments?: boolean
   isVisible: boolean
   /** This pane's split group holds focus; a revealed sibling column must not take the caret. */
   isFocusedGroup: boolean

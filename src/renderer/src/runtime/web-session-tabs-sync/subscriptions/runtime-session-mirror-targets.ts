@@ -34,6 +34,7 @@ export type RuntimeSessionMirrorTargetState = Omit<
   WorktreeRuntimeOwnerState,
   'runtimeEnvironments'
 > & {
+  generalChatHostId?: string | null
   runtimeEnvironments?: readonly RuntimeMirrorEnvironment[]
   runtimeStatusByEnvironmentId?: ReadonlyMap<string, RuntimeMirrorStatus>
 }

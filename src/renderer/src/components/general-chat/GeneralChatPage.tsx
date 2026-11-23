@@ -175,10 +175,17 @@ export function GeneralChatHostUnavailable({
 
 export default function GeneralChatPage(): React.JSX.Element {
   const t = useTranslate()
-  const { hosts, selectedHost, selectHost, availability, target, pairingRevision } =
+  const { hosts, selectedHost, selectHost, availability, target, pairingRevision, catalogPending } =
     useGeneralChatHosts()
   let content: ReactNode
-  if (!selectedHost) {
+  if (catalogPending) {
+    content = (
+      <GeneralChatEmptyState
+        state="working"
+        title={t('generalChat.loadingComputers', 'Loading computers…')}
+      />
+    )
+  } else if (!selectedHost) {
     content = (
       <GeneralChatEmptyState
         title={t('generalChat.chooseHost', 'Choose where to chat')}

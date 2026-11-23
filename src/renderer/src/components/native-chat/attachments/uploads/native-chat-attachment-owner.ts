@@ -163,6 +163,8 @@ export function resolveNativeChatAgentStagingTarget(
 
 export type NativeChatStructuredAttachmentSession = {
   sessionId: string
+  runtime?: 'local' | 'remote'
+  allowWorkspaceIndependentAttachments?: boolean
   /** Files belong to the draft until its future session can receive them. */
   attachmentStagingScope?: string
   /** Null: the chat runs on this machine. */
@@ -170,6 +172,32 @@ export type NativeChatStructuredAttachmentSession = {
   /** The host has not confirmed this chat, so nothing can be uploaded into it. */
   sessionPending?: boolean
   sessionPendingNotice?: string
+}
+
+export function resolveNativeChatStructuredSessionAttachmentOwner(
+  session: NativeChatStructuredAttachmentSession
+): NativeChatAttachmentOwner | null {
+  if (session.attachmentStagingScope) {
+    return {
+      kind: 'local',
+      structuredSessionId: session.sessionId,
+      stagingScope: session.attachmentStagingScope
+    }
+  }
+  if (session.runtimeEnvironmentId !== null) {
+    return session.sessionPending
+      ? { kind: 'not-ready', notice: session.sessionPendingNotice }
+      : resolveNativeChatRuntimeSessionAttachmentOwner({
+          sessionId: session.sessionId,
+          runtimeEnvironmentId: session.runtimeEnvironmentId
+        })
+  }
+  // The structured transport already knows its runtime, even for workspaces absent from the sidebar.
+  return session.allowWorkspaceIndependentAttachments &&
+    session.runtime === 'local' &&
+    !isWebClientLocation()
+    ? { kind: 'local', structuredSessionId: session.sessionId }
+    : null
 }
 
 /** A structured chat on a paired server owns its attachments by where it runs, not by worktree. */

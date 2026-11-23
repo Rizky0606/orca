@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 import { Image as ImageIcon } from 'lucide-react'
 import { cn } from '../../../../lib/class-names'
 import { useTranslate } from '../../../../i18n/use-translate'
@@ -15,6 +15,10 @@ import { isNativeChatPastedImagePath } from '../../../../../../shared/native-cha
 import { nativeChatImageLabel } from './native-chat-image-label'
 import { chatImageAccess } from '../../../../lib/files/access/local-file-access'
 import { observeTranscriptVisibility } from './native-chat-image-visibility'
+import { NativeChatMarkdownImageOwnerContext } from './native-chat-markdown-image-owner'
+import { isCommittedAgentSessionAttachmentPath } from '../../../../../../shared/agent-session/agent-session-attachments'
+import { isWindowsAbsolutePathLike } from '../../../../../../shared/file-access/cross-platform-path'
+import { getRuntimeEnvironmentRevision } from '@/runtime/rpc/environment-revisions/runtime-environment-revision'
 
 function renderableImageSource(source: string | undefined): boolean {
   return Boolean(source && /^(?:https?|data|blob):/i.test(source))
@@ -204,18 +208,44 @@ export function NativeChatImageViewer({
 export function NativeChatImageAttachments({
   blocks,
   runtimeContext,
+  userAttachments,
   enablePreview = runtimeContext !== undefined,
   className
 }: {
   blocks: NativeChatBlock[]
   runtimeContext?: RuntimeFileOperationArgs | null
+  userAttachments?: boolean
   /** Callers without an image owner get label-only chips. */
   enablePreview?: boolean
   className?: string
 }): React.JSX.Element | null {
   const t = useTranslate()
+  const attachmentTarget = useContext(NativeChatMarkdownImageOwnerContext)?.attachmentTarget
   const [viewing, setViewing] = useState<number | null>(null)
   const images = blocks.filter((block) => block.type === 'image-ref')
+  const contextFor = (image: ImageRef | undefined) => {
+    const path = image?.path
+    if (!userAttachments || !attachmentTarget) {
+      return runtimeContext
+    }
+    if (!path) {
+      return null
+    }
+    if (attachmentTarget.kind === 'local') {
+      return path.startsWith('/') || isWindowsAbsolutePathLike(path)
+        ? { target: attachmentTarget, worktreeId: null, worktreePath: null }
+        : null
+    }
+    const pairingRevision = getRuntimeEnvironmentRevision(attachmentTarget.environmentId)
+    return pairingRevision !== undefined && isCommittedAgentSessionAttachmentPath(path)
+      ? {
+          target: attachmentTarget,
+          worktreeId: null,
+          worktreePath: null,
+          expectedEnvironmentPairingRevision: pairingRevision
+        }
+      : null
+  }
   if (images.length === 0) {
     return null
   }
@@ -263,12 +293,13 @@ export function NativeChatImageAttachments({
         const imageKeyBase = `${label}-${image.url ?? ''}-${image.path ?? ''}`
         const occurrence = imageKeyCounts.get(imageKeyBase) ?? 0
         imageKeyCounts.set(imageKeyBase, occurrence + 1)
-        const identity = transcriptImageIdentity(image, runtimeContext)
+        const context = contextFor(image)
+        const identity = transcriptImageIdentity(image, context)
         return (
           <NativeChatImageTile
             key={`${imageKeyBase}-${identity}-${occurrence}`}
             block={image}
-            runtimeContext={runtimeContext}
+            runtimeContext={context}
             onOpen={() => setViewing(index)}
           />
         )
@@ -277,7 +308,7 @@ export function NativeChatImageAttachments({
         blocks={images}
         index={viewing}
         onIndexChange={setViewing}
-        runtimeContext={runtimeContext}
+        runtimeContext={contextFor(viewing === null ? undefined : images[viewing])}
       />
     </div>
   )

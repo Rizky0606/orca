@@ -20,6 +20,10 @@ export function useGeneralChatHosts() {
   const selectHost = useGeneralChatSelection((state) => state.selectHost)
   const statuses = useRuntimeStatusByEnvironmentId()
   const web = isWebClientLocation()
+  const catalogReady = useAppStore(
+    (state) => state.runtimeEnvironmentCatalogHydrated && (web || state.sshTargetsHydrated)
+  )
+  const runtimeCatalogSettled = useAppStore((state) => state.runtimeEnvironmentCatalogSettled)
   const hosts = useAppStore(
     useShallow((state) => {
       const registry = buildExecutionHostRegistry({
@@ -36,7 +40,7 @@ export function useGeneralChatHosts() {
       )
     })
   )
-  const hostId = savedHostId ?? (hosts.size === 1 ? [...hosts.keys()][0] : null)
+  const hostId = savedHostId ?? (catalogReady && hosts.size === 1 ? [...hosts.keys()][0] : null)
   useEffect(() => {
     if (hostId && useGeneralChatSelection.getState().hostId === null) {
       selectHost(hostId)
@@ -70,6 +74,7 @@ export function useGeneralChatHosts() {
     selectedHost,
     selectHost,
     availability,
+    catalogPending: !runtimeCatalogSettled && !known,
     target,
     pairingRevision: status?.snapshot?.pairingRevision
   } as const

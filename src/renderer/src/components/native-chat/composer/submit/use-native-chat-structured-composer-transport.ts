@@ -85,7 +85,12 @@ export function nativeChatForkCommand(
 export function useNativeChatStructuredComposerTransport(args: {
   props: Pick<
     NativeChatStructuredViewProps,
-    'agent' | 'sessionId' | 'tabId' | 'target' | 'isVisible'
+    | 'agent'
+    | 'sessionId'
+    | 'tabId'
+    | 'target'
+    | 'isVisible'
+    | 'allowWorkspaceIndependentAttachments'
   >
   controller: ReturnType<typeof useStructuredAgentSession>
   /** The session's fork, run by `/fork` and `/btw`. */
@@ -231,6 +236,7 @@ export function useNativeChatStructuredComposerTransport(args: {
       onSubmitted,
       captureAdmittedReveal,
       runtime: props.target.kind === 'local' ? 'local' : 'remote',
+      allowWorkspaceIndependentAttachments: props.allowWorkspaceIndependentAttachments,
       sessionId: props.sessionId,
       runtimeEnvironmentId:
         props.target.kind === 'local' ? null : (props.target.environmentId ?? null),
@@ -254,6 +260,7 @@ export function useNativeChatStructuredComposerTransport(args: {
     captureAdmittedReveal,
     optionPickerRequest,
     props.agent,
+    props.allowWorkspaceIndependentAttachments,
     props.sessionId,
     props.target,
     sendBlockedReason,

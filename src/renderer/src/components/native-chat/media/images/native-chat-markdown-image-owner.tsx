@@ -6,12 +6,14 @@ import {
 import { useNativeChatFileLinkContext } from '../../links/actions/use-native-chat-file-link-context'
 import { runtimeTargetEnvironmentId } from '@/runtime/rpc/targets/runtime-client-target'
 import type { NativeChatFileLinkContext } from '../../links/actions/native-chat-file-link-context'
+import type { RuntimeClientTarget } from '../../../../../../shared/remote-runtime/host-catalog/runtime-client-target'
 
 export type NativeChatMarkdownImageOwner = {
   fileLinkContext: NativeChatFileLinkContext | null
   runtimeContext: NativeChatImageRuntimeContext
   isVisible: boolean
   sessionId?: string | null
+  attachmentTarget?: RuntimeClientTarget
 }
 
 export const NativeChatMarkdownImageOwnerContext =
@@ -20,13 +22,14 @@ export const NativeChatMarkdownImageOwnerContext =
 export function useNativeChatTabMarkdownImageOwner(
   tabId: string,
   isVisible: boolean,
-  sessionId: string | null
+  sessionId: string | null,
+  attachmentTarget?: RuntimeClientTarget
 ): NativeChatMarkdownImageOwner {
   const fileLinkContext = useNativeChatFileLinkContext(tabId)
   const runtimeContext = useNativeChatImageRuntimeContext(tabId)
   return useMemo(
-    () => ({ fileLinkContext, runtimeContext, isVisible, sessionId }),
-    [fileLinkContext, runtimeContext, isVisible, sessionId]
+    () => ({ fileLinkContext, runtimeContext, isVisible, sessionId, attachmentTarget }),
+    [fileLinkContext, runtimeContext, isVisible, sessionId, attachmentTarget]
   )
 }
 

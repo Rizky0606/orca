@@ -76,6 +76,7 @@ export type NativeChatStructuredComposerTransport = {
   /** The session behind this composer; a real user send relinquishes orchestration ownership. */
   sessionId: string
   attachmentStagingScope?: string
+  allowWorkspaceIndependentAttachments?: boolean
   /** Owning runtime for that report; null is the local runtime. */
   runtimeEnvironmentId: string | null
   /** The host has not confirmed this chat: session uploads wait for publication. */

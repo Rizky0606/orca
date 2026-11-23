@@ -23,8 +23,11 @@ function addWorktreeOwner(
   addRuntimeExecutionHost(ids, worktree.hostId)
 }
 
-export function getRuntimeSessionMirrorEnvironmentIds(state: WorktreeRuntimeOwnerState): string[] {
+export function getRuntimeSessionMirrorEnvironmentIds(
+  state: WorktreeRuntimeOwnerState & { generalChatHostId?: string | null }
+): string[] {
   const ids = new Set<string>()
+  addRuntimeExecutionHost(ids, state.generalChatHostId)
   const activeRuntimeEnvironmentId = state.settings?.activeRuntimeEnvironmentId?.trim()
   if (activeRuntimeEnvironmentId) {
     ids.add(activeRuntimeEnvironmentId)
