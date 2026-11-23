@@ -105,7 +105,7 @@ export function buildLineageRowProjection(
           ? getFolderWorkspaceRowGeometry({
               experimentalNewWorktreeCardStyle: newCardStyle,
               isFolderBackedWorkspaceChild:
-                groupBy === 'repo' && row.projectGroup.createdFrom === 'folder-scan',
+                groupBy === 'repo' && row.projectGroup?.createdFrom === 'folder-scan',
               isGrouped: groupBy !== 'none',
               groupDepth: row.groupDepth,
               lineageDepth: row.depth

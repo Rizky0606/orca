@@ -68,9 +68,15 @@ export function runtimeVisibleFolderWorkspaces(store: CatalogSource | null): Fol
     return folders
   }
   const groups = new Map(catalog.getProjectGroups().map((group) => [group.id, group]))
-  return folders.filter(
-    (folder) => !isGeneralChatFolderWorkspace(folder, groups.get(folder.projectGroupId))
-  )
+  return folders.flatMap((folder) => {
+    const group = groups.get(folder.projectGroupId)
+    if (isGeneralChatFolderWorkspace(folder, group)) {
+      return []
+    }
+    return [
+      group && isGeneralChatProjectGroup(group) ? { ...folder, sidebarUngrouped: true } : folder
+    ]
+  })
 }
 
 export type RuntimeHiddenRepos = {

@@ -5,6 +5,7 @@ import { normalizeFolderWorkspaces } from '../../shared/folder-workspaces/folder
 import { getDefaultPersistedState } from '../../shared/orca-profiles/constants'
 import { normalizeProjectGroups } from '../../shared/project/groups/project-groups'
 import type { Repo } from '../../shared/repository/repo-types'
+import { planSidebarRows } from '../../shared/sidebar-list/sidebar-row-plan'
 import { getCanonicalUserDataPath } from '../persistence/loading-store/user-data-path'
 import { FolderWorkspacePersistenceOperations } from '../persistence/restoring-sessions/folder-workspace-operations'
 import { ProjectGroupPersistenceOperations } from '../persistence/tracking-repos/project-group-operations'
@@ -168,22 +169,71 @@ it('keeps unrelated local and SSH workspaces visible under the internal group', 
     connectionId: 'ssh-1'
   })
   const samePath = store.createFolderWorkspace({ projectGroupId: group.id, folderPath: root })
+  const visible = runtimeVisibleFolderWorkspaces(store)
+  const rows = planSidebarRows({
+    groupBy: 'repo',
+    sortBy: 'smart',
+    worktrees: [],
+    repoMap: new Map(),
+    prGroupOf: () => 'in-progress',
+    workspaceStatuses: [],
+    projectOrderBy: 'manual',
+    lineageById: {},
+    worktreeMap: new Map(),
+    nestLineage: false,
+    projectGroups: runtimeVisibleProjectGroups(store),
+    placeholderRepoIds: new Set(),
+    importedWorktreesByRepo: new Map(),
+    newExternalWorktreesInboxByRepo: new Map(),
+    pendingCreations: [],
+    folderWorkspaces: visible,
+    defaultHostId: 'local',
+    pinnedDisplayPolicy: 'single-location',
+    filterRepoIds: []
+  }).render(new Set())
   expect(
-    runtimeVisibleFolderWorkspaces(store)
-      .map(({ id }) => id)
-      .sort()
-  ).toEqual([local.id, remote.id, samePath.id].sort())
+    rows
+      .filter((row) => row.type === 'folder-workspace')
+      .map(({ folderWorkspace, projectGroup, groupDepth }) => ({
+        id: folderWorkspace.id,
+        group: projectGroup?.id,
+        groupDepth
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id))
+  ).toEqual(
+    [local.id, remote.id, samePath.id].sort().map((id) => ({ id, group: undefined, groupDepth: 0 }))
+  )
+  expect(rows.some((row) => row.type === 'header' && row.projectGroup?.id === group.id)).toBe(false)
+  expect(rows[0]).toMatchObject({ type: 'header', key: 'project-group:ungrouped', count: 3 })
+  expect(store.getFolderWorkspaces().map(({ projectGroupId }) => projectGroupId)).toEqual([
+    group.id,
+    group.id,
+    group.id,
+    group.id
+  ])
 })
 
 it('retains the workspace identity and repairs group and workspace paths after relocation', async () => {
   const store = makeStore()
-  const original = await ensureGeneralChatHome({ rootFolder: generalChatRootFolder }, store)
   const relocated = join(getCanonicalUserDataPath(), 'relocated-general-chat')
+  const unrelatedGroup = store.createProjectGroup({
+    name: 'Other folder',
+    parentPath: relocated,
+    createdFrom: 'manual'
+  })
+  const unrelatedFolder = store.createFolderWorkspace({ projectGroupId: unrelatedGroup.id })
+  const original = await ensureGeneralChatHome({ rootFolder: generalChatRootFolder }, store)
+  const originalGroup = store.getProjectGroups().find(({ internalPurpose }) => internalPurpose)
+  store.updateFolderWorkspace(unrelatedFolder.id, { sortOrder: Number.MAX_SAFE_INTEGER })
   store.reload()
 
   expect(await ensureGeneralChatHome({ rootFolder: () => relocated }, store)).toEqual(original)
-  expect(store.getProjectGroups()).toEqual([expect.objectContaining({ parentPath: relocated })])
+  expect(store.getProjectGroups()).toEqual([
+    unrelatedGroup,
+    expect.objectContaining({ id: originalGroup?.id, parentPath: relocated })
+  ])
   expect(store.getFolderWorkspaces()).toEqual([
+    expect.objectContaining({ id: unrelatedFolder.id, folderPath: relocated }),
     expect.objectContaining({ id: original.folderWorkspaceId, folderPath: relocated })
   ])
   expect((await stat(relocated)).isDirectory()).toBe(true)

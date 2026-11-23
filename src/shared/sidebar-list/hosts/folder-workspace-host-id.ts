@@ -6,7 +6,7 @@ import { getFolderWorkspaceExecutionHostIdForRows } from './host-filtering'
 /** Host headers, filtering and reveal must agree on the folder's execution owner. */
 export function getFolderWorkspaceHostId(
   folderWorkspace: Pick<FolderWorkspace, 'connectionId' | 'executionHostId'>,
-  projectGroup: Pick<ProjectGroup, 'connectionId' | 'executionHostId'>,
+  projectGroup: Pick<ProjectGroup, 'connectionId' | 'executionHostId'> | undefined,
   defaultHostId: ExecutionHostId
 ): ExecutionHostId {
   return getFolderWorkspaceExecutionHostIdForRows({ folderWorkspace, projectGroup, defaultHostId })

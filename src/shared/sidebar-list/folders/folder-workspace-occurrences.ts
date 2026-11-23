@@ -1,6 +1,7 @@
 import { getFolderWorkspaceWorktree } from '../../folder-workspaces/folder-workspace-worktree'
 import { getWorktreeHostIdentity } from '../../worktree/host-qualified-identity'
 import { NO_HIDDEN_PROJECTS, type HiddenProjects } from '../../project/catalog/hidden-projects'
+import { UNGROUPED_PROJECT_GROUP_KEY } from '../../project/groups/project-groups'
 import type { Worktree } from '../../worktree/types'
 import type { OccurrenceSectionPath } from '../lineage/worktree-occurrence-plan'
 import { getVisibleLineagePlacement } from '../lineage/worktree-lineage-placement'
@@ -12,12 +13,14 @@ import {
 const FOLDER_LANE_SECTION_PREFIX = 'folder-lane:'
 
 /** A project group's folder workspaces and the rows nested under them, under that group's header. */
-export function getFolderLaneSectionKey(projectGroupId: string): string {
-  return `${FOLDER_LANE_SECTION_PREFIX}${projectGroupId}`
+export function getFolderLaneSectionKey(projectGroupId: string | null): string {
+  return projectGroupId === null
+    ? UNGROUPED_PROJECT_GROUP_KEY
+    : `${FOLDER_LANE_SECTION_PREFIX}${projectGroupId}`
 }
 
 export function isFolderLaneSectionKey(key: string): boolean {
-  return key.startsWith(FOLDER_LANE_SECTION_PREFIX)
+  return key === UNGROUPED_PROJECT_GROUP_KEY || key.startsWith(FOLDER_LANE_SECTION_PREFIX)
 }
 
 /** Each folder-bound row's grouping root: its top listed ancestor below the folder. Hidden rows
@@ -84,11 +87,11 @@ export function getSidebarFolderOccurrences(
   const rowOf = (pair: RenderableFolderWorkspace): Worktree =>
     getFolderWorkspaceWorktree(pair.folderWorkspace)
   const pairByIdentity = new Map<string, RenderableFolderWorkspace>()
-  const groupIdByIdentity = new Map<string, string>()
+  const groupIdByIdentity = new Map<string, string | null>()
   for (const pair of sorted) {
     const identity = getWorktreeHostIdentity(rowOf(pair))
     pairByIdentity.set(identity, pair)
-    groupIdByIdentity.set(identity, pair.projectGroup.id)
+    groupIdByIdentity.set(identity, pair.projectGroup?.id ?? null)
   }
   const isFolder = (row: Worktree): boolean => pairByIdentity.has(getWorktreeHostIdentity(row))
   const folderRows = sorted.map(rowOf)
@@ -123,11 +126,12 @@ export function getSidebarFolderOccurrences(
       displayRootByIdentity: ReadonlyMap<string, Worktree>,
       childrenByParentIdentity: ReadonlyMap<string, readonly Worktree[]>
     ) {
-      const sectionItemsByGroupId = new Map<string, Worktree[]>()
+      const sectionItemsByGroupId = new Map<string | null, Worktree[]>()
       for (const pair of sorted) {
-        const items = sectionItemsByGroupId.get(pair.projectGroup.id) ?? []
+        const groupId = pair.projectGroup?.id ?? null
+        const items = sectionItemsByGroupId.get(groupId) ?? []
         items.push(rowOf(pair))
-        sectionItemsByGroupId.set(pair.projectGroup.id, items)
+        sectionItemsByGroupId.set(groupId, items)
       }
       const groupingRootByIdentity = new Map(displayRootByIdentity)
       const bound = new Set<Worktree>()
@@ -158,7 +162,7 @@ export function getSidebarFolderOccurrences(
 
 /** Project grouping: one natural section per project group's folders and their nested rows. */
 export function getFolderLaneSections(
-  folderBound: { sectionItemsByGroupId: ReadonlyMap<string, Worktree[]> } | null,
+  folderBound: { sectionItemsByGroupId: ReadonlyMap<string | null, Worktree[]> } | null,
   projectGroupPaths: ReadonlyMap<string, OccurrenceSectionPath>
 ) {
   return [...(folderBound?.sectionItemsByGroupId ?? [])].map(([groupId, items]) => {
@@ -168,7 +172,7 @@ export function getFolderLaneSections(
       group: { label: '', items: [], repoIds: new Set<string>() },
       placement: 'natural' as const,
       items,
-      revealPath: { key, parent: projectGroupPaths.get(groupId) }
+      revealPath: { key, parent: groupId === null ? undefined : projectGroupPaths.get(groupId) }
     }
   })
 }

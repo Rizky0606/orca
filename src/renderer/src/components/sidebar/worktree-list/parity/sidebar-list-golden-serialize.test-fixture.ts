@@ -135,7 +135,7 @@ export function serializeSidebarRow(
     case 'folder-workspace':
       return line('FOLDER', [
         field('key', row.key),
-        field('projectGroup', row.projectGroup.id),
+        field('projectGroup', row.projectGroup?.id),
         field('depth', row.depth),
         field('groupDepth', row.groupDepth)
       ])

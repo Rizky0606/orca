@@ -305,7 +305,7 @@ export function projectParityRows(
         ]
       case 'folder-workspace':
         return [
-          `FOLDER ${row.key} group=${row.projectGroup.id} depth=${row.depth}/${row.groupDepth}${activeRowKeys.has(row.key) ? ' ACTIVE' : ''}`
+          `FOLDER ${row.key} group=${row.projectGroup?.id ?? '-'} depth=${row.depth}/${row.groupDepth}${activeRowKeys.has(row.key) ? ' ACTIVE' : ''}`
         ]
       case 'pending-creation':
         return [`PENDING ${row.key}`]

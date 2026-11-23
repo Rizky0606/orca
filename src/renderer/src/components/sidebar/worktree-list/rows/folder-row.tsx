@@ -113,7 +113,7 @@ export function renderFolderWorkspaceOption(args: {
   const geometry = getFolderWorkspaceRowGeometry({
     experimentalNewWorktreeCardStyle: ctx.newCardStyle,
     isFolderBackedWorkspaceChild:
-      ctx.groupBy === 'repo' && row.projectGroup.createdFrom === 'folder-scan',
+      ctx.groupBy === 'repo' && row.projectGroup?.createdFrom === 'folder-scan',
     isGrouped: ctx.groupBy !== 'none',
     groupDepth: row.groupDepth,
     lineageDepth: row.depth

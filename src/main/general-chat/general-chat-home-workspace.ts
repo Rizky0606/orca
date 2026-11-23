@@ -46,13 +46,15 @@ async function acquireGeneralChatHome(
   )
   const groups = store.getProjectGroups().filter((group) => isGeneralChatProjectGroup(group, root))
   const groupsById = new Map(groups.map((group) => [group.id, group]))
-  const existing = store
+  const candidates = store
     .getFolderWorkspaces()
-    .find(
+    .filter(
       (workspace) =>
         groupsById.has(workspace.projectGroupId) &&
         isGeneralChatFolderWorkspace(workspace, groupsById.get(workspace.projectGroupId), root)
     )
+  const existing =
+    candidates.find((workspace) => workspace.internalPurpose === 'general-chat') ?? candidates[0]
   const existingGroup = existing
     ? groupsById.get(existing.projectGroupId)
     : (groups.find((group) => group.internalPurpose === 'general-chat') ?? groups[0])

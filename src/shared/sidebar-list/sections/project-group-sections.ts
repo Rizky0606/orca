@@ -9,6 +9,8 @@ import type { SectionAppendContext } from './group-sections'
 import type { OrderedGroupEntry } from './worktree-group-entry'
 import { appendWorktreeRows } from './row-builders'
 import { getFolderLaneSectionKey } from '../folders/folder-workspace-occurrences'
+import { getLaneHostWorktreeCounts, getLaneHostWorktreeIds } from '../hosts/host-labels'
+import { withRepoSectionDisplayLabels } from './project-section-order'
 import { walkProjectGroupTree } from './project-group-tree'
 
 export function appendProjectGroupSections(
@@ -21,12 +23,40 @@ export function appendProjectGroupSections(
     repoOrder: Map<string, number> | undefined
   }
 ): void {
-  const { result, collapsedGroups } = ctx
+  const { result, collapsedGroups, repoOf, defaultHostId } = ctx
+  const ungroupedFolders = args.folderWorkspaces.filter(({ projectGroup }) => !projectGroup)
+  if (ungroupedFolders.length > 0) {
+    const key = getFolderLaneSectionKey(null)
+    result.push({
+      type: 'header',
+      key,
+      label: 'Ungrouped',
+      count: ungroupedFolders.length,
+      icon: { kind: 'project' },
+      hostWorktreeCounts: getLaneHostWorktreeCounts([], ungroupedFolders, repoOf, defaultHostId),
+      hostWorktreeIds: getLaneHostWorktreeIds([], ungroupedFolders, repoOf, defaultHostId)
+    })
+    if (!collapsedGroups.has(key)) {
+      appendWorktreeRows(result, repoOf, ctx.occurrencePlan, {
+        collapsedGroups,
+        groupDepth: 0,
+        sectionKey: key,
+        hostContextLabelByWorktreeIdentity: ctx.mixedWorktreeHostContextLabels,
+        folderPairByIdentity: ctx.folderPairByIdentity
+      })
+    }
+  }
+  if (args.projectGroups.length === 0) {
+    appendOrderedGroups(ctx, withRepoSectionDisplayLabels(args.orderedGroups))
+    return
+  }
   // Folder membership is already resolved above grouping; only count here (#15362).
   const folderCountByGroupId = new Map<string, number>()
   for (const pair of args.folderWorkspaces) {
-    const groupId = pair.folderWorkspace.projectGroupId
-    folderCountByGroupId.set(groupId, (folderCountByGroupId.get(groupId) ?? 0) + 1)
+    const groupId = pair.projectGroup?.id
+    if (groupId) {
+      folderCountByGroupId.set(groupId, (folderCountByGroupId.get(groupId) ?? 0) + 1)
+    }
   }
   walkProjectGroupTree(
     {

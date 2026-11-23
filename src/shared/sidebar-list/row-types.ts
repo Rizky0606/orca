@@ -120,7 +120,7 @@ export type FolderWorkspaceRow = {
   type: 'folder-workspace'
   key: string
   folderWorkspace: FolderWorkspace
-  projectGroup: ProjectGroup
+  projectGroup: ProjectGroup | undefined
   depth: number
   groupDepth: number
   hostContextLabel?: string

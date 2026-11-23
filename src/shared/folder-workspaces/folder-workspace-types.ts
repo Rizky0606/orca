@@ -22,6 +22,8 @@ export type FolderWorkspace = {
   /** Host stamp for catalog rows and durable local ownership of internal workspaces. */
   executionHostId?: ExecutionHostId | null
   internalPurpose?: 'general-chat'
+  /** Catalog display only. The stored group still owns this workspace. */
+  sidebarUngrouped?: true
   /** Authenticated client that created this workspace. Missing means unknown legacy origin. */
   creatorProvenance?: WorkspaceCreatorProvenance
   linkedTask: WorkspaceLinkedItem | null

@@ -118,7 +118,9 @@ export function listReferenceWorkspaces(
       ...worktree,
       kind: 'folder',
       name: folder.name,
-      repo: groups.get(folder.projectGroupId)?.name ?? folder.projectGroupId,
+      repo: folder.sidebarUngrouped
+        ? folder.name
+        : (groups.get(folder.projectGroupId)?.name ?? folder.projectGroupId),
       linkedItems: getWorkspaceAttachments(worktree)
     })
   }

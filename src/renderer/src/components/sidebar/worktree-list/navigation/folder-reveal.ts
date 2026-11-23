@@ -115,9 +115,10 @@ export function getFolderWorkspaceRevealGroupKeys(
   const renderedGroupsById = new Map(projectGroups.map((group) => [group.id, group]))
   const keys: string[] = []
   const seen = new Set<string>()
-  let groupId: string | null = groupsById.has(folderWorkspace.projectGroupId)
-    ? folderWorkspace.projectGroupId
-    : null
+  const owningGroup = folderWorkspace.sidebarUngrouped
+    ? undefined
+    : groupsById.get(folderWorkspace.projectGroupId)
+  let groupId: string | null = owningGroup?.id ?? null
   while (groupId && !seen.has(groupId)) {
     seen.add(groupId)
     const group = renderedGroupsById.get(groupId)
@@ -129,8 +130,8 @@ export function getFolderWorkspaceRevealGroupKeys(
   }
 
   // Non-repo modes hide folders behind lane/host headers; derive their reveal keys from the grouping function.
-  const owningGroup = groupsById.get(folderWorkspace.projectGroupId)
-  if (options?.groupBy && options.groupBy !== 'repo' && owningGroup) {
+  const showFolder = owningGroup || folderWorkspace.sidebarUngrouped
+  if (options?.groupBy && options.groupBy !== 'repo' && showFolder) {
     const laneKey = getFolderWorkspaceLaneKey(
       { folderWorkspace, projectGroup: owningGroup },
       options.groupBy,
@@ -145,7 +146,10 @@ export function getFolderWorkspaceRevealGroupKeys(
         : laneKey
     )
   }
-  if (owningGroup && options?.defaultHostId) {
+  if (options?.groupBy === 'repo' && folderWorkspace.sidebarUngrouped) {
+    keys.push(getProjectGroupHeaderKey(null))
+  }
+  if (showFolder && options?.defaultHostId) {
     keys.push(
       `host:${getFolderWorkspaceHostId(folderWorkspace, owningGroup, options.defaultHostId)}`
     )

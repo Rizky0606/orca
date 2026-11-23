@@ -53,7 +53,6 @@ import type {
 } from './row-types'
 import { orderMainWorktreeFirst } from './sections/section-order'
 import { appendImportedWorktreeLines } from './sections/imported-worktree-lines'
-import { withRepoSectionDisplayLabels } from './sections/project-section-order'
 import { buildOrderedGroups } from './sections/worktree-grouping'
 import type { WorkspaceSortBy } from '../workspace-view/workspace-row-sort'
 
@@ -301,12 +300,9 @@ export function planSidebarRows(inputs: SidebarRowPlanInputs) {
       folderPairByIdentity: folders.pairByIdentity
     }
 
-    if (groupBy !== 'repo' || projectGroups.length === 0) {
-      appendOrderedGroups(
-        sectionContext,
-        groupBy === 'repo' ? withRepoSectionDisplayLabels(orderedGroups) : orderedGroups
-      )
-      return groupBy === 'repo' ? result : withImportedLines(result)
+    if (groupBy !== 'repo') {
+      appendOrderedGroups(sectionContext, orderedGroups)
+      return withImportedLines(result)
     }
 
     appendProjectGroupSections(sectionContext, {

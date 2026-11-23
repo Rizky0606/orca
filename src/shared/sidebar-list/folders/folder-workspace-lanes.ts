@@ -12,10 +12,9 @@ import { getPRLaneKey } from '../../workspace-view/workspace-pr-groups'
 import { compareCodePoints, compareSidebarText } from '../sorting/text-order'
 import type { WorktreeGroupBy } from '../row-types'
 
-/** Carry the owning ProjectGroup through emission: FolderWorkspaceRow requires it and emitters cannot resolve owners. */
 export type RenderableFolderWorkspace = {
   folderWorkspace: FolderWorkspace
-  projectGroup: ProjectGroup
+  projectGroup: ProjectGroup | undefined
 }
 
 /** Resolve membership before grouping so every mode renders the same folder workspaces (#15362); modes choose lanes only. */
@@ -26,16 +25,18 @@ export function getRenderableFolderWorkspaces(
   const projectGroupsById = new Map(projectGroups.map((group) => [group.id, group]))
   const renderable: RenderableFolderWorkspace[] = []
   for (const folderWorkspace of folderWorkspaces) {
-    const projectGroup = projectGroupsById.get(folderWorkspace.projectGroupId)
+    const projectGroup = folderWorkspace.sidebarUngrouped
+      ? undefined
+      : projectGroupsById.get(folderWorkspace.projectGroupId)
     // A group filtered out for host visibility legitimately hides its workspaces.
-    if (!projectGroup) {
+    if (!projectGroup && !folderWorkspace.sidebarUngrouped) {
       continue
     }
     // Stamp an unstamped folder the way catalog adoption does, so its card, label and section name
     // the host it runs on (folder-workspace-execution-host.ts).
     const hostId = folderWorkspace.executionHostId
       ? null
-      : getFolderWorkspaceHostId(folderWorkspace, projectGroups)
+      : getFolderWorkspaceHostId(folderWorkspace, projectGroup ? projectGroups : [])
     renderable.push({
       folderWorkspace:
         hostId && hostId !== LOCAL_EXECUTION_HOST_ID
