@@ -9,7 +9,6 @@ import type { Repo } from '../../../shared/repository/repo-types'
 import type { RepoHostTarget } from '../../../shared/repository/repo-host-identity'
 import {
   getRepoExecutionHostId,
-  isRepoOnCatalogHost,
   LOCAL_EXECUTION_HOST_ID
 } from '../../../shared/execution-host/execution-host'
 import { normalizeFolderWorkspaceName } from '../../../shared/folder-workspaces/folder-workspaces'
@@ -18,6 +17,7 @@ import { normalizeStoredTaskSourceContext } from '../../../shared/work-items/tas
 import { normalizeWorkspaceLinkedItem } from '../../../shared/workspace-attachments/workspace-linked-item'
 import { isWorkspaceLinkedItemSourceContextMatch } from '../../../shared/workspace-attachments/workspace-linked-item-source-context'
 import { folderWorkspaceKey } from '../../../shared/workspace/identity/workspace-scope'
+import { findGeneralChatHome } from '../../general-chat/general-chat-home'
 import { retireAtRestCommandContext } from '../../native-chat/agent-session-wire/options/at-rest-command-context'
 import { removeWorkspaceSessionOwnerEverywhere } from './session-owner-removal'
 import { findRepoRowForHostScopedWrite } from '../tracking-repos/repo-update-operations'
@@ -141,7 +141,8 @@ export class FolderWorkspacePersistenceOperations {
     workspace: FolderWorkspace,
     root: string
   ): FolderWorkspace | null {
-    if (!this.state.folderWorkspaces?.includes(workspace) || !isRepoOnCatalogHost(workspace)) {
+    const { projectGroups = [], folderWorkspaces = [] } = this.state
+    if (findGeneralChatHome(projectGroups, folderWorkspaces, root).workspace !== workspace) {
       return null
     }
     workspace.internalPurpose = 'general-chat'

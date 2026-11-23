@@ -194,6 +194,7 @@ it('relocates only the local home when persisted folder IDs collide across hosts
   const originalSshFolder = { ...sshFolder }
   store.state.folderWorkspaces.push(sshFolder)
 
+  expect(store.repairGeneralChatFolderWorkspace(sshFolder, root)).toBeNull()
   expect(await ensureGeneralChatHome({ rootFolder: generalChatRootFolder }, store)).toEqual(home)
   expect.soft(localFolder).toMatchObject({
     id: home.folderWorkspaceId,
@@ -202,6 +203,45 @@ it('relocates only the local home when persisted folder IDs collide across hosts
     connectionId: null
   })
   expect(sshFolder).toEqual(originalSshFolder)
+})
+
+it('refuses to repair an ordinary local folder in the General Chat group', async () => {
+  const store = makeStore()
+  const root = generalChatRootFolder()
+  await ensureGeneralChatHome({ rootFolder: generalChatRootFolder }, store)
+  const [group] = store.getProjectGroups()
+  const sibling = store.createFolderWorkspace({
+    projectGroupId: group.id,
+    name: 'User folder',
+    folderPath: join(root, 'user-folder')
+  })
+  const originalSibling = { ...sibling }
+
+  expect.soft(store.repairGeneralChatFolderWorkspace(sibling, root)).toBeNull()
+  expect(sibling).toEqual(originalSibling)
+})
+
+it('repairs an unambiguous legacy home without changing its workspace identity', async () => {
+  const store = makeStore()
+  const root = generalChatRootFolder()
+  const group = store.createProjectGroup({
+    name: 'General Chat',
+    parentPath: root,
+    createdFrom: 'manual'
+  })
+  const legacy = store.createFolderWorkspace({ projectGroupId: group.id })
+
+  expect(await ensureGeneralChatHome({ rootFolder: generalChatRootFolder }, store)).toEqual({
+    folderWorkspaceId: legacy.id,
+    worktreeId: `folder:${legacy.id}`
+  })
+  expect(store.getFolderWorkspaces()).toEqual([
+    expect.objectContaining({
+      id: legacy.id,
+      internalPurpose: 'general-chat',
+      executionHostId: 'local'
+    })
+  ])
 })
 
 it('keeps the local routing pin after profile reload even when an SSH repo overlaps', async () => {
