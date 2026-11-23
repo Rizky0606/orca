@@ -53,3 +53,17 @@ it('returns a structured refusal when the host has no workspace store', async ()
     error: { code: 'runtime_unavailable', message: 'runtime_unavailable' }
   })
 })
+
+it('returns a structured refusal when the store lacks folder-workspace persistence', async () => {
+  const store = createSqliteTestStore(Store)
+  Object.defineProperty(store, 'createFolderWorkspace', { value: undefined })
+  const dispatcher = new RpcDispatcher({
+    runtime: new OrcaRuntimeService(store),
+    methods: ALL_RPC_METHODS
+  })
+
+  expect(await dispatcher.dispatch(request)).toMatchObject({
+    ok: false,
+    error: { code: 'runtime_unavailable', message: 'runtime_unavailable' }
+  })
+})

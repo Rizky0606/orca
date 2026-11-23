@@ -18,6 +18,7 @@ import { MOBILE_RPC_METHOD_ALLOWLIST } from './runtime-rpc-mobile-method-allowli
 import { MOBILE_RPC_METHOD_ROUTES } from './runtime-rpc-mobile-method-routing'
 import { isUntaggedTrackerCall, withDefaultScopeServer } from './runtime-rpc-mobile-tracker-methods'
 import { parseExecutionHostId } from '../../../../shared/execution-host/execution-host'
+import { GENERAL_CHAT_ENSURE_HOME_METHOD } from '../../../../shared/general-chat/general-chat-contract'
 import { WorktreeRemove } from '../../../../shared/rpc-contract/workspaces/worktree-params'
 
 // Stamp proven scope at transport boundary; status.get has no connection context.
@@ -47,7 +48,18 @@ export class RuntimeRpcWebSocketDispatch extends RuntimeRpcMobileDevices {
     if (executionHost === undefined) {
       return request
     }
+    const replyError = (code: string, message: string): void => {
+      reply(JSON.stringify(this.buildError(request.id, code, message)))
+    }
     const target = parseExecutionHostId(typeof executionHost === 'string' ? executionHost : null)
+    // Home acquisition has no workspace selector to route it to an SSH owner.
+    if (target?.kind === 'ssh' && request.method === GENERAL_CHAT_ENSURE_HOME_METHOD) {
+      replyError(
+        'remote_runtime_unavailable',
+        'General Chat home acquisition is unavailable for SSH hosts'
+      )
+      return null
+    }
     if (target?.kind === 'local' || target?.kind === 'ssh') {
       return request
     }
@@ -62,15 +74,7 @@ export class RuntimeRpcWebSocketDispatch extends RuntimeRpcMobileDevices {
         }
       } catch (error) {
         // Ambiguous ownership must answer the phone instead of leaving it waiting.
-        reply(
-          JSON.stringify(
-            this.buildError(
-              request.id,
-              'invalid_argument',
-              error instanceof Error ? error.message : String(error)
-            )
-          )
-        )
+        replyError('invalid_argument', error instanceof Error ? error.message : String(error))
         return null
       }
     }
@@ -83,29 +87,14 @@ export class RuntimeRpcWebSocketDispatch extends RuntimeRpcMobileDevices {
       return local
     }
     if (!target) {
-      reply(
-        JSON.stringify(this.buildError(request.id, 'invalid_argument', 'Invalid executionHost'))
-      )
+      replyError('invalid_argument', 'Invalid executionHost')
     } else if (!socket) {
-      reply(
-        JSON.stringify(
-          this.buildError(
-            request.id,
-            'remote_runtime_unavailable',
-            'Servers are reachable only over an encrypted pairing'
-          )
-        )
+      replyError(
+        'remote_runtime_unavailable',
+        'Servers are reachable only over an encrypted pairing'
       )
     } else if (!this.mobileDesktopRelay) {
-      reply(
-        JSON.stringify(
-          this.buildError(
-            request.id,
-            'remote_runtime_unavailable',
-            'This computer does not relay to servers'
-          )
-        )
-      )
+      replyError('remote_runtime_unavailable', 'This computer does not relay to servers')
     } else {
       this.mobileDesktopRelay.forward(
         {
