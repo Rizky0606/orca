@@ -1,6 +1,8 @@
 import { getAppEnvironment } from '../../../shared/app-lifecycle/app-environment'
 import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { basename, dirname, join, resolve } from 'node:path'
+import { normalizeRuntimePathForComparison } from '../../../shared/file-access/cross-platform-path'
 import { hardenExistingSecureFile } from '../../../shared/secure-storage/secure-file'
 import { MOBILE_PAIRING_USERDATA_FILES } from '../../runtime/rpc/server/pairing/mobile-pairing-files'
 
@@ -34,6 +36,45 @@ export function getCanonicalUserDataPath(): string {
     _userDataDir = getAppEnvironment().getPath('userData')
   }
   return _userDataDir
+}
+
+export type ApplicationHomePaths = {
+  userData: string
+  appData: string
+  home: string
+  xdgDataHome?: string
+}
+
+const MACHINE_DATA_ROOT = /^\.orca-[a-f0-9]{8}$/u
+
+export function applicationHomeFolder(
+  name: string,
+  paths: ApplicationHomePaths = currentApplicationHomePaths()
+): string {
+  // app.setName can recase a default profile's path on case-insensitive disks.
+  const comparable = (path: string) => normalizeRuntimePathForComparison(path).toLowerCase()
+  const userData = comparable(paths.userData)
+  const standardProfiles = [
+    join(paths.appData, 'orca'),
+    join(paths.appData, 'orca-dev'),
+    join(paths.home, '.orca'),
+    ...(paths.xdgDataHome ? [join(paths.xdgDataHome, 'Orca')] : [])
+  ].map(comparable)
+  const machineDataRoot =
+    comparable(dirname(paths.userData)) === comparable(paths.home) &&
+    MACHINE_DATA_ROOT.test(basename(userData))
+  return standardProfiles.includes(userData) || machineDataRoot
+    ? join(paths.home, '.orca', name)
+    : join(paths.userData, name)
+}
+
+function currentApplicationHomePaths(): ApplicationHomePaths {
+  return {
+    userData: getCanonicalUserDataPath(),
+    appData: getAppEnvironment().getPath('appData'),
+    home: homedir(),
+    xdgDataHome: process.env.XDG_DATA_HOME || undefined
+  }
 }
 
 /** Copy registry/keypair together; retain originals for crash recovery and older builds. */

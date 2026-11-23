@@ -1,8 +1,6 @@
 // A bot's home folder: what it is (SOUL.md), what it remembers (MEMORY.md, memory/) and the files that point its agent at both.
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
-import { getAppEnvironment } from '../../shared/app-lifecycle/app-environment'
+import { dirname, join } from 'node:path'
 import { BOT_MEMORY_SEED_INTRO } from '../../shared/bot-memory-lines'
 import type { Bot } from '../../shared/bot-types'
 import { starterSoul } from '../../shared/bot-soul'
@@ -11,7 +9,10 @@ import { errnoCodeOrUnknown } from '../../shared/errors/errno-code'
 import type { ProjectGroup } from '../../shared/project/groups/project-group-types'
 import { getDiskBaselineSignature } from '../../shared/file-write/disk-baseline-signature'
 import { writeLocalTextFileWithDiskPrecondition } from '../filesystem/local-file-io/local-disk-write-precondition'
-import { getCanonicalUserDataPath } from '../persistence/loading-store/user-data-path'
+import {
+  applicationHomeFolder,
+  type ApplicationHomePaths
+} from '../persistence/loading-store/user-data-path'
 
 /** The disk a bot home lives on; only this computer's today, an SSH/WSL adapter later. */
 export type BotHomeFilesystem = {
@@ -79,44 +80,13 @@ export const localBotHomeFilesystem: BotHomeFilesystem = {
   removeTree: (path) => rm(path, { recursive: true, force: true })
 }
 
-export type BotsRootPaths = {
-  userData: string
-  appData: string
-  home: string
-  xdgDataHome?: string
-}
-
-// A shared-home SSH server's per-machine data root, `~/.orca-<machine key prefix>`.
-const MACHINE_DATA_ROOT = /^\.orca-[a-f0-9]{8}$/u
+export type BotsRootPaths = ApplicationHomePaths
 
 /** The hidden Bots project group's folder: `~/.orca/bots` for every profile a real setup runs on
  *  (desktop, shared dev, orcad's defaults, shared-home servers), `<userData>/bots` for any other
  *  data folder, so isolated runs never write into the real setup. */
-export function botsRootFolder(paths: BotsRootPaths = currentBotsRootPaths()): string {
-  // Case-folded: app.setName can recase a default profile's path on case-insensitive disks.
-  const comparable = (path: string) => normalizeRuntimePathForComparison(path).toLowerCase()
-  const userData = comparable(paths.userData)
-  const standardProfiles = [
-    join(paths.appData, 'orca'),
-    join(paths.appData, 'orca-dev'),
-    join(paths.home, '.orca'),
-    ...(paths.xdgDataHome ? [join(paths.xdgDataHome, 'Orca')] : [])
-  ].map(comparable)
-  const machineDataRoot =
-    comparable(dirname(paths.userData)) === comparable(paths.home) &&
-    MACHINE_DATA_ROOT.test(basename(userData))
-  return standardProfiles.includes(userData) || machineDataRoot
-    ? join(paths.home, '.orca', 'bots')
-    : join(paths.userData, 'bots')
-}
-
-function currentBotsRootPaths(): BotsRootPaths {
-  return {
-    userData: getCanonicalUserDataPath(),
-    appData: getAppEnvironment().getPath('appData'),
-    home: homedir(),
-    xdgDataHome: process.env.XDG_DATA_HOME || undefined
-  }
+export function botsRootFolder(paths?: BotsRootPaths): string {
+  return applicationHomeFolder('bots', paths)
 }
 
 /** Bots are listed as bots, never as a project. */

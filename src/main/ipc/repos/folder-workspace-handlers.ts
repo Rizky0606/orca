@@ -16,7 +16,7 @@ import {
   FolderWorkspaceUpdateArgs,
   parseProjectGroupIpcArgs
 } from './repo-ipc-arg-schemas'
-import { visibleFolderWorkspaces } from '../../persistence/migrating-orcad-catalog/source/catalog/orcad-source-visibility'
+import { runtimeVisibleFolderWorkspaces } from '../../runtime/workspaces/catalog/runtime-visible-catalog'
 import {
   isLocalWslMoveRow,
   shouldDropWslMoveProjectUpdate
@@ -27,7 +27,9 @@ export function registerFolderWorkspaceHandlers(
   store: Store,
   runtime: Pick<OrcaRuntimeService, 'deleteFolderWorkspace' | 'createFolderWorkspace'>
 ): void {
-  ipcMain.handle('folderWorkspaces:list', (): FolderWorkspace[] => visibleFolderWorkspaces(store))
+  ipcMain.handle('folderWorkspaces:list', (): FolderWorkspace[] =>
+    runtimeVisibleFolderWorkspaces(store)
+  )
 
   ipcMain.handle('folderWorkspaces:getPathStatus', async (_event, rawArgs: unknown) => {
     const args = parseProjectGroupIpcArgs(

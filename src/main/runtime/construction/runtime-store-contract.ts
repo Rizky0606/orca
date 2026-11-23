@@ -2,6 +2,11 @@ import type { Store } from '../../persistence/loading-store/store'
 import type { GlobalSettings } from '../../../shared/settings/global-settings-types'
 import type { VoiceSettings } from '../../../shared/speech/speech-types'
 
+export type GeneralChatHomeStore = Pick<
+  RuntimeStore,
+  'getProjectGroups' | 'createProjectGroup' | 'getFolderWorkspaces' | 'createFolderWorkspace'
+>
+
 export type RuntimeStore = {
   getRepos: Store['getRepos']
   getSshTargets?: Store['getSshTargets']
