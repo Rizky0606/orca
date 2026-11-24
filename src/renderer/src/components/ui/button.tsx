@@ -117,7 +117,7 @@ const Button = React.forwardRef<
       data-slot="button"
       data-variant={variant}
       data-size={size}
-      className={cn(buttonVariants({ variant, size, className }))}
+      className={cn('motion-reduce:transition-none', buttonVariants({ variant, size, className }))}
       {...props}
     />
   )

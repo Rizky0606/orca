@@ -10,6 +10,9 @@ import {
 import { getLocalProjectWorktreeGitOptions } from '../../workspaces/execution-host/project-runtime-git-options'
 import { resolveWorktreeHostRouting } from './catalog/worktree-launch-host-repo'
 import { isFloatingWorkspaceSelector } from '../../../shared/workspace/identity/floating-workspace-worktree'
+import { folderIdOfSelector } from '../../../shared/workspace/identity/workspace-scope'
+import type { FolderWorkspace } from '../../../shared/folder-workspaces/folder-workspace-types'
+import { findGeneralChatHome } from '../../general-chat/general-chat-home'
 import { RuntimeMarkdownTabOperations } from '../files/paths/runtime-markdown-tab-operations'
 export abstract class RuntimeWorkspaceFileTargets extends RuntimeMarkdownTabOperations {
   protected abstract floatingWorkspaceToResolvedWorktree(
@@ -60,8 +63,34 @@ export abstract class RuntimeWorkspaceFileTargets extends RuntimeMarkdownTabOper
     return { worktree, repo, executionHostId, localGitOptions }
   }
 
+  resolveRuntimeFileTarget(worktreeSelector: string) {
+    return this.resolveWorkspaceFileTarget(worktreeSelector)
+  }
+
+  protected generalChatWorkspaceForSelector(selector: string): FolderWorkspace | undefined {
+    const folderId = folderIdOfSelector(selector)
+    if (folderId === undefined) {
+      return undefined
+    }
+    const { workspace } = findGeneralChatHome(
+      this.store?.getProjectGroups?.() ?? [],
+      this.store?.getFolderWorkspaces?.() ?? []
+    )
+    return workspace?.id === folderId ? workspace : undefined
+  }
+
+  protected resolveStructuredAgentSessionFileTarget(worktreeSelector: string) {
+    const folder = this.generalChatWorkspaceForSelector(worktreeSelector)
+    return folder
+      ? this.resolveWorkspaceFileTarget(worktreeSelector, folder)
+      : this.resolveRuntimeFileTarget(worktreeSelector)
+  }
+
   // Resolve the worktree's filesystem host; getRepo(id) conflates host twins, runtime targets, unresolved owners and local paths (#11163).
-  async resolveRuntimeFileTarget(worktreeSelector: string): Promise<{
+  private async resolveWorkspaceFileTarget(
+    worktreeSelector: string,
+    folder?: FolderWorkspace
+  ): Promise<{
     worktree: ResolvedWorktree
     executionHostId: ExecutionHostId
   }> {
@@ -74,7 +103,7 @@ export abstract class RuntimeWorkspaceFileTargets extends RuntimeMarkdownTabOper
         executionHostId: LOCAL_EXECUTION_HOST_ID
       }
     }
-    const folderScope = await this.resolveFolderWorkspaceLaunchScope(worktreeSelector)
+    const folderScope = await this.resolveFolderWorkspaceLaunchScope(worktreeSelector, {}, folder)
     if (folderScope?.folderWorkspace) {
       // Folder inference already rejects ambiguity; no repo row or runtime-environment owner can override it.
       return {

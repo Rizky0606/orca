@@ -103,7 +103,6 @@ export function GeneralChatAvailable({
             variant="outline"
             size="sm"
             disabled={home.kind === 'ready' && !canStart}
-            className="motion-reduce:transition-none"
             onClick={home.kind === 'failed' ? retryHome : start}
           >
             {t('common.retry', 'Retry')}
@@ -125,13 +124,7 @@ export function GeneralChatAvailable({
             )
       }
       action={
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="motion-reduce:transition-none"
-          onClick={onOpenAgentSettings}
-        >
+        <Button type="button" size="sm" variant="outline" onClick={onOpenAgentSettings}>
           {t('generalChat.agentSettings', 'Agent settings')}
         </Button>
       }
@@ -178,18 +171,13 @@ export function GeneralChatAvailable({
             start()
           }}
         >
-          <Button
-            ref={newChatButton}
-            type="submit"
-            className="w-full motion-reduce:transition-none"
-            disabled={!canStart}
-          >
+          <Button ref={newChatButton} type="submit" className="w-full" disabled={!canStart}>
             <Plus aria-hidden="true" />
             {t('generalChat.newChat', 'New chat')}
           </Button>
           {providers.length > 0 || provider ? (
             <div className="flex min-w-0 items-center gap-3">
-              <Label htmlFor={providerFieldId} className="text-xs text-muted-foreground">
+              <Label htmlFor={providerFieldId} variant="settings">
                 {t('generalChat.providerLabel', 'Provider')}
               </Label>
               <Select
@@ -202,14 +190,10 @@ export function GeneralChatAvailable({
                   }
                 }}
               >
-                <SelectTrigger
-                  id={providerFieldId}
-                  size="sm"
-                  className="min-w-0 flex-1 motion-reduce:transition-none"
-                >
+                <SelectTrigger id={providerFieldId} size="sm" className="min-w-0 flex-1">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent position="popper" className="motion-reduce:animate-none">
+                <SelectContent position="popper">
                   {provider && !providerReady ? (
                     <SelectItem value={provider} disabled>
                       {structuredAgentLabel(provider)}
@@ -250,7 +234,7 @@ export function GeneralChatAvailable({
               type="button"
               size="sm"
               variant="ghost"
-              className="motion-reduce:transition-none @2xl:hidden"
+              className="@2xl:hidden"
               onClick={() => {
                 selectConversation(null)
                 requestAnimationFrame(() => {
@@ -301,7 +285,7 @@ export function GeneralChatAvailable({
       ) : (
         <div
           className={cn(
-            'flex min-h-0 min-w-0 flex-1 flex-col overflow-auto @2xl:flex',
+            'scrollbar-sleek flex min-h-0 min-w-0 flex-1 flex-col overflow-auto @2xl:flex',
             conversations.length > 0 && !setupError && !progress && !unavailable && 'hidden'
           )}
         >

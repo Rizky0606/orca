@@ -53,7 +53,8 @@ export abstract class OrcaRuntimeWithStructuredResumeFolderCheck extends Structu
     const settings = this.requireStore().getSettings()
     const launchEnv = this.structuredAgentLaunchEnv(agent, settings)
     const location = await this.resolveStructuredAgentSessionLocation(worktreeSelector)
-    const workspaceCwd = (await this.resolveRuntimeFileTarget(worktreeSelector)).worktree.path
+    const workspaceCwd = (await this.resolveStructuredAgentSessionFileTarget(worktreeSelector))
+      .worktree.path
     const permissionMode = structuredLaunchSeedOptions(
       { ...settings, agentLaunchChoices: undefined },
       agent

@@ -40,7 +40,7 @@ export abstract class RuntimeStructuredAgentHost extends OrcaRuntimeWithStartTui
       stateDirectory: getProfileUserDataPath(),
       // Resolve plain folder workspaces as well as git worktrees.
       resolveWorkspacePath: async (workspaceId) =>
-        (await this.resolveRuntimeFileTarget(`id:${workspaceId}`)).worktree.path,
+        (await this.resolveStructuredAgentSessionFileTarget(`id:${workspaceId}`)).worktree.path,
       resolveClaudeCommand: (options) =>
         resolveStructuredAgentCommand('claude', this.requireStore().getSettings(), options),
       resolveCodexCommand: (options) =>

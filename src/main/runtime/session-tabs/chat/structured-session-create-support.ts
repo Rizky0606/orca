@@ -47,10 +47,11 @@ export abstract class OrcaRuntimeWithGetStructuredAgentSessionCreateSupport exte
     agent: StructuredAgentId,
     options?: { requireInstalledChatProgram?: boolean }
   ): Promise<StructuredAgentCreateSupportReply & { installation?: AgentCliInstallationProblem }> {
+    const target = await this.resolveStructuredAgentSessionFileTarget(worktreeSelector)
     const support = await resolveHostStructuredAgentCreateSupport({
       agent,
-      worktreeSelector,
-      location: await this.resolveStructuredAgentSessionLocation(worktreeSelector),
+      workspacePath: target.worktree.path,
+      location: this.structuredAgentSessionLocationForTarget(target),
       runtime: this
     })
     if (
@@ -109,7 +110,7 @@ export abstract class OrcaRuntimeWithGetStructuredAgentSessionCreateSupport exte
           )
         : undefined)
     const hostLaunchDirectory = isFloatingWorkspaceSelector(input.worktree)
-      ? (await this.resolveRuntimeFileTarget(input.worktree)).worktree.path
+      ? (await this.resolveStructuredAgentSessionFileTarget(input.worktree)).worktree.path
       : undefined
     // A fork runs where its source runs, and an adopted conversation where it was saved.
     const resolved = input.forkFrom
@@ -207,7 +208,7 @@ export abstract class OrcaRuntimeWithGetStructuredAgentSessionCreateSupport exte
       )
     }
     const workspaceCwd = resumeFrom
-      ? (await this.resolveRuntimeFileTarget(input.worktree)).worktree.path
+      ? (await this.resolveStructuredAgentSessionFileTarget(input.worktree)).worktree.path
       : ''
     const permissionMode = options?.[AGENT_CHAT_PERMISSION_MODE_OPTION_ID]
     const selectedAccountHome = await resolveAccountHome({ launchEnv, location }, permissionMode)

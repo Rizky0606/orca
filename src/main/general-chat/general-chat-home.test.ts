@@ -28,7 +28,7 @@ import {
 } from '../runtime/workspaces/catalog/workspace-selector-candidates'
 import { buildRuntimeWorktreePsSummaries } from '../runtime/workspaces/process-listing/runtime-worktree-ps-summaries'
 import { listReferenceWorkspaces } from '../runtime/workspaces/references/runtime-reference-catalog'
-import { generalChatRootFolder, isGeneralChatProjectGroup } from './general-chat-home'
+import { generalChatRootFolder } from './general-chat-home'
 import { ensureGeneralChatHome } from './general-chat-home-workspace'
 
 function makeStore() {
@@ -129,11 +129,6 @@ it('hides only the local application group and its folder workspace', async () =
     (group) => store.createFolderWorkspace({ projectGroupId: group.id }).id
   )
 
-  expect(isGeneralChatProjectGroup({ parentPath: root, connectionId: null }, root)).toBe(true)
-  expect(isGeneralChatProjectGroup({ parentPath: root, connectionId: 'ssh-1' }, root)).toBe(false)
-  expect(
-    isGeneralChatProjectGroup({ parentPath: root, executionHostId: 'runtime:pair' }, root)
-  ).toBe(false)
   expect(store.getFolderWorkspaces().some(({ id }) => id === folderWorkspaceId)).toBe(true)
   expect(runtimeVisibleProjectGroups(store).map(({ id }) => id)).toEqual([remote.id, user.id])
   expect(
@@ -175,7 +170,7 @@ it('preserves SSH catalog rows that share IDs with the local home', async () => 
   )
 })
 
-it('relocates only the local home when persisted folder IDs collide across hosts', async () => {
+it('relocates only the local home when persisted folder and group IDs collide across hosts', async () => {
   const store = makeStore()
   const root = generalChatRootFolder()
   const home = await ensureGeneralChatHome(
@@ -183,6 +178,15 @@ it('relocates only the local home when persisted folder IDs collide across hosts
     store
   )
   const [localFolder] = store.getFolderWorkspaces()
+  const [localGroup] = store.getProjectGroups()
+  const sshGroup = {
+    ...localGroup,
+    name: 'Remote project',
+    parentPath: '/srv/remote',
+    internalPurpose: undefined,
+    executionHostId: undefined,
+    connectionId: 'ssh-1'
+  }
   const sshFolder = {
     ...localFolder,
     name: 'Remote folder',
@@ -192,8 +196,12 @@ it('relocates only the local home when persisted folder IDs collide across hosts
     connectionId: 'ssh-1'
   }
   const originalSshFolder = { ...sshFolder }
+  const originalSshGroup = { ...sshGroup }
+  store.state.projectGroups.push(sshGroup)
   store.state.folderWorkspaces.push(sshFolder)
 
+  expect(store.repairGeneralChatProjectGroup(sshGroup, root)).toBeNull()
+  expect(store.repairGeneralChatProjectGroup(localGroup, root)).toBe(localGroup)
   expect(store.repairGeneralChatFolderWorkspace(sshFolder, root)).toBeNull()
   expect(await ensureGeneralChatHome({ rootFolder: generalChatRootFolder }, store)).toEqual(home)
   expect.soft(localFolder).toMatchObject({
@@ -203,6 +211,8 @@ it('relocates only the local home when persisted folder IDs collide across hosts
     connectionId: null
   })
   expect(sshFolder).toEqual(originalSshFolder)
+  expect(localGroup.parentPath).toBe(root)
+  expect(sshGroup).toEqual(originalSshGroup)
 })
 
 it('refuses to repair an ordinary local folder in the General Chat group', async () => {
@@ -221,7 +231,7 @@ it('refuses to repair an ordinary local folder in the General Chat group', async
   expect(sibling).toEqual(originalSibling)
 })
 
-it('repairs an unambiguous legacy home without changing its workspace identity', async () => {
+it('leaves an ordinary canonical-path folder visible and creates a separate application home', async () => {
   const store = makeStore()
   const root = generalChatRootFolder()
   const group = store.createProjectGroup({
@@ -229,19 +239,23 @@ it('repairs an unambiguous legacy home without changing its workspace identity',
     parentPath: root,
     createdFrom: 'manual'
   })
-  const legacy = store.createFolderWorkspace({ projectGroupId: group.id })
+  const folder = store.createFolderWorkspace({ projectGroupId: group.id })
+  const originalGroup = { ...group }
+  const originalFolder = { ...folder }
 
-  expect(await ensureGeneralChatHome({ rootFolder: generalChatRootFolder }, store)).toEqual({
-    folderWorkspaceId: legacy.id,
-    worktreeId: `folder:${legacy.id}`
-  })
-  expect(store.getFolderWorkspaces()).toEqual([
-    expect.objectContaining({
-      id: legacy.id,
+  expect(runtimeVisibleProjectGroups(store)).toEqual([group])
+  expect(runtimeVisibleFolderWorkspaces(store)).toEqual([folder])
+
+  const home = await ensureGeneralChatHome({ rootFolder: generalChatRootFolder }, store)
+  expect(home.folderWorkspaceId).not.toBe(folder.id)
+  expect(runtimeVisibleProjectGroups(store)).toEqual([originalGroup])
+  expect(runtimeVisibleFolderWorkspaces(store)).toEqual([originalFolder])
+  expect(store.getFolderWorkspaces().find(({ id }) => id === home.folderWorkspaceId)).toMatchObject(
+    {
       internalPurpose: 'general-chat',
       executionHostId: 'local'
-    })
-  ])
+    }
+  )
 })
 
 it('keeps the local routing pin after profile reload even when an SSH repo overlaps', async () => {

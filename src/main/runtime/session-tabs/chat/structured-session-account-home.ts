@@ -30,7 +30,7 @@ export abstract class OrcaRuntimeWithStructuredSessionAccountHome extends OrcaRu
             purpose === 'launch'
               ? async () =>
                   hostLaunchDirectory ??
-                  (await this.resolveRuntimeFileTarget(worktree)).worktree.path
+                  (await this.resolveStructuredAgentSessionFileTarget(worktree)).worktree.path
               : null
         },
         {

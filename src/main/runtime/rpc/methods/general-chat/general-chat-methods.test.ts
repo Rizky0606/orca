@@ -21,8 +21,9 @@ it('returns the same path-free host-local home to paired and mobile callers', as
     join(getCanonicalUserDataPath(), 'host-installation.json'),
     JSON.stringify({ installationId: 'e6b2b51d-f016-4685-b18f-1d5cb3548900' })
   )
+  const runtime = new OrcaRuntimeService(store)
   const dispatcher = new RpcDispatcher({
-    runtime: new OrcaRuntimeService(store),
+    runtime,
     methods: ALL_RPC_METHODS
   })
   const home = {
@@ -40,6 +41,26 @@ it('returns the same path-free host-local home to paired and mobile callers', as
   })
   expect(mobile.ok && mobile.result).toEqual(home)
   expect(store.getFolderWorkspaces()).toHaveLength(1)
+
+  const [local] = store.getFolderWorkspaces()
+  const sshTwin = {
+    ...local,
+    folderPath: '/remote/project',
+    connectionId: 'ssh-1',
+    executionHostId: 'ssh:ssh-1' as const,
+    internalPurpose: undefined
+  }
+  Object.defineProperty(store, 'getFolderWorkspaces', { value: () => [sshTwin, local] })
+  const selector = `id:${home.worktreeId}`
+  await expect(runtime.resolveRuntimeFileTarget(selector)).rejects.toMatchObject({
+    code: 'selector_ambiguous'
+  })
+  await expect(runtime.resolveStructuredAgentSessionLocalWorkspacePath(selector)).resolves.toBe(
+    local.folderPath
+  )
+  await expect(runtime.resolveStructuredAgentCatalogWorkspacePath(selector)).resolves.toBe(
+    local.folderPath
+  )
 })
 
 it('returns a structured refusal when the host has no workspace store', async () => {

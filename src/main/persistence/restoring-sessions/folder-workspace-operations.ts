@@ -142,7 +142,7 @@ export class FolderWorkspacePersistenceOperations {
     root: string
   ): FolderWorkspace | null {
     const { projectGroups = [], folderWorkspaces = [] } = this.state
-    if (findGeneralChatHome(projectGroups, folderWorkspaces, root).workspace !== workspace) {
+    if (findGeneralChatHome(projectGroups, folderWorkspaces).workspace !== workspace) {
       return null
     }
     workspace.internalPurpose = 'general-chat'

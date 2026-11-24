@@ -46,8 +46,7 @@ async function acquireGeneralChatHome(
   )
   const { group: existingGroup, workspace: existing } = findGeneralChatHome(
     store.getProjectGroups(),
-    store.getFolderWorkspaces(),
-    root
+    store.getFolderWorkspaces()
   )
   const group =
     existingGroup ??
@@ -59,18 +58,12 @@ async function acquireGeneralChatHome(
     })
   if (
     existing &&
-    (existing.folderPath !== root ||
-      existing.internalPurpose !== 'general-chat' ||
-      existing.executionHostId !== LOCAL_EXECUTION_HOST_ID)
+    (existing.folderPath !== root || existing.executionHostId !== LOCAL_EXECUTION_HOST_ID)
   ) {
     store.repairGeneralChatFolderWorkspace(existing, root)
   }
-  if (
-    group.parentPath !== root ||
-    group.internalPurpose !== 'general-chat' ||
-    group.executionHostId !== LOCAL_EXECUTION_HOST_ID
-  ) {
-    store.repairGeneralChatProjectGroup(group.id, root)
+  if (group.parentPath !== root || group.executionHostId !== LOCAL_EXECUTION_HOST_ID) {
+    store.repairGeneralChatProjectGroup(group, root)
   }
   const workspace =
     existing ??

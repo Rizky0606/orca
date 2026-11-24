@@ -140,8 +140,8 @@ export class ProjectCollectionOperations {
     return getProjectGroupOperations(this).updateProjectGroup(groupId, updates)
   }
 
-  repairGeneralChatProjectGroup(groupId: string, root: string): ProjectGroup | null {
-    return getProjectGroupOperations(this).repairGeneralChatProjectGroup(groupId, root)
+  repairGeneralChatProjectGroup(group: ProjectGroup, root: string): ProjectGroup | null {
+    return getProjectGroupOperations(this).repairGeneralChatProjectGroup(group, root)
   }
 
   setProjectGroupParents(

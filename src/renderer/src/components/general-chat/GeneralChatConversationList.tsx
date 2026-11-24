@@ -1,5 +1,4 @@
 import { MessageSquare } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { useTranslate } from '@/i18n/use-translate'
 import { cn } from '@/lib/class-names'
 import type { GeneralChatConversation } from './use-general-chat-controller'
@@ -28,20 +27,22 @@ export function GeneralChatConversationList({
           const current = sessionId === selectedSessionId
           return (
             <li key={sessionId}>
-              <Button
+              <button
                 type="button"
-                variant="ghost-inset"
                 aria-current={current ? 'true' : undefined}
                 data-current={current ? 'true' : undefined}
                 className={cn(
-                  'w-full min-w-0 justify-start px-2 text-sm font-normal motion-reduce:transition-none',
+                  'flex h-9 w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                   current && 'bg-accent text-accent-foreground'
                 )}
                 onClick={(event) => onSelect(sessionId, event.currentTarget)}
               >
-                <MessageSquare aria-hidden="true" className="text-muted-foreground" />
+                <MessageSquare
+                  aria-hidden="true"
+                  className="size-4 shrink-0 text-muted-foreground"
+                />
                 <span className="truncate">{title}</span>
-              </Button>
+              </button>
             </li>
           )
         })}

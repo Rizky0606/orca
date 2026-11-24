@@ -93,16 +93,11 @@ export class ProjectGroupPersistenceOperations {
     return group
   }
 
-  repairGeneralChatProjectGroup(groupId: string, root: string): ProjectGroup | null {
-    const group = findGeneralChatHome(
-      this.state.projectGroups ?? [],
-      this.state.folderWorkspaces ?? [],
-      root
-    ).group
-    if (!group || group.id !== groupId) {
+  repairGeneralChatProjectGroup(group: ProjectGroup, root: string): ProjectGroup | null {
+    const { projectGroups = [], folderWorkspaces = [] } = this.state
+    if (findGeneralChatHome(projectGroups, folderWorkspaces).group !== group) {
       return null
     }
-    group.internalPurpose = 'general-chat'
     group.executionHostId = LOCAL_EXECUTION_HOST_ID
     group.connectionId = null
     group.parentPath = root

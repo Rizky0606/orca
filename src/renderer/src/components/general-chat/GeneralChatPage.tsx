@@ -55,7 +55,7 @@ export function GeneralChatPageFrame({
         </h1>
         {options.length > 1 || (!selectedHost && options.length > 0) ? (
           <div className="flex min-w-0 items-center gap-2">
-            <Label htmlFor={hostFieldId} className="text-xs text-muted-foreground">
+            <Label htmlFor={hostFieldId} variant="settings">
               {hostFieldLabel}
             </Label>
             <Select
@@ -67,14 +67,10 @@ export function GeneralChatPageFrame({
                 }
               }}
             >
-              <SelectTrigger
-                id={hostFieldId}
-                size="sm"
-                className="max-w-48 motion-reduce:transition-none"
-              >
+              <SelectTrigger id={hostFieldId} size="sm" className="max-w-48">
                 <SelectValue placeholder={t('generalChat.selectHost', 'Select a computer')} />
               </SelectTrigger>
-              <SelectContent position="popper" className="motion-reduce:animate-none">
+              <SelectContent position="popper">
                 {options.map(({ id, label }) => (
                   <SelectItem key={id} value={id}>
                     {label}
@@ -147,7 +143,6 @@ export function GeneralChatHostUnavailable({
             variant="outline"
             size="sm"
             disabled={reconnecting}
-            className="motion-reduce:transition-none"
             onClick={() => {
               setReconnecting(true)
               void connectRuntimeHostAndReloadProjects(environmentId).finally(() =>
@@ -162,7 +157,6 @@ export function GeneralChatHostUnavailable({
             type="button"
             variant="outline"
             size="sm"
-            className="motion-reduce:transition-none"
             onClick={() => openChatSettings('servers')}
           >
             {t('generalChat.manageComputers', 'Manage computers')}
@@ -203,7 +197,6 @@ export default function GeneralChatPage(): React.JSX.Element {
               type="button"
               size="sm"
               variant="outline"
-              className="motion-reduce:transition-none"
               onClick={() => openChatSettings('servers')}
             >
               {t('generalChat.manageComputers', 'Manage computers')}

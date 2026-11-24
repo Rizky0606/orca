@@ -68,7 +68,7 @@ export abstract class StructuredSessionWorkspaceScope extends OrcaRuntimeWithStr
   }
 
   protected async resolveStructuredAgentSessionLocation(worktreeSelector: string) {
-    const target = await this.resolveRuntimeFileTarget(worktreeSelector)
+    const target = await this.resolveStructuredAgentSessionFileTarget(worktreeSelector)
     return this.structuredAgentSessionLocationForTarget(target)
   }
 
@@ -111,6 +111,13 @@ export abstract class StructuredSessionWorkspaceScope extends OrcaRuntimeWithStr
   /** The one workspace a catalog read names, derived from its selector and the repo rows without
    *  listing worktrees: a model picker's cost must not grow with the fleet. */
   private structuredAgentCatalogTarget(selector: string) {
+    const generalChat = this.generalChatWorkspaceForSelector(selector)
+    if (generalChat) {
+      return {
+        worktree: this.folderWorkspaceToResolvedWorktree(generalChat),
+        executionHostId: LOCAL_EXECUTION_HOST_ID
+      }
+    }
     const folder = this.resolveFolderWorkspaceSelector(selector)
     if (folder) {
       return {
@@ -152,7 +159,7 @@ export abstract class StructuredSessionWorkspaceScope extends OrcaRuntimeWithStr
 
   /** Where a structured chat here would run, from the same target as its location. */
   async resolveStructuredAgentSessionLocalWorkspacePath(worktreeSelector: string) {
-    const target = await this.resolveRuntimeFileTarget(worktreeSelector)
+    const target = await this.resolveStructuredAgentSessionFileTarget(worktreeSelector)
     return isNativeLocalLocation(this.structuredAgentSessionLocationForTarget(target))
       ? target.worktree.path
       : null
