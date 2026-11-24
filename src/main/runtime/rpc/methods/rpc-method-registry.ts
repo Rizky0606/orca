@@ -44,6 +44,7 @@ import { COMPUTER_METHODS } from './computer/computer'
 import { SESSION_TAB_METHODS } from './session-tabs/session-tabs'
 import { NATIVE_CHAT_METHODS } from './native-chat/native-chat'
 import { GENERAL_CHAT_METHODS } from './general-chat/general-chat-methods'
+import { VIDEO_STUDIO_METHODS } from './video-studio/video-studio-methods'
 import { FILE_METHODS } from './files/files'
 import { GIT_METHODS } from './source-control/git/git'
 import { GITHUB_METHODS } from './source-control/github/github'
@@ -148,6 +149,7 @@ const CORE_RPC_METHODS = [
   ...AGENT_SESSION_METHODS,
   ...STRUCTURED_AGENT_SESSION_METHODS,
   ...GENERAL_CHAT_METHODS,
+  ...VIDEO_STUDIO_METHODS,
   ...STRUCTURED_AGENT_SESSION_ATTACHMENT_METHODS,
   ...STRUCTURED_AGENT_SESSION_VISUAL_METHODS,
   ...STRUCTURED_AGENT_SESSION_AGENTS_METHODS,

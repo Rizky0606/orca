@@ -17,7 +17,7 @@ import { OrcaRuntimeRpcServer } from './runtime-rpc'
 
 afterEach(closeTestStores)
 
-it('refuses a mobile SSH home request before creating a desktop home', async () => {
+it('refuses host-local data operations addressed to a mobile SSH target', async () => {
   const store = createSqliteTestStore(Store)
   const userDataPath = getCanonicalUserDataPath()
   const server = new OrcaRuntimeRpcServer({
@@ -69,6 +69,39 @@ it('refuses a mobile SSH home request before creating a desktop home', async () 
         workspaces: [],
         groups: [],
         homeExists: false
+      })
+
+      const draft = {
+        title: 'Local project',
+        prompt: '',
+        aspectRatio: '16:9',
+        durationSeconds: 30,
+        workflowStage: 'research'
+      }
+      async function callVideo(method: string, executionHost: string, params?: unknown) {
+        socket.send(
+          handshake.channel.sealText(JSON.stringify({ id: method, method, executionHost, params }))
+        )
+        return JSON.parse(
+          handshake.channel.openText(String((await messages.next()).value?.[0])) ?? 'null'
+        )
+      }
+      expect(await callVideo('videoStudio.createProject', 'local', draft)).toMatchObject({
+        ok: true
+      })
+      expect(await callVideo('videoStudio.listProjects', 'ssh:development-box')).toMatchObject({
+        ok: false,
+        error: { code: 'remote_runtime_unavailable' }
+      })
+      expect(
+        await callVideo('videoStudio.createProject', 'ssh:development-box', {
+          ...draft,
+          title: 'Wrong host'
+        })
+      ).toMatchObject({ ok: false, error: { code: 'remote_runtime_unavailable' } })
+      expect(await callVideo('videoStudio.listProjects', 'local')).toMatchObject({
+        ok: true,
+        result: { projects: [{ title: 'Local project' }], invalidRecords: 0 }
       })
     } finally {
       await messages.return?.()

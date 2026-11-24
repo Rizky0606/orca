@@ -1071,6 +1071,12 @@ import {
   SkillUploadChunkRequestSchema,
   SkillUploadCommitRequestSchema
 } from '../skills/sharing/skill-upload-session-contract'
+import {
+  VideoStudioCreateProjectParams,
+  VideoStudioDeleteProjectParams,
+  VideoStudioListProjectsParams,
+  VideoStudioUpdateProjectParams
+} from '../video-studio/video-studio-rpc-contract'
 
 // Why: the host parses params with these schemas, so a client that matches this map
 // matches the dispatcher. Clients must import it for types only — parsing a params
@@ -2179,6 +2185,10 @@ export const RPC_PARAMS_BY_METHOD = {
   'updater.getStatus': null,
   'updater.install': null,
   'usage.call': UsageCallParams,
+  'videoStudio.createProject': VideoStudioCreateProjectParams,
+  'videoStudio.deleteProject': VideoStudioDeleteProjectParams,
+  'videoStudio.listProjects': VideoStudioListProjectsParams,
+  'videoStudio.updateProject': VideoStudioUpdateProjectParams,
   'webhooks.call': WebhookCallShow,
   'webhooks.calls': WebhookCalls,
   'webhooks.card': WebhookCard,

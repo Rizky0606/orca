@@ -3,10 +3,32 @@ import { PAIRED_DESKTOP_METHODS } from './runtime-rpc-mobile-paired-desktop-meth
 import { MOBILE_BOT_RPC_METHODS } from './runtime-rpc-mobile-bot-methods'
 import { DEFAULT_SCOPE_HOST_METHODS } from './runtime-rpc-mobile-tracker-methods'
 import { GENERAL_CHAT_ENSURE_HOME_METHOD } from '../../../../shared/general-chat/general-chat-contract'
+import {
+  VIDEO_STUDIO_CREATE_PROJECT_METHOD,
+  VIDEO_STUDIO_DELETE_PROJECT_METHOD,
+  VIDEO_STUDIO_LIST_PROJECTS_METHOD,
+  VIDEO_STUDIO_UPDATE_PROJECT_METHOD
+} from '../../../../shared/video-studio/video-studio-rpc-contract'
 
 // Execution-host routes follow the configured target; paired-desktop routes stay with the relaying Mac;
 // default-scope-host routes follow the target, else the Mac's default host. This table also defines mobile allowlisting.
 export type MobileRpcMethodRoute = 'execution-host' | 'paired-desktop' | 'default-scope-host'
+
+const VIDEO_STUDIO_MOBILE_METHODS: ReadonlySet<string> = new Set([
+  VIDEO_STUDIO_LIST_PROJECTS_METHOD,
+  VIDEO_STUDIO_CREATE_PROJECT_METHOD,
+  VIDEO_STUDIO_UPDATE_PROJECT_METHOD,
+  VIDEO_STUDIO_DELETE_PROJECT_METHOD
+])
+
+export function mobileRpcSshRefusal(method: string): string | undefined {
+  if (method === GENERAL_CHAT_ENSURE_HOME_METHOD) {
+    return 'General Chat home acquisition is unavailable for SSH hosts'
+  }
+  return VIDEO_STUDIO_MOBILE_METHODS.has(method)
+    ? 'Video Studio projects are unavailable for SSH hosts'
+    : undefined
+}
 
 export const EXECUTION_HOST_METHODS = [
   // Signing in/out needs the same power as running commands on the host (workspace).
@@ -105,6 +127,7 @@ export const EXECUTION_HOST_METHODS = [
   'folderWorkspace.delete',
   'folderWorkspace.list',
   GENERAL_CHAT_ENSURE_HOME_METHOD,
+  ...VIDEO_STUDIO_MOBILE_METHODS,
   'git.abortMerge',
   'git.abortRebase',
   // Read-only: the delete confirm names ignored files (.env) that removing the worktree would lose.

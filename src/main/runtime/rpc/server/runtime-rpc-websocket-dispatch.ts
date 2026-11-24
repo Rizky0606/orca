@@ -15,10 +15,9 @@ import { classifyRuntimeLongPoll } from './runtime-rpc-long-poll'
 import type { RpcBinarySender } from '../transports/rpc-binary-sender'
 import { limitRuntimeRpcReplySize } from './runtime-rpc-reply-size-limit'
 import { MOBILE_RPC_METHOD_ALLOWLIST } from './runtime-rpc-mobile-method-allowlist'
-import { MOBILE_RPC_METHOD_ROUTES } from './runtime-rpc-mobile-method-routing'
+import { MOBILE_RPC_METHOD_ROUTES, mobileRpcSshRefusal } from './runtime-rpc-mobile-method-routing'
 import { isUntaggedTrackerCall, withDefaultScopeServer } from './runtime-rpc-mobile-tracker-methods'
 import { parseExecutionHostId } from '../../../../shared/execution-host/execution-host'
-import { GENERAL_CHAT_ENSURE_HOME_METHOD } from '../../../../shared/general-chat/general-chat-contract'
 import { WorktreeRemove } from '../../../../shared/rpc-contract/workspaces/worktree-params'
 
 // Stamp proven scope at transport boundary; status.get has no connection context.
@@ -52,12 +51,9 @@ export class RuntimeRpcWebSocketDispatch extends RuntimeRpcMobileDevices {
       reply(JSON.stringify(this.buildError(request.id, code, message)))
     }
     const target = parseExecutionHostId(typeof executionHost === 'string' ? executionHost : null)
-    // Home acquisition has no workspace selector to route it to an SSH owner.
-    if (target?.kind === 'ssh' && request.method === GENERAL_CHAT_ENSURE_HOME_METHOD) {
-      replyError(
-        'remote_runtime_unavailable',
-        'General Chat home acquisition is unavailable for SSH hosts'
-      )
+    const sshRefusal = target?.kind === 'ssh' ? mobileRpcSshRefusal(request.method) : undefined
+    if (sshRefusal) {
+      replyError('remote_runtime_unavailable', sshRefusal)
       return null
     }
     if (target?.kind === 'local' || target?.kind === 'ssh') {

@@ -40,6 +40,9 @@ export const RUNTIME_PASSTHROUGH_CODES: ReadonlySet<string> = new Set([
   'remote_update_not_downloaded',
   'connectors_disabled',
   'external_conversation_not_found',
+  'video_studio_catalog_unreadable',
+  'video_studio_project_not_found',
+  'video_studio_write_failed',
   ...CONNECTOR_REPLY_ERROR_CODES,
   ...BOT_ERROR_CODES,
   ...AGENT_SESSION_RPC_ERROR_CODES
