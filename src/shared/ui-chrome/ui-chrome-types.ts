@@ -128,6 +128,7 @@ export type ManualRepoOrderEntry = {
 export type TopLevelView =
   | 'terminal'
   | 'general-chat'
+  | 'video-studio'
   | 'settings'
   | 'tasks'
   | 'activity'

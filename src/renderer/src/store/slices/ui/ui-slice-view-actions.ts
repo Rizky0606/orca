@@ -142,6 +142,21 @@ export function createUiViewActions(set: UISliceSet, get: UISliceGet): Partial<U
         activeView: state.previousViewBeforeGeneralChat,
         worktreeNavHistoryIndex: rewindHistoryIndexPastView(state, 'general-chat')
       })),
+    openVideoStudioPage: () => {
+      get().recordViewVisit('video-studio')
+      set((state) => ({
+        activeView: 'video-studio',
+        previousViewBeforeVideoStudio:
+          state.activeView === 'video-studio'
+            ? state.previousViewBeforeVideoStudio
+            : state.activeView
+      }))
+    },
+    closeVideoStudioPage: () =>
+      set((state) => ({
+        activeView: state.previousViewBeforeVideoStudio,
+        worktreeNavHistoryIndex: rewindHistoryIndexPastView(state, 'video-studio')
+      })),
     openMobilePage: () =>
       set((state) => ({
         activeView: 'mobile',

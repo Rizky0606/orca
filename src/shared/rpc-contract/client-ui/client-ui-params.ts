@@ -108,6 +108,7 @@ export const TopLevelViewSchema = z
   .enum([
     'terminal',
     'general-chat',
+    'video-studio',
     'settings',
     'tasks',
     'activity',

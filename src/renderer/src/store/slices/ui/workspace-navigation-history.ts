@@ -24,7 +24,14 @@ import {
 const MAX_HISTORY = 50
 
 // Why: entries may be page sentinels, not just worktree IDs; names keep the "worktree" prefix for call-site stability.
-const SIMPLE_VIEW_ENTRIES = ['tasks', 'automations', 'artifacts', 'skills', 'general-chat'] as const
+const SIMPLE_VIEW_ENTRIES = [
+  'tasks',
+  'automations',
+  'artifacts',
+  'skills',
+  'general-chat',
+  'video-studio'
+] as const
 export type WorktreeNavHistorySimpleViewEntry = (typeof SIMPLE_VIEW_ENTRIES)[number]
 export type WorktreeNavHistoryTaskDetailEntry =
   | {
@@ -96,10 +103,7 @@ export function setWorktreeNavViewActivator(fn: ViewActivateFn | null): void {
 function isSimpleViewEntry(
   entry: WorktreeNavHistoryEntry
 ): entry is WorktreeNavHistorySimpleViewEntry {
-  return (
-    typeof entry === 'string' &&
-    SIMPLE_VIEW_ENTRIES.includes(entry as WorktreeNavHistorySimpleViewEntry)
-  )
+  return SIMPLE_VIEW_ENTRIES.some((view) => entry === view)
 }
 
 // Why: view entries count as live unconditionally — findWorktreeById can't resolve page sentinels.

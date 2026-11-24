@@ -3,6 +3,7 @@ import {
   BookOpen,
   CalendarClock,
   CircleHelp,
+  Clapperboard,
   Files,
   Layers,
   List,
@@ -184,6 +185,8 @@ export function AppRail({
     switch (id) {
       case 'general-chat':
         return t('generalChat.title', 'General Chat')
+      case 'video-studio':
+        return t('videoStudio.title', 'Video Studio')
       case 'tasks':
         return t('auto.components.sidebar.SidebarNav.fee535205b', 'Tasks')
       case 'automations':
@@ -200,6 +203,8 @@ export function AppRail({
     switch (id) {
       case 'general-chat':
         return <MessageSquare size={size} aria-hidden />
+      case 'video-studio':
+        return <Clapperboard size={size} aria-hidden />
       case 'tasks':
         return <List size={size} aria-hidden />
       case 'automations':

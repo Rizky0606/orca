@@ -8,6 +8,7 @@ type ActiveView = AppState['activeView']
 
 const RIGHT_SIDEBAR_SUPPRESSED_VIEWS = new Set<ActiveView>([
   'general-chat',
+  'video-studio',
   'settings',
   'tasks',
   'activity',

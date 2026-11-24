@@ -11,6 +11,7 @@ import { navigateFromRail } from './app-rail-navigation'
 /** Pages that live on the rail below Workspaces, in this order. With the rail on, their list rows are not rendered. */
 export const APP_RAIL_DESTINATION_IDS = [
   'general-chat',
+  'video-studio',
   'tasks',
   'automations',
   'artifacts',
@@ -25,6 +26,7 @@ const DESTINATION_VISIBLE: Record<
   (settings: AppState['settings']) => boolean
 > = {
   'general-chat': () => true,
+  'video-studio': () => true,
   tasks: (settings) => settings?.showTasksButton !== false,
   automations: shouldShowAutomationsButton,
   artifacts: shouldShowArtifactsButton,
@@ -34,6 +36,7 @@ const DESTINATION_VISIBLE: Record<
 
 const DESTINATION_OPEN: Record<AppRailDestinationId, (state: AppState) => void> = {
   'general-chat': (state) => state.openGeneralChatPage(),
+  'video-studio': (state) => state.openVideoStudioPage(),
   tasks: (state) => state.openTaskPage(),
   automations: (state) => state.openAutomationsPage(),
   artifacts: (state) => state.openArtifactsPage(),

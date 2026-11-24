@@ -4,6 +4,7 @@ import type { TopLevelView } from './ui-chrome-types'
 const TOP_LEVEL_VIEW_LOOKUP: Record<TopLevelView, true> = {
   terminal: true,
   'general-chat': true,
+  'video-studio': true,
   settings: true,
   tasks: true,
   activity: true,

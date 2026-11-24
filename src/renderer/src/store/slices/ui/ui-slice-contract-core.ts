@@ -132,6 +132,7 @@ export type NewWorkspaceDraft = {
 export type UiViewHistory =
   | 'terminal'
   | 'general-chat'
+  | 'video-studio'
   | 'settings'
   | 'tasks'
   | 'activity'
@@ -181,6 +182,7 @@ export type UISliceCore = {
   previousViewBeforeMobile: Exclude<UiViewHistory, 'mobile'>
   previousViewBeforeArtifacts: Exclude<UiViewHistory, 'artifacts'>
   previousViewBeforeGeneralChat: Exclude<UiViewHistory, 'general-chat'>
+  previousViewBeforeVideoStudio: Exclude<UiViewHistory, 'video-studio'>
   setActiveView: (view: UISliceCore['activeView']) => void
   taskPageData: TaskPageData
   taskResumeState: TaskResumeState | undefined
@@ -234,6 +236,8 @@ export type UISliceCore = {
   closeArtifactsPage: () => void
   openGeneralChatPage: () => void
   closeGeneralChatPage: () => void
+  openVideoStudioPage: () => void
+  closeVideoStudioPage: () => void
   openMobilePage: () => void
   closeMobilePage: () => void
   setNewWorkspaceDraft: (draft: NonNullable<UISliceCore['newWorkspaceDraft']>) => void

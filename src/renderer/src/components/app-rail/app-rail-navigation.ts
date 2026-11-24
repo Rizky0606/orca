@@ -10,6 +10,7 @@ type PageCloseActions = Pick<
   | 'closeAutomationsPage'
   | 'closeArtifactsPage'
   | 'closeGeneralChatPage'
+  | 'closeVideoStudioPage'
   | 'closeSkillsPage'
   | 'closeSettingsPage'
   | 'closeActivityPage'
@@ -25,6 +26,7 @@ export type RailNavigationStore = {
 
 const CLOSE_PAGE: Record<Exclude<UISlice['activeView'], 'terminal'>, keyof PageCloseActions> = {
   'general-chat': 'closeGeneralChatPage',
+  'video-studio': 'closeVideoStudioPage',
   tasks: 'closeTaskPage',
   automations: 'closeAutomationsPage',
   artifacts: 'closeArtifactsPage',

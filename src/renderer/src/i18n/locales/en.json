@@ -30706,6 +30706,9 @@
     "title": "General Chat",
     "emptyDescription": "Conversations here are independent of your projects."
   },
+  "videoStudio": {
+    "title": "Video Studio"
+  },
   "chats": {
     "delete": {
       "updateHost": "Update {{host}} to delete chats",
