@@ -69,7 +69,7 @@ describe('VideoStudioJobManager', () => {
               height: 1080,
               fps: 30,
               sizeBytes: 1000,
-              createdAt: Date.now()
+              createdAt: 1_700_000_000_000
             })
           )
         })

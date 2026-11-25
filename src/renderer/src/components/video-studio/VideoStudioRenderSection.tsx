@@ -149,7 +149,9 @@ export function VideoStudioRenderSection({
                   <ChevronRight aria-hidden="true" className="size-3.5" />
                 )}
                 <span>
-                  {t('videoStudio.renderLogs', 'Logs ({{count}})', { count: job.logLines.length })}
+                  {t('videoStudio.renderLogs', 'Logs ({{count}} lines)', {
+                    count: job.logLines.length
+                  })}
                 </span>
               </button>
               {logsExpanded ? (
@@ -182,7 +184,16 @@ export function VideoStudioRenderSection({
                       <Badge variant="outline">{render.quality}</Badge>
                     </div>
                     <span className="text-xs text-muted-foreground">
-                      {`${render.width}×${render.height} · ${render.fps} fps · ${Math.round(render.durationSeconds)} s · ${formatBytes(render.sizeBytes)}`}
+                      {t(
+                        'videoStudio.renderMetadataSummary',
+                        '{{dimensions}} · {{fps}} fps · {{seconds}}s · {{size}}',
+                        {
+                          dimensions: `${render.width}×${render.height}`,
+                          fps: render.fps,
+                          seconds: Math.round(render.durationSeconds),
+                          size: formatBytes(render.sizeBytes)
+                        }
+                      )}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">

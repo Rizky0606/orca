@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import {
   videoStudioDimensionsForAspectRatio,
   type VideoStudioProject,
@@ -27,6 +28,28 @@ import type {
   VideoStudioPreviewHandle
 } from './video-render-engine'
 
+const MediaProbePayloadSchema = z
+  .object({
+    format: z
+      .object({
+        duration: z.string().optional()
+      })
+      .passthrough()
+      .optional(),
+    streams: z
+      .array(
+        z
+          .object({
+            codec_type: z.string().optional(),
+            width: z.number().optional(),
+            height: z.number().optional()
+          })
+          .passthrough()
+      )
+      .optional()
+  })
+  .passthrough()
+
 async function probeMediaMetadata(
   projectDir: string,
   outputPath: string,
@@ -47,12 +70,7 @@ async function probeMediaMetadata(
       timeoutMs: 10_000
     })
     .catch(() => null)
-  const probeJson = probeRes
-    ? tryParseJson<{
-        format?: { duration?: string }
-        streams?: { codec_type?: string; width?: number; height?: number }[]
-      }>(probeRes.stdout)
-    : null
+  const probeJson = probeRes ? tryParseJson(probeRes.stdout, MediaProbePayloadSchema) : null
   const parsedDuration = probeJson?.format?.duration
     ? Number(probeJson.format.duration)
     : Number.NaN

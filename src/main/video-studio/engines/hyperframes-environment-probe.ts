@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type {
   VideoStudioEngineStatus,
   VideoStudioMissingTool
@@ -25,12 +26,26 @@ export async function resolveHyperFramesInvocation(
   return npx ? { program: npx, prefixArgs: ['--no', 'hyperframes'] } : null
 }
 
-type DoctorPayload = {
-  ok?: boolean
-  version?: string
-  hyperframes?: { installed?: boolean; version?: string }
-  ffmpeg?: { ok?: boolean; installed?: boolean }
-}
+const DoctorPayloadSchema = z
+  .object({
+    ok: z.boolean().optional(),
+    version: z.string().optional(),
+    hyperframes: z
+      .object({
+        installed: z.boolean().optional(),
+        version: z.string().optional()
+      })
+      .passthrough()
+      .optional(),
+    ffmpeg: z
+      .object({
+        ok: z.boolean().optional(),
+        installed: z.boolean().optional()
+      })
+      .passthrough()
+      .optional()
+  })
+  .passthrough()
 
 export async function probeHyperFramesEnvironment(
   deps: VideoEngineProcessDeps
@@ -92,7 +107,7 @@ export async function probeHyperFramesEnvironment(
       timeoutMs: 15_000
     })
     .catch(() => null)
-  const doctor = doctorRes ? tryParseJson<DoctorPayload>(doctorRes.stdout) : null
+  const doctor = doctorRes ? tryParseJson(doctorRes.stdout, DoctorPayloadSchema) : null
   const version = doctor?.version ?? doctor?.hyperframes?.version
   const doctorFfmpegOk = doctor?.ffmpeg?.ok ?? doctor?.ffmpeg?.installed
   if (doctorFfmpegOk === false && !missingTools.includes('ffmpeg')) {

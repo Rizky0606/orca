@@ -1,4 +1,4 @@
-import { rm, stat } from 'node:fs/promises'
+import { access, readFile, rm, stat } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { createInterface } from 'node:readline'
 import { runProcess, spawnProcess } from '@orca/process-host'
@@ -12,18 +12,29 @@ import {
   forceTerminateProcessTree,
   signalProcessTree
 } from '@orca/process-host/process-tree-termination'
+import { ORCAD_WSL_HOST_ENV } from '../../../shared/remote-runtime/serve-supervisor/orcad-server-launch-env'
 import { hydrateShellPathForAgentDetection } from '../../ipc/command-path/agent-detection-shell-path'
 import { resolveCommandOnLocalPath } from '../../ipc/command-path/command-path-resolver'
-import { buildLocalPreflightEnv } from '../../ipc/preflight/preflight-local-env'
+import { mergePersistedWindowsPathAsync } from '../../pty/environment/windows-environment-path'
+import {
+  parseWindowsDriveMountPoints,
+  withoutWindowsDriveMountDirs
+} from '../../wsl/filesystem/wsl-guest-windows-drive-path'
 import type { VideoEngineProcessDeps, VideoProcessResult } from './video-render-engine'
 
-function getEnv(): NodeJS.ProcessEnv {
-  return buildLocalPreflightEnv() ?? process.env
+function copyDefinedProcessEnv(): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined) {
+      env[key] = value
+    }
+  }
+  return env
 }
 
-async function resolveExecutable(program: string): Promise<string> {
+async function resolveExecutable(program: string, env: NodeJS.ProcessEnv): Promise<string> {
   if (process.platform === 'win32') {
-    return (await resolveCommandOnLocalPath(program, { env: getEnv() })) ?? program
+    return (await resolveCommandOnLocalPath(program, { env })) ?? program
   }
   return program
 }
@@ -66,20 +77,68 @@ async function stopChildTree(child: ReturnType<typeof spawnProcess>): Promise<vo
 }
 
 export function createHostVideoEngineDeps(): VideoEngineProcessDeps {
+  let cachedWslMounts: readonly string[] | null = null
+  let latestEnv: NodeJS.ProcessEnv | null = null
+
+  const readWslMountsAsync = async (): Promise<readonly string[]> => {
+    if (cachedWslMounts !== null) {
+      return cachedWslMounts
+    }
+    if (process.platform !== 'linux' || process.env[ORCAD_WSL_HOST_ENV] !== '1') {
+      cachedWslMounts = []
+      return cachedWslMounts
+    }
+    const isWsl =
+      Boolean(process.env.WSL_DISTRO_NAME?.trim() || process.env.WSL_INTEROP?.trim()) ||
+      (await access('/proc/sys/fs/binfmt_misc/WSLInterop').then(
+        () => true,
+        () => false
+      ))
+    if (!isWsl) {
+      cachedWslMounts = []
+      return cachedWslMounts
+    }
+    try {
+      cachedWslMounts = parseWindowsDriveMountPoints(await readFile('/proc/mounts', 'utf8'))
+    } catch {
+      cachedWslMounts = []
+    }
+    return cachedWslMounts
+  }
+
+  const getAsyncEnv = async (): Promise<NodeJS.ProcessEnv> => {
+    const env = copyDefinedProcessEnv()
+    if (process.platform === 'win32') {
+      await mergePersistedWindowsPathAsync(env)
+    } else {
+      const mounts = await readWslMountsAsync()
+      if (mounts.length > 0 && env.PATH) {
+        env.PATH = withoutWindowsDriveMountDirs(env.PATH, mounts)
+      }
+    }
+    latestEnv = env
+    return env
+  }
+
   return {
     hydrateShellPath: async (refresh = true) => {
       await hydrateShellPathForAgentDetection(undefined, refresh)
+      await getAsyncEnv()
     },
-    resolveCommand: (program) => resolveCommandOnLocalPath(program, { env: getEnv() }),
+    resolveCommand: async (program) => {
+      const env = await getAsyncEnv()
+      return resolveCommandOnLocalPath(program, { env })
+    },
     allocateLoopbackPort: allocateFreeLoopbackPort,
     runProcess: async (spec) => {
-      const program = await resolveExecutable(spec.program)
+      const env = await getAsyncEnv()
+      const program = await resolveExecutable(spec.program, env)
       const res = await runProcess(
         {
           program,
           args: spec.args,
           cwd: spec.cwd,
-          env: getEnv(),
+          env,
           timeoutMs: spec.timeoutMs,
           signal: spec.signal,
           detached: process.platform !== 'win32'
@@ -95,7 +154,8 @@ export function createHostVideoEngineDeps(): VideoEngineProcessDeps {
       }
     },
     runProcessStreaming: async (spec) => {
-      const program = await resolveExecutable(spec.program)
+      const env = await getAsyncEnv()
+      const program = await resolveExecutable(spec.program, env)
       if (spec.signal?.aborted) {
         return { code: null, signal: null, stdout: '', stderr: '', timedOut: false }
       }
@@ -103,7 +163,7 @@ export function createHostVideoEngineDeps(): VideoEngineProcessDeps {
         program,
         args: spec.args,
         cwd: spec.cwd,
-        env: getEnv(),
+        env,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: process.platform !== 'win32'
       })
@@ -174,7 +234,7 @@ export function createHostVideoEngineDeps(): VideoEngineProcessDeps {
         program: spec.program,
         args: spec.args,
         cwd: spec.cwd,
-        env: getEnv(),
+        env: latestEnv ?? process.env,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: process.platform !== 'win32'
       })

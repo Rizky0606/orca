@@ -30781,7 +30781,6 @@
     "script": "Script",
     "production": "Production",
     "workflow": "Workflow stage",
-    "renderUnavailable": "Rendering is not connected yet. You can still save this project in Production.",
     "engineUnavailableError": "This render engine is unavailable on the host computer.",
     "jobAlreadyRunningError": "A check or render job is already running for this project.",
     "renderMissingError": "The rendered video file could not be found.",
@@ -30816,7 +30815,9 @@
     "renderOutputs": "Rendered outputs",
     "playOutput": "Play",
     "saveMp4": "Save MP4",
-    "saveToProduceHint": "Save this project first to scaffold and render its HyperFrames composition."
+    "saveToProduceHint": "Save this project first to scaffold and render its HyperFrames composition.",
+    "durationMs": "{{ms}} ms",
+    "renderMetadataSummary": "{{dimensions}} · {{fps}} fps · {{seconds}}s · {{size}}"
   },
   "chats": {
     "delete": {

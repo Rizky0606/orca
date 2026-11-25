@@ -14,8 +14,19 @@ import { Button } from '@/components/ui/button'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { useTranslate } from '@/i18n/use-translate'
 import type { VideoStudioProject } from '../../../../shared/video-studio/video-studio-project'
+import type { VideoStudioCheckFinding } from '../../../../shared/video-studio/video-studio-rpc-contract'
 import { VideoStudioRenderSection } from './VideoStudioRenderSection'
 import type { VideoStudioProductionController } from './use-video-studio-production'
+
+function keyedIssues(issues: readonly VideoStudioCheckFinding[]) {
+  const counts = new Map<string, number>()
+  return issues.map((issue) => {
+    const base = `${issue.severity}:${issue.code ?? ''}:${issue.file ?? ''}:${issue.message}`
+    const occurrence = counts.get(base) ?? 0
+    counts.set(base, occurrence + 1)
+    return { key: occurrence === 0 ? base : `${base}#${occurrence}`, issue }
+  })
+}
 
 export function VideoStudioProductionPanel({
   project,
@@ -68,12 +79,12 @@ export function VideoStudioProductionPanel({
               {hfStatus?.version ? ` ${hfStatus.version}` : ''}
             </Badge>
             {engineReady ? (
-              <Badge variant="secondary" className="gap-1">
+              <Badge variant="secondary">
                 <CheckCircle2 aria-hidden="true" className="size-3" />
                 {t('videoStudio.engineReady', 'Ready')}
               </Badge>
             ) : hfStatus ? (
-              <Badge variant="warning" className="gap-1">
+              <Badge variant="warning">
                 <AlertTriangle aria-hidden="true" className="size-3" />
                 {t('videoStudio.toolsMissing', 'Tools required')}
               </Badge>
@@ -220,18 +231,20 @@ export function VideoStudioProductionPanel({
             <span>{production.checkResult.summary}</span>
             {production.checkResult.durationMs !== undefined ? (
               <span className="font-mono text-muted-foreground">
-                {`${Math.round(production.checkResult.durationMs)} ms`}
+                {t('videoStudio.durationMs', '{{ms}} ms', {
+                  ms: Math.round(production.checkResult.durationMs)
+                })}
               </span>
             ) : null}
           </div>
-          {production.checkResult.errors.map((issue, idx) => (
-            <p key={`err-${idx}`} className="text-destructive wrap-anywhere">
+          {keyedIssues(production.checkResult.errors).map(({ key, issue }) => (
+            <p key={key} className="text-destructive wrap-anywhere">
               {issue.code ? `${issue.code}: ` : ''}
               {issue.message}
             </p>
           ))}
-          {production.checkResult.warnings.map((issue, idx) => (
-            <p key={`warn-${idx}`} className="text-muted-foreground wrap-anywhere">
+          {keyedIssues(production.checkResult.warnings).map(({ key, issue }) => (
+            <p key={key} className="text-muted-foreground wrap-anywhere">
               {issue.code ? `${issue.code}: ` : ''}
               {issue.message}
             </p>

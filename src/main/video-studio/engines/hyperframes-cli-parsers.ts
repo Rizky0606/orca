@@ -1,22 +1,25 @@
+import { z } from 'zod'
 import type {
   VideoStudioCheckFinding,
   VideoStudioCheckResult
 } from '../../../shared/video-studio/video-studio-rpc-contract'
 import type { VideoRenderProgressUpdate } from './video-render-engine'
 
-export function tryParseJson<T>(raw: string): T | null {
+function parseRawJsonValue(raw: string): unknown {
   const trimmed = raw.trim()
   if (!trimmed) {
     return null
   }
   try {
-    return JSON.parse(trimmed) as T
+    const value: unknown = JSON.parse(trimmed)
+    return value
   } catch {
     const start = trimmed.indexOf('{')
     const end = trimmed.lastIndexOf('}')
     if (start !== -1 && end > start) {
       try {
-        return JSON.parse(trimmed.slice(start, end + 1)) as T
+        const value: unknown = JSON.parse(trimmed.slice(start, end + 1))
+        return value
       } catch {
         return null
       }
@@ -25,10 +28,29 @@ export function tryParseJson<T>(raw: string): T | null {
   }
 }
 
+export function tryParseJson<S extends z.ZodTypeAny>(raw: string, schema: S): z.infer<S> | null {
+  const value = parseRawJsonValue(raw)
+  if (value === null) {
+    return null
+  }
+  const parsed = schema.safeParse(value)
+  return parsed.success ? parsed.data : null
+}
+
 export function parseNodeMajor(versionStdout: string): number | null {
   const match = /v?(\d+)\./.exec(versionStdout.trim())
   return match ? Number(match[1]) : null
 }
+
+const CheckIssueRecordSchema = z
+  .object({
+    severity: z.enum(['error', 'warning', 'info']).optional(),
+    code: z.string().optional(),
+    message: z.string().optional(),
+    summary: z.string().optional(),
+    file: z.string().optional()
+  })
+  .passthrough()
 
 function toCheckFindings(
   items: readonly unknown[] | undefined,
@@ -42,27 +64,60 @@ function toCheckFindings(
     if (typeof item === 'string' && item.trim()) {
       findings.push({ severity: defaultSeverity, message: item.trim() })
     } else if (typeof item === 'object' && item !== null) {
-      const rec = item as Record<string, unknown>
-      const severity =
-        rec.severity === 'error' || rec.severity === 'warning' || rec.severity === 'info'
-          ? rec.severity
-          : defaultSeverity
-      const message =
-        typeof rec.message === 'string'
-          ? rec.message
-          : typeof rec.summary === 'string'
-            ? rec.summary
-            : JSON.stringify(rec)
+      const parsed = CheckIssueRecordSchema.safeParse(item)
+      if (!parsed.success) {
+        findings.push({ severity: defaultSeverity, message: JSON.stringify(item) })
+        continue
+      }
+      const rec = parsed.data
+      const severity = rec.severity ?? defaultSeverity
+      const message = rec.message ?? rec.summary ?? JSON.stringify(rec)
       findings.push({
         severity,
-        code: typeof rec.code === 'string' ? rec.code : undefined,
+        code: rec.code,
         message,
-        file: typeof rec.file === 'string' ? rec.file : undefined
+        file: rec.file
       })
     }
   }
   return findings
 }
+
+const CheckSectionSchema = z
+  .object({
+    errors: z.array(z.unknown()).optional(),
+    warnings: z.array(z.unknown()).optional()
+  })
+  .passthrough()
+
+const HyperFramesCheckPayloadSchema = z
+  .object({
+    ok: z.boolean().optional(),
+    lint: CheckSectionSchema.optional(),
+    runtime: CheckSectionSchema.optional(),
+    layout: CheckSectionSchema.optional(),
+    motion: CheckSectionSchema.optional(),
+    contrast: CheckSectionSchema.optional(),
+    errors: z.array(z.unknown()).optional(),
+    warnings: z.array(z.unknown()).optional(),
+    issues: z.array(z.unknown()).optional()
+  })
+  .passthrough()
+
+const PreviewUrlPayloadSchema = z
+  .object({
+    url: z.string().optional(),
+    port: z.number().optional()
+  })
+  .passthrough()
+
+const RenderProgressPayloadSchema = z
+  .object({
+    progress: z.number().optional(),
+    percent: z.number().optional(),
+    stage: z.string().optional()
+  })
+  .passthrough()
 
 export function parseHyperFramesCheckResult(
   stdout: string,
@@ -70,17 +125,7 @@ export function parseHyperFramesCheckResult(
   exitCode: number | null,
   durationMs: number
 ): VideoStudioCheckResult {
-  const parsed = tryParseJson<{
-    ok?: boolean
-    lint?: { errors?: unknown[]; warnings?: unknown[] }
-    runtime?: { errors?: unknown[]; warnings?: unknown[] }
-    layout?: { errors?: unknown[]; warnings?: unknown[] }
-    motion?: { errors?: unknown[]; warnings?: unknown[] }
-    contrast?: { errors?: unknown[]; warnings?: unknown[] }
-    errors?: unknown[]
-    warnings?: unknown[]
-    issues?: unknown[]
-  }>(stdout)
+  const parsed = tryParseJson(stdout, HyperFramesCheckPayloadSchema)
 
   if (parsed) {
     const errors = [
@@ -144,7 +189,7 @@ export function parseHyperFramesCheckResult(
 }
 
 export function parsePreviewUrl(line: string, fallbackPort: number): string | null {
-  const json = tryParseJson<{ url?: string; port?: number }>(line)
+  const json = tryParseJson(line, PreviewUrlPayloadSchema)
   if (json?.url && /^https?:\/\//i.test(json.url)) {
     return json.url
   }
@@ -159,7 +204,7 @@ export function parsePreviewUrl(line: string, fallbackPort: number): string | nu
 }
 
 export function parseRenderProgressLine(line: string): VideoRenderProgressUpdate | null {
-  const json = tryParseJson<{ progress?: number; percent?: number; stage?: string }>(line)
+  const json = tryParseJson(line, RenderProgressPayloadSchema)
   if (json) {
     const rawPct =
       typeof json.percent === 'number'

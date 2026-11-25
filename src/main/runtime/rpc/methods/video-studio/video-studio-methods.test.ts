@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
+import { z } from 'zod'
 import { openVideoStudioCatalog } from '../../../../video-studio/video-studio-catalog'
 import {
   resolveVideoStudioProjectDir,
@@ -13,6 +14,10 @@ import {
 } from '../../../../video-studio/video-studio-job-registry'
 import { RpcDispatcher } from '../../dispatcher'
 import { VIDEO_STUDIO_METHODS } from './video-studio-methods'
+
+function expectOkResult<S extends z.ZodTypeAny>(response: unknown, schema: S): z.infer<S> {
+  return z.object({ ok: z.literal(true), result: schema }).parse(response).result
+}
 
 const directories: string[] = []
 
@@ -171,7 +176,7 @@ it('reports unreadable catalog without sending parser details or replacing bytes
 it('scaffolds composition and opens FolderWorkspace idempotently without exposing paths', async () => {
   const runtime = await host()
   const created = await runtime.call('videoStudio.createProject', draft)
-  const projectId = (created as { ok: true; result: { projectId: string } }).result.projectId
+  const { projectId } = expectOkResult(created, z.object({ projectId: z.string() }))
 
   const scaffold = await runtime.call('videoStudio.scaffoldComposition', { projectId })
   expect(scaffold).toMatchObject({
@@ -211,7 +216,7 @@ it('probes both engines and refuses Remotion execution', async () => {
     ...draft,
     engine: 'remotion'
   })
-  const projectId = (created as { ok: true; result: { projectId: string } }).result.projectId
+  const { projectId } = expectOkResult(created, z.object({ projectId: z.string() }))
   const renderRes = await runtime.call('videoStudio.startRender', { projectId, quality: 'looks' })
   expect(renderRes).toMatchObject({
     ok: false,
@@ -222,7 +227,7 @@ it('probes both engines and refuses Remotion execution', async () => {
 it('validates render ownership, bounds chunk sizes, and streams exact MP4 bytes', async () => {
   const runtime = await host()
   const created = await runtime.call('videoStudio.createProject', draft)
-  const projectId = (created as { ok: true; result: { projectId: string } }).result.projectId
+  const { projectId } = expectOkResult(created, z.object({ projectId: z.string() }))
 
   expect(
     await runtime.call('videoStudio.readRenderOutputChunk', {
@@ -257,7 +262,7 @@ it('validates render ownership, bounds chunk sizes, and streams exact MP4 bytes'
     height: 1080,
     fps: 30,
     sizeBytes: mp4Bytes.length,
-    createdAt: Date.now()
+    createdAt: 1_700_000_000_000
   })
 
   const c1 = await runtime.call('videoStudio.readRenderOutputChunk', {
@@ -280,9 +285,10 @@ it('validates render ownership, bounds chunk sizes, and streams exact MP4 bytes'
     ok: true,
     result: { totalBytes: 16, nextOffset: 16, eof: true, mimeType: 'video/mp4' }
   })
+  const chunkSchema = z.object({ dataBase64: z.string() })
   const combined = Buffer.concat([
-    Buffer.from((c1 as { ok: true; result: { dataBase64: string } }).result.dataBase64, 'base64'),
-    Buffer.from((c2 as { ok: true; result: { dataBase64: string } }).result.dataBase64, 'base64')
+    Buffer.from(expectOkResult(c1, chunkSchema).dataBase64, 'base64'),
+    Buffer.from(expectOkResult(c2, chunkSchema).dataBase64, 'base64')
   ])
   expect(combined).toEqual(mp4Bytes)
 })
