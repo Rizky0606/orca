@@ -169,6 +169,9 @@ export function VideoStudioProjects({
                   {creating ? t('videoStudio.newProject', 'New project') : project?.title}
                 </h2>
               </div>
+              {!creating && project && project.workflowStage === 'production' && production ? (
+                <VideoStudioProductionPanel project={project} production={production} />
+              ) : null}
               <VideoStudioProjectForm
                 key={creating ? 'new' : `${project?.id}:${project?.updatedAt}`}
                 project={creating ? undefined : project}
@@ -192,9 +195,6 @@ export function VideoStudioProjects({
                   setConfirmDelete(true)
                 }}
               />
-              {!creating && project && project.workflowStage === 'production' && production ? (
-                <VideoStudioProductionPanel project={project} production={production} />
-              ) : null}
             </div>
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">

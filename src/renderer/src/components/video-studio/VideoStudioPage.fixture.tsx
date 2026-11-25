@@ -104,7 +104,7 @@ function makeProduction(
 
 function Frame({ children, host = local }: { children: ReactNode; host?: ConfiguredFeatureHost }) {
   return (
-    <div className="flex h-160 overflow-hidden rounded-md border border-border">
+    <div className="flex min-h-160 overflow-hidden rounded-md border border-border">
       <VideoStudioPageFrame hosts={[local, remote]} selectedHost={host} selectHost={() => {}}>
         {children}
       </VideoStudioPageFrame>

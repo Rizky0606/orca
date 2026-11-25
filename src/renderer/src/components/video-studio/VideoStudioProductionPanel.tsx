@@ -58,7 +58,7 @@ export function VideoStudioProductionPanel({
   return (
     <section className="grid min-w-0 gap-4 rounded-md border border-border bg-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="grid gap-1">
+        <div className="grid min-w-0 flex-1 gap-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-semibold">
               {t('videoStudio.productionPipeline', 'Production pipeline')}

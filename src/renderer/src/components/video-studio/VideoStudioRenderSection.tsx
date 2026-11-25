@@ -106,7 +106,7 @@ export function VideoStudioRenderSection({
         <div
           role="status"
           aria-live="polite"
-          className="grid gap-2 rounded-md border border-border bg-card p-3"
+          className="grid gap-2 rounded-md border border-border bg-background p-3"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-medium">
@@ -149,9 +149,7 @@ export function VideoStudioRenderSection({
                   <ChevronRight aria-hidden="true" className="size-3.5" />
                 )}
                 <span>
-                  {t('videoStudio.renderLogs', 'Logs ({{count}} lines)', {
-                    count: job.logLines.length
-                  })}
+                  {t('videoStudio.renderLogs', 'Logs ({{count}})', { count: job.logLines.length })}
                 </span>
               </button>
               {logsExpanded ? (
