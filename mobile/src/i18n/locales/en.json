@@ -8343,7 +8343,9 @@
   },
   "generalChat": {
     "title": "General Chat",
-    "noConversations": "No conversations yet."
+    "noConversations": "No conversations yet.",
+    "researchJobs": "Deep Research",
+    "researchSourcesCount": "{{count}} source(s)"
   },
   "videoStudio": {
     "title": "Video Studio",

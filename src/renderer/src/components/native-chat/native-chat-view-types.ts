@@ -4,6 +4,14 @@ import type { RuntimeClientTarget } from '../../../../shared/remote-runtime/host
 import type { NativeChatSession } from '../../../../shared/native-chat/native-chat-types'
 import type { NativeChatContextMenuActions } from './pane/actions/use-native-chat-context-menu'
 
+export type NativeChatStructuredPrepareTurn = (
+  input: { text: string; attachmentCount: number },
+  isCurrent: () => boolean
+) => Promise<{
+  text?: string
+  intercepted?: boolean
+}>
+
 export type NativeChatBridgeViewProps = {
   mode?: 'bridge'
   /** The terminal tab hosting the agent. paneKey is `${tabId}:${leafId}`. */
@@ -37,6 +45,7 @@ export type NativeChatStructuredViewProps = {
   /** This pane's split group holds focus; a revealed sibling column must not take the caret. */
   isFocusedGroup: boolean
   contextMenuActions?: Omit<NativeChatContextMenuActions, 'onPaste'>
+  prepareTurn?: NativeChatStructuredPrepareTurn
 }
 
 export type NativeChatResolvedViewProps = {

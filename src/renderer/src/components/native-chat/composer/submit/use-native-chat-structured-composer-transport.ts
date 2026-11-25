@@ -91,6 +91,7 @@ export function useNativeChatStructuredComposerTransport(args: {
     | 'target'
     | 'isVisible'
     | 'allowWorkspaceIndependentAttachments'
+    | 'prepareTurn'
   >
   controller: ReturnType<typeof useStructuredAgentSession>
   /** The session's fork, run by `/fork` and `/btw`. */
@@ -164,6 +165,7 @@ export function useNativeChatStructuredComposerTransport(args: {
       mcpPanel,
       fork: nativeChatForkCommand({ fork, sideChat }, controller.isWorking, props.agent),
       capturePresentation: controller.capturePresentation,
+      ...(props.prepareTurn ? { prepareTurn: props.prepareTurn } : {}),
       ...(sideChat ? { sideChat } : {}),
       send: (text, attachments, ...request) => {
         if (sendBlockedReason !== null) {
@@ -261,6 +263,7 @@ export function useNativeChatStructuredComposerTransport(args: {
     optionPickerRequest,
     props.agent,
     props.allowWorkspaceIndependentAttachments,
+    props.prepareTurn,
     props.sessionId,
     props.target,
     sendBlockedReason,

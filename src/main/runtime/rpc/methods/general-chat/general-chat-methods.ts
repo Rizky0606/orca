@@ -6,6 +6,7 @@ import {
 import { generalChatRootFolder } from '../../../../general-chat/general-chat-home'
 import { ensureGeneralChatHome } from '../../../../general-chat/general-chat-home-workspace'
 import { defineMethod } from '../../core'
+import { GENERAL_CHAT_RESEARCH_METHODS } from './general-chat-research-methods'
 
 export const GENERAL_CHAT_METHODS = [
   defineMethod({
@@ -19,5 +20,6 @@ export const GENERAL_CHAT_METHODS = [
       )
       return { executionHostId: LOCAL_EXECUTION_HOST_ID, folderWorkspaceId, worktreeId }
     }
-  })
+  }),
+  ...GENERAL_CHAT_RESEARCH_METHODS
 ]

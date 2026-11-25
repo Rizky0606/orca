@@ -7,3 +7,5 @@ export type GeneralChatHome = {
   folderWorkspaceId: string
   worktreeId: string
 }
+
+export * from './general-chat-research-contract'

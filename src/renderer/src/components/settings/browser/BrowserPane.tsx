@@ -12,6 +12,10 @@ import { BrowserMemorySaverSetting } from './BrowserMemorySaverSetting'
 import { getBrowserMemorySaverSearchEntry } from './browser-memory-saver-search'
 import { BrowserUseSetup } from './use/BrowserUsePane'
 import { BrowserSearchEngineSetting } from './BrowserSearchEngineSetting'
+import {
+  getWebSearchProvidersSearchEntry,
+  WebSearchProvidersSetting
+} from './search/WebSearchProvidersSetting'
 import { BrowserLinkRoutingSetting } from './routing/BrowserLinkRoutingSetting'
 import { BrowserLinkRoutingModifierSetting } from './routing/BrowserLinkRoutingModifierSetting'
 import { BrowserLinkRoutingBackgroundSetting } from './routing/BrowserLinkRoutingBackgroundSetting'
@@ -295,6 +299,11 @@ export function BrowserPane({
                 setBrowserDefaultSearchEngine(engine === 'google' ? null : engine)
               }}
             />
+          ) : null}
+
+          {showSearchEngine ||
+          matchesSettingsSearch(searchQuery, [getWebSearchProvidersSearchEntry(t)]) ? (
+            <WebSearchProvidersSetting hostId={selectedBrowserSessionHostId} />
           ) : null}
 
           {showDefaultZoom ? (

@@ -1,6 +1,10 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { createCompatibleRuntimeStatusResponse } from '../rpc/testing/runtime-compatibility-test-fixture'
-import { ensureGeneralChatHomeForTarget } from './general-chat-client'
+import {
+  ensureGeneralChatHomeForTarget,
+  handoffGeneralChatToVideoStudioForTarget,
+  searchGeneralChatWebForTarget
+} from './general-chat-client'
 
 function homeResponse(runtimeId: string, workspace: string) {
   return {
@@ -57,4 +61,74 @@ it('returns each selected runtime’s home using its host identity in the caller
     folderWorkspaceId: 'server-chat',
     worktreeId: 'folder:server-chat'
   })
+})
+
+it('routes web search and video studio handoff calls to the selected execution host target', async () => {
+  const calls: { scope: string; method: string; params: unknown }[] = []
+  vi.stubGlobal('window', {
+    api: {
+      runtime: {
+        call: async ({ method, params }: { method: string; params: unknown }) => {
+          calls.push({ scope: 'local', method, params })
+          return {
+            id: 'local',
+            ok: true,
+            result:
+              method === 'generalChat.handoffToVideoStudio'
+                ? { projectId: 'proj-local-1' }
+                : {
+                    query: 'orca',
+                    providerUsed: 'duckduckgo',
+                    fallbackUsed: false,
+                    warnings: [],
+                    sources: [],
+                    allSessionSources: []
+                  },
+            _meta: { runtimeId: 'local-runtime' }
+          }
+        }
+      },
+      runtimeEnvironments: {
+        call: async ({
+          selector,
+          method,
+          params
+        }: {
+          selector: string
+          method: string
+          params: unknown
+        }) => {
+          if (method === 'status.get') {
+            return createCompatibleRuntimeStatusResponse('server-runtime')
+          }
+          calls.push({ scope: selector, method, params })
+          return {
+            id: 'remote',
+            ok: true,
+            result: { projectId: 'proj-remote-1' },
+            _meta: { runtimeId: 'server-runtime' }
+          }
+        }
+      }
+    }
+  })
+
+  await expect(
+    searchGeneralChatWebForTarget({ kind: 'local' }, { sessionId: 's1', query: 'orca' })
+  ).resolves.toMatchObject({ providerUsed: 'duckduckgo' })
+  await expect(
+    handoffGeneralChatToVideoStudioForTarget(
+      { kind: 'environment', environmentId: 'paired-server' },
+      { jobId: 'job-1', aspectRatio: '16:9', durationSeconds: 45, engine: 'hyperframes' }
+    )
+  ).resolves.toEqual({ projectId: 'proj-remote-1' })
+
+  expect(calls).toEqual([
+    { scope: 'local', method: 'generalChat.searchWeb', params: { sessionId: 's1', query: 'orca' } },
+    {
+      scope: 'paired-server',
+      method: 'generalChat.handoffToVideoStudio',
+      params: { jobId: 'job-1', aspectRatio: '16:9', durationSeconds: 45, engine: 'hyperframes' }
+    }
+  ])
 })

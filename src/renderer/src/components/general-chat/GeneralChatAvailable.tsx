@@ -1,11 +1,6 @@
 import { useId, useLayoutEffect, useRef } from 'react'
-import { ArrowLeft, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { chatUnavailableLabel } from '@/components/agent/launch-menu/agent-menu-row-presentation'
-import NativeChatView from '@/components/native-chat/NativeChatView'
-import { NativeChatSettingsButton } from '@/components/native-chat/appearance/NativeChatSettingsButton'
-import { NativeChatComposerEditorOwner } from '@/components/native-chat/composer/editor/native-chat-composer-editor-owner'
-import { NativeChatHostOutageOwner } from '@/components/native-chat/host-access/native-chat-host-outage-owner'
-import { NativeChatPaneLifetime } from '@/components/native-chat/pane/ownership/native-chat-pane-lifetime'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
@@ -18,18 +13,30 @@ import {
 import { useTranslate } from '@/i18n/use-translate'
 import { structuredAgentLabel } from '@/lib/agent-session/launch/structured-agent-session-launch-label'
 import { cn } from '@/lib/class-names'
+import type { ExecutionHostId } from '../../../../shared/execution-host/execution-host'
 import type { RuntimeClientTarget } from '../../../../shared/remote-runtime/host-catalog/runtime-client-target'
 import { GeneralChatConversationList } from './GeneralChatConversationList'
 import { GeneralChatEmptyState } from './GeneralChatEmptyState'
+import { GeneralChatTranscriptPane } from './GeneralChatTranscriptPane'
 import type { useGeneralChatController } from './use-general-chat-controller'
+import {
+  useGeneralChatResearch,
+  type GeneralChatResearchController
+} from './use-general-chat-research'
 
 export function GeneralChatAvailable({
   controller,
   target,
+  hostId,
+  pairingRevision,
+  researchOverride,
   onOpenAgentSettings
 }: {
   controller: ReturnType<typeof useGeneralChatController>
   target: RuntimeClientTarget
+  hostId?: ExecutionHostId
+  pairingRevision?: number
+  researchOverride?: GeneralChatResearchController
   onOpenAgentSettings: () => void
 }): React.JSX.Element {
   const t = useTranslate()
@@ -57,6 +64,15 @@ export function GeneralChatAvailable({
     retryHome
   } = controller
   const activeSessionId = conversation?.sessionId
+  const liveResearch = useGeneralChatResearch({
+    sessionId: activeSessionId,
+    agent: conversation?.agent,
+    target,
+    hostId,
+    pairingRevision,
+    enabled: !researchOverride
+  })
+  const research = researchOverride ?? liveResearch
   useLayoutEffect(() => {
     if (activeSessionId && returnFocus.current && backButton.current?.getClientRects().length) {
       transcriptTitle.current?.focus({ preventScroll: true })
@@ -224,64 +240,28 @@ export function GeneralChatAvailable({
         />
       </aside>
       {conversation ? (
-        <section
-          className="flex min-h-0 min-w-0 flex-1 flex-col"
-          aria-labelledby={transcriptTitleId}
-        >
-          <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 @2xl:px-4">
-            <Button
-              ref={backButton}
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="@2xl:hidden"
-              onClick={() => {
-                selectConversation(null)
-                requestAnimationFrame(() => {
-                  const previous = returnFocus.current
-                  const fallback = newChatButton.current?.disabled
-                    ? listPane.current
-                    : newChatButton.current
-                  const focusTarget =
-                    previous?.isConnected && !previous.disabled ? previous : fallback
-                  focusTarget?.focus()
-                })
-              }}
-            >
-              <ArrowLeft aria-hidden="true" />
-              {t('common.back', 'Back')}
-            </Button>
-            <h2
-              id={transcriptTitleId}
-              ref={transcriptTitle}
-              tabIndex={-1}
-              className="min-w-0 flex-1 truncate rounded-sm text-sm font-medium focus-visible:ring-2 focus-visible:ring-ring focus:outline-none"
-            >
-              {conversation.title}
-            </h2>
-            <NativeChatSettingsButton standalone />
-          </header>
-          {setupError ? <div className="shrink-0 border-b border-border">{setup}</div> : null}
-          <div className="min-h-0 flex-1">
-            <NativeChatPaneLifetime key={conversation.sessionId} isVisible>
-              <NativeChatHostOutageOwner target={target}>
-                <NativeChatComposerEditorOwner>
-                  <NativeChatView
-                    allowWorkspaceIndependentAttachments
-                    mode="structured"
-                    tabId={conversation.tabId}
-                    sessionId={conversation.sessionId}
-                    worktreeId={conversation.worktreeId}
-                    target={target}
-                    agent={conversation.agent}
-                    isVisible
-                    isFocusedGroup
-                  />
-                </NativeChatComposerEditorOwner>
-              </NativeChatHostOutageOwner>
-            </NativeChatPaneLifetime>
-          </div>
-        </section>
+        <GeneralChatTranscriptPane
+          conversation={conversation}
+          target={target}
+          research={research}
+          transcriptTitleId={transcriptTitleId}
+          transcriptTitleRef={transcriptTitle}
+          backButtonRef={backButton}
+          setupErrorBanner={
+            setupError ? <div className="shrink-0 border-b border-border">{setup}</div> : null
+          }
+          onBack={() => {
+            selectConversation(null)
+            requestAnimationFrame(() => {
+              const previous = returnFocus.current
+              const fallback = newChatButton.current?.disabled
+                ? listPane.current
+                : newChatButton.current
+              const focusTarget = previous?.isConnected && !previous.disabled ? previous : fallback
+              focusTarget?.focus()
+            })
+          }}
+        />
       ) : (
         <div
           className={cn(

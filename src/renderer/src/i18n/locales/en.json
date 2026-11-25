@@ -1096,6 +1096,22 @@
           "sleep": "sleep",
           "performance": "performance"
         }
+      },
+      "webSearchProviders": {
+        "title": "General Chat Web Search & API keys",
+        "description": "Built-in DuckDuckGo search works with zero keys. Add optional encrypted keys for Tavily, Brave, or Exa.",
+        "loadFailed": "Could not inspect search providers on the selected host.",
+        "saveFailed": "Could not update the encrypted API key on this host.",
+        "heading": "General Chat Web Search & Deep Research",
+        "subtext": "DuckDuckGo is always ready with zero setup. Optional API keys are encrypted on this computer or paired host.",
+        "duckduckgo": "DuckDuckGo (Built-in default)",
+        "duckduckgoDesc": "Zero-config web search and automatic fallback when API providers are unset.",
+        "readyBadge": "Ready",
+        "configured": "Configured",
+        "inputLabel": "{{provider}} API key",
+        "replacePlaceholder": "Replace saved key…",
+        "enterPlaceholder": "Paste optional key…",
+        "removeKey": "Remove {{provider}} key"
       }
     },
     "agents": {
@@ -21338,7 +21354,8 @@
         "retryChats": "Retry",
         "permissionAppliesNextMessage": "{{saved}} applies to your next message; currently using {{active}}",
         "modelAndEffortValue": "{{model}} · {{effort}}",
-        "modelAndEffort": "Model and effort"
+        "modelAndEffort": "Model and effort",
+        "webSearchFailed": "Web search could not complete. Try again or switch back to Normal mode."
       },
       "tool": {
         "exitCode": "exit {{value0}}",
@@ -24893,7 +24910,9 @@
     "unassigned": "Unassigned",
     "copy": "Copy",
     "delete": "Delete",
-    "back": "Back"
+    "back": "Back",
+    "close": "Close",
+    "save": "Save"
   },
   "terminal": {
     "recentImages": {
@@ -30732,7 +30751,36 @@
     "loadingComputers": "Loading computers…",
     "chooseHost": "Choose where to chat",
     "selectHostInstructions": "Select the computer that will run the chat provider.",
-    "noHost": "Connect a computer to start a chat."
+    "noHost": "Connect a computer to start a chat.",
+    "research": {
+      "panelTitle": "Deep Research",
+      "heading": "Deep Research",
+      "topicPlaceholder": "Enter a research topic to plan, search, read sources, and synthesize a cited brief…",
+      "startAction": "Start Research",
+      "metrics": "{{queries}} queries · {{sources}} sources · {{pages}} pages read",
+      "pause": "Pause",
+      "resume": "Resume",
+      "sendToChat": "Send to Chat",
+      "empty": "Start a Deep Research job above or switch the composer to Deep Research mode.",
+      "button": "Research"
+    },
+    "handoff": {
+      "createVideo": "Send to Video Studio"
+    },
+    "mode": {
+      "ariaLabel": "Chat mode"
+    },
+    "sources": {
+      "button": "Sources",
+      "panelTitle": "Web Search Sources",
+      "heading": "Verified Web Sources ({{count}})",
+      "clear": "Clear",
+      "searchPlaceholder": "Search the web (DuckDuckGo built-in, or configured API keys)…",
+      "searching": "Searching…",
+      "searchAction": "Search",
+      "empty": "Switch to Web Search mode or run a query above to ground answers in cited web sources.",
+      "remove": "Remove source"
+    }
   },
   "videoStudio": {
     "title": "Video Studio",
