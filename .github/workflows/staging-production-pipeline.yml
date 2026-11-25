@@ -1,0 +1,385 @@
+name: Staging & Production Build Pipeline
+
+on:
+  push:
+    branches:
+      - staging
+      - production
+  pull_request:
+    branches:
+      - staging
+      - production
+  workflow_dispatch:
+
+concurrency:
+  group: staging-production-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build_checks:
+    name: Build & Quality Checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/install-node-dependencies
+        with:
+          native-runtime: node
+          node-version: '24'
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            mobile/pnpm-lock.yaml
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: config/.bun-version
+          no-cache: true
+
+      - uses: ./.github/actions/install-mobile-dependencies
+
+      - name: Check formatting and lint
+        run: |
+          pnpm exec oxfmt --check .
+          node node_modules/oxlint/bin/oxlint --format github
+          node node_modules/oxlint/bin/oxlint --config config/oxlint-code-quality-native-plugins.json mobile --deny-warnings
+          node config/scripts/package-manager/lockfile-contracts/check-mobile-shared-dependency-versions.mjs
+
+      - name: Verify catalogs and typecheck Desktop & Mobile
+        run: |
+          pnpm run verify:rpc-params-catalog
+          pnpm run verify:localization-catalog
+          pnpm run tc:node
+          pnpm run tc:web
+          pnpm run tc:cli
+          pnpm --dir mobile run typecheck
+          pnpm --dir mobile run check:tests-typecheck
+
+      - name: Build Desktop & Mobile web assets
+        run: |
+          pnpm run build:cli
+          pnpm run build:electron-vite
+          pnpm run verify:built-skills-cli
+          pnpm run build:mobile-web
+
+      - name: Run Video Studio & Mobile unit tests
+        env:
+          ORCA_BACKGROUND_LAUNCH: '1'
+        run: |
+          node node_modules/vitest/vitest.mjs run --config config/vitest.config.ts \
+            src/shared/video-studio/video-studio-project.test.ts \
+            src/main/video-studio/video-studio-catalog.test.ts \
+            src/main/video-studio/video-studio-composition-paths.test.ts \
+            src/main/video-studio/engines/hyperframes-engine-adapter.test.ts \
+            src/main/video-studio/video-studio-job-manager.test.ts \
+            src/main/runtime/rpc/methods/video-studio/video-studio-methods.test.ts \
+            --maxWorkers=2
+          (cd mobile && node ../config/scripts/mobile-web/check-entry/run-mobile-ci-tests.mjs)
+
+  build_desktop_windows:
+    name: Build Desktop (Windows)
+    needs: [build_checks]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-2022
+    timeout-minutes: 45
+
+    steps:
+      - name: Parallelize Windows checkout
+        shell: bash
+        run: git config --global checkout.workers 0
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Resolve electron-builder download versions
+        id: eb-versions
+        shell: bash
+        run: node -p "const d = require('./package.json').devDependencies; 'versions=electron' + d.electron + '-builder' + d['electron-builder']" >> "$GITHUB_OUTPUT"
+
+      - name: Cache electron-builder downloads
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-builder-win-${{ steps.eb-versions.outputs.versions }}
+          restore-keys: |
+            electron-builder-win-
+
+      - uses: ./.github/actions/install-node-dependencies
+        id: deps
+        with:
+          native-runtime: node
+          persist-native-cache: 'false'
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            mobile/pnpm-lock.yaml
+
+      - uses: ./.github/actions/install-mobile-dependencies
+
+      - uses: ./.github/actions/prepare-windows-package-rust
+
+      - name: Build Windows package inputs
+        shell: bash
+        env:
+          ORCA_CI_MAIN_SOURCEMAPS: '0'
+        run: |
+          pnpm run build:wsl-guest
+          pnpm run build:native
+          pnpm run verify:computer-native
+          pnpm run build:cli
+          pnpm run build:electron-vite:parallel
+          pnpm run verify:built-skills-cli
+          pnpm run build:web-from-renderer
+          node config/scripts/build/mobile-web-app/build-mobile-web-app-bundle.mjs
+
+      - name: Prepare Electron native runtime
+        uses: ./.github/actions/prepare-native-runtime
+        with:
+          native-runtime: electron
+          node-version: ${{ steps.deps.outputs.node-version }}
+
+      - name: Package Windows installer
+        shell: bash
+        env:
+          ORCA_BACKGROUND_LAUNCH: '1'
+          ORCA_REUSE_PREPARED_NATIVE_RUNTIME: '1'
+          ORCA_WIN_ADHOC: '1'
+          ORCA_BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          pnpm exec electron-builder --config config/electron-builder.config.cjs --win --publish never
+          for required in dist/orca-windows-setup.exe dist/orca-windows-setup.exe.blockmap dist/latest.yml; do
+            if [ ! -s "$required" ]; then
+              echo "::error::Missing or empty Windows build artifact: $required"
+              exit 1
+            fi
+          done
+
+      - name: Upload Windows desktop artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-windows
+          path: |
+            dist/orca-windows-setup.exe
+            dist/orca-windows-setup.exe.blockmap
+            dist/latest.yml
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  build_desktop_linux:
+    name: Build Desktop (Linux)
+    needs: [build_checks]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Resolve electron-builder download versions
+        id: eb-versions
+        run: node -p "const d = require('./package.json').devDependencies; 'versions=electron' + d.electron + '-builder' + d['electron-builder']" >> "$GITHUB_OUTPUT"
+
+      - name: Cache electron-builder downloads
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.cache/electron-builder
+          key: electron-builder-linux-${{ steps.eb-versions.outputs.versions }}
+          restore-keys: |
+            electron-builder-linux-
+
+      - uses: ./.github/actions/install-node-dependencies
+        with:
+          native-runtime: electron
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            mobile/pnpm-lock.yaml
+
+      - uses: ./.github/actions/install-mobile-dependencies
+
+      - uses: ./.github/actions/prepare-wayland-clipboard
+
+      - name: Install Linux package tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cpio rpm
+
+      - name: Build Linux package inputs
+        env:
+          ORCA_CI_MAIN_SOURCEMAPS: '0'
+        run: |
+          pnpm run build:packages
+          pnpm run build:cli
+          pnpm run build:electron-vite:parallel
+          pnpm run verify:built-skills-cli
+          pnpm run build:wsl-guest
+          pnpm run build:web-from-renderer
+          node config/scripts/build/mobile-web-app/build-mobile-web-app-bundle.mjs
+
+      - name: Package Linux AppImage and deb
+        env:
+          ORCA_BACKGROUND_LAUNCH: '1'
+          ORCA_REUSE_PREPARED_NATIVE_RUNTIME: '1'
+        run: |
+          pnpm exec electron-builder --config config/electron-builder.config.cjs --linux dir --x64 --publish never
+          node config/scripts/desktop-distribution/linux/package-linux-formats.mjs
+          ls -lh dist/*.AppImage dist/*.deb
+
+      - name: Upload Linux desktop artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-linux
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  build_mobile_android:
+    name: Build Mobile (Android APK & AAB)
+    needs: [build_checks]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/install-node-dependencies
+        with:
+          native-runtime: none
+          node-version: '24'
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            mobile/pnpm-lock.yaml
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: ./.github/actions/install-mobile-dependencies
+
+      - name: Expo Android prebuild
+        working-directory: mobile
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build Android APK & AAB
+        working-directory: mobile/android
+        env:
+          ORCA_ANDROID_KEYSTORE_BASE64: ${{ secrets.ORCA_ANDROID_KEYSTORE_BASE64 }}
+          ORCA_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ORCA_ANDROID_KEYSTORE_PASSWORD }}
+          ORCA_ANDROID_KEY_ALIAS: ${{ secrets.ORCA_ANDROID_KEY_ALIAS }}
+          ORCA_ANDROID_KEY_PASSWORD: ${{ secrets.ORCA_ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "${ORCA_ANDROID_KEYSTORE_BASE64:-}" ] && [ -n "${ORCA_ANDROID_KEYSTORE_PASSWORD:-}" ] && [ -n "${ORCA_ANDROID_KEY_ALIAS:-}" ] && [ -n "${ORCA_ANDROID_KEY_PASSWORD:-}" ]; then
+            umask 077
+            printf '%s' "$ORCA_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/orca-release.keystore"
+            export ORCA_ANDROID_REQUIRE_RELEASE_SIGNING=true
+            export ORCA_ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/orca-release.keystore"
+          else
+            # Clear partial signing config so android-release-signing.js falls back cleanly to debug.keystore.
+            unset ORCA_ANDROID_REQUIRE_RELEASE_SIGNING ORCA_ANDROID_KEYSTORE_PATH ORCA_ANDROID_KEYSTORE_PASSWORD ORCA_ANDROID_KEY_ALIAS ORCA_ANDROID_KEY_PASSWORD || true
+            echo "Android release keystore secrets not configured; building with debug signing fallback."
+          fi
+          ./gradlew assembleRelease bundleRelease
+
+      - name: Remove temporary keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/orca-release.keystore"
+
+      - name: Upload Android mobile artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: mobile-android
+          path: |
+            mobile/android/app/build/outputs/apk/release/app-release.apk
+            mobile/android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 14
+
+  publish_production_release:
+    name: Publish Production GitHub Release
+    needs: [build_checks, build_desktop_windows, build_desktop_linux, build_mobile_android]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/production'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout version metadata
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            package.json
+            mobile/app.json
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: desktop-windows
+          path: release-stage/windows
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: desktop-linux
+          path: release-stage/linux
+
+      - name: Download Android artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: mobile-android
+          path: release-stage/android
+
+      - name: Stage assets and publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          DESKTOP_VER="$(node -p 'require("./package.json").version')"
+          MOBILE_VER="$(node -p 'require("./mobile/app.json").expo.version')"
+          TAG="v${DESKTOP_VER}-prod.${GITHUB_RUN_NUMBER}"
+
+          mkdir -p release-files
+          cp release-stage/windows/orca-windows-setup.exe release-files/
+          cp release-stage/windows/orca-windows-setup.exe.blockmap release-files/
+          cp release-stage/windows/latest.yml release-files/
+          cp release-stage/linux/*.AppImage release-files/
+          cp release-stage/linux/*.deb release-files/
+          cp release-stage/android/mobile/android/app/build/outputs/apk/release/app-release.apk "release-files/orca-mobile-v${MOBILE_VER}.apk" 2>/dev/null \
+            || cp "$(find release-stage/android -name '*.apk' -print -quit)" "release-files/orca-mobile-v${MOBILE_VER}.apk"
+          cp release-stage/android/mobile/android/app/build/outputs/bundle/release/app-release.aab "release-files/orca-mobile-v${MOBILE_VER}.aab" 2>/dev/null \
+            || cp "$(find release-stage/android -name '*.aab' -print -quit)" "release-files/orca-mobile-v${MOBILE_VER}.aab"
+
+          (cd release-files && sha256sum * > SHA256SUMS.txt)
+          ls -lh release-files
+
+          gh release create "$TAG" release-files/* \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "Orca Production v${DESKTOP_VER} (build #${GITHUB_RUN_NUMBER})" \
+            --generate-notes
