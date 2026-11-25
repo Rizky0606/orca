@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeVideoStudioCatalog, normalizeVideoStudioProject } from './video-studio-project'
+import {
+  normalizeVideoStudioCatalog,
+  normalizeVideoStudioProject,
+  videoStudioDimensionsForAspectRatio
+} from './video-studio-project'
 import { VideoStudioUpdateProjectParams } from './video-studio-rpc-contract'
 
+// All fields including schema defaults
 const project = {
   id: 'project-1',
   title: 'Bird migration',
@@ -9,9 +14,12 @@ const project = {
   aspectRatio: '16:9',
   durationSeconds: 5,
   workflowStage: 'research',
+  engine: 'hyperframes',
+  fps: 30,
+  renders: [],
   createdAt: 1_700_000_000_000,
   updatedAt: 1_700_000_001_000
-}
+} as const
 
 describe('Video Studio project codec', () => {
   it('reads valid records while isolating invalid entries and ignoring future fields', () => {
@@ -64,5 +72,48 @@ describe('Video Studio project codec', () => {
         changes: { title: 'Birds', id: 'replacement', createdAt: 0, updatedAt: 0 }
       }).success
     ).toBe(false)
+  })
+
+  it('applies engine and fps defaults for legacy records without those fields', () => {
+    const legacy = {
+      id: 'legacy-1',
+      title: 'Old project',
+      prompt: '',
+      aspectRatio: '16:9',
+      durationSeconds: 60,
+      workflowStage: 'research',
+      createdAt: 1_700_000_000_000,
+      updatedAt: 1_700_000_001_000
+      // no engine, fps, or renders
+    }
+    const parsed = normalizeVideoStudioProject(legacy)
+    expect(parsed).not.toBeNull()
+    expect(parsed?.engine).toBe('hyperframes')
+    expect(parsed?.fps).toBe(30)
+    expect(parsed?.renders).toEqual([])
+  })
+
+  it('rejects fps values outside [12, 120]', () => {
+    expect(normalizeVideoStudioProject({ ...project, fps: 11 })).toBeNull()
+    expect(normalizeVideoStudioProject({ ...project, fps: 121 })).toBeNull()
+    expect(normalizeVideoStudioProject({ ...project, fps: 12 })).not.toBeNull()
+    expect(normalizeVideoStudioProject({ ...project, fps: 120 })).not.toBeNull()
+  })
+
+  it('rejects unknown engine values', () => {
+    expect(normalizeVideoStudioProject({ ...project, engine: 'premiere' })).toBeNull()
+  })
+
+  it('allows the remotion engine', () => {
+    const parsed = normalizeVideoStudioProject({ ...project, engine: 'remotion' })
+    expect(parsed?.engine).toBe('remotion')
+  })
+})
+
+describe('videoStudioDimensionsForAspectRatio', () => {
+  it('returns correct dimensions for each aspect ratio', () => {
+    expect(videoStudioDimensionsForAspectRatio('16:9')).toEqual({ width: 1920, height: 1080 })
+    expect(videoStudioDimensionsForAspectRatio('9:16')).toEqual({ width: 1080, height: 1920 })
+    expect(videoStudioDimensionsForAspectRatio('1:1')).toEqual({ width: 1080, height: 1080 })
   })
 })
