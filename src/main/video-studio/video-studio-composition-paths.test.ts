@@ -1,11 +1,10 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, sep } from 'node:path'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   inspectVideoStudioCompositionState,
   resolveVideoStudioProjectDir,
-  resolveVideoStudioProjectsRoot,
   resolveVideoStudioRenderOutputFile
 } from './video-studio-composition-paths'
 import { scaffoldHyperFramesComposition } from './video-studio-hyperframes-template'
@@ -13,7 +12,7 @@ import { scaffoldHyperFramesComposition } from './video-studio-hyperframes-templ
 const mockProject = {
   id: 'proj-abc',
   title: 'Test Video',
-  prompt: 'A test',
+  prompt: 'Follow a flock.',
   aspectRatio: '16:9' as const,
   durationSeconds: 30,
   workflowStage: 'production' as const,
@@ -34,81 +33,82 @@ afterEach(async () => {
   await rm(userDataPath, { recursive: true, force: true })
 })
 
-describe('resolveVideoStudioProjectDir', () => {
-  it('resolves valid project ids', () => {
-    const dir = resolveVideoStudioProjectDir(userDataPath, 'my-project')
-    expect(dir).toContain('my-project')
-    expect(dir.startsWith(resolveVideoStudioProjectsRoot(userDataPath))).toBe(true)
-  })
-
-  it('rejects ids with path traversal sequences', () => {
-    for (const bad of ['../etc', '..', 'a/b', 'a\\b', '']) {
+describe('video studio composition paths containment', () => {
+  it('rejects project ids with traversal segments or separators', () => {
+    for (const bad of ['../escape', 'foo/bar', 'foo\\bar', '.', '..', '']) {
       expect(() => resolveVideoStudioProjectDir(userDataPath, bad)).toThrow(
         'video_studio_invalid_project_id'
       )
     }
   })
-})
 
-describe('resolveVideoStudioRenderOutputFile', () => {
-  it('builds a path ending in <renderId>.mp4', () => {
-    const path = resolveVideoStudioRenderOutputFile(userDataPath, 'proj-1', 'render-1')
-    expect(path.endsWith(`${sep}render-1.mp4`) || path.endsWith('/render-1.mp4')).toBe(true)
-  })
-
-  it('rejects traversal in renderId', () => {
-    expect(() => resolveVideoStudioRenderOutputFile(userDataPath, 'proj-1', '../bad')).toThrow(
-      'video_studio_invalid_render_id'
-    )
-  })
-})
-
-describe('inspectVideoStudioCompositionState', () => {
-  it('returns exists:false for a non-existent directory', async () => {
-    const state = await inspectVideoStudioCompositionState(join(userDataPath, 'missing'))
-    expect(state).toEqual({ exists: false, hasIndexHtml: false, hasConfigFile: false })
+  it('rejects render file names with traversal or nested paths', () => {
+    const projectDir = resolveVideoStudioProjectDir(userDataPath, mockProject.id)
+    for (const bad of ['../secret.mp4', 'sub/out.mp4', '..', '']) {
+      expect(() => resolveVideoStudioRenderOutputFile(projectDir, bad)).toThrow(
+        'video_studio_invalid_render_file'
+      )
+    }
+    expect(resolveVideoStudioRenderOutputFile(projectDir, 'render-1.mp4')).toContain('render-1.mp4')
   })
 })
 
 describe('scaffoldHyperFramesComposition', () => {
-  it('creates all expected files and directories', async () => {
+  it('creates HyperFrames composition structure and escapes HTML', async () => {
     const projectDir = resolveVideoStudioProjectDir(userDataPath, mockProject.id)
-    const result = await scaffoldHyperFramesComposition(projectDir, mockProject)
-    expect(result.filesWritten).toBeGreaterThan(0)
+    const xssProject = {
+      ...mockProject,
+      title: '<script>alert(1)</script>',
+      prompt: 'A & "B"'
+    }
+    const state = await scaffoldHyperFramesComposition(projectDir, xssProject)
+    expect(state.initialized).toBe(true)
+    expect(state.entryExists).toBe(true)
+    expect(state.files).toEqual(['hyperframes.json', 'index.html', 'project.json'])
 
-    const indexHtml = await readFile(join(projectDir, 'index.html'), 'utf8')
-    expect(indexHtml).toContain('data-duration="30s"')
-    expect(indexHtml).toContain('Test Video')
-
-    const config = JSON.parse(await readFile(join(projectDir, 'hyperframes.json'), 'utf8'))
-    expect(config).toMatchObject({ id: 'proj-abc', width: 1920, height: 1080, fps: 30 })
-
-    const state = await inspectVideoStudioCompositionState(projectDir)
-    expect(state).toEqual({ exists: true, hasIndexHtml: true, hasConfigFile: true })
-  })
-
-  it('is idempotent — does not overwrite existing index.html on second call', async () => {
-    const projectDir = resolveVideoStudioProjectDir(userDataPath, mockProject.id)
-    const first = await scaffoldHyperFramesComposition(projectDir, mockProject)
-    const second = await scaffoldHyperFramesComposition(projectDir, mockProject)
-    // index.html written count decreases on second run
-    expect(second.filesWritten).toBeLessThan(first.filesWritten)
-  })
-
-  it('HTML-escapes the project title to prevent XSS', async () => {
-    const projectDir = resolveVideoStudioProjectDir(userDataPath, 'xss-test')
-    const xssProject = { ...mockProject, id: 'xss-test', title: '<script>alert(1)</script>' }
-    await scaffoldHyperFramesComposition(projectDir, xssProject)
     const html = await readFile(join(projectDir, 'index.html'), 'utf8')
+    expect(html).toContain('data-composition-id="video-studio-main"')
+    expect(html).toContain('data-width="1920"')
+    expect(html).toContain('data-height="1080"')
+    expect(html).toContain('data-fps="30"')
+    expect(html).toContain('data-duration="30"')
+    expect(html).toContain("window.__timelines['video-studio-main']")
     expect(html).not.toContain('<script>alert(1)</script>')
-    expect(html).toContain('&lt;script&gt;')
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
+    expect(html).toContain('A &amp; &quot;B&quot;')
+
+    for (const sub of ['scenes', 'assets', 'renders']) {
+      expect((await stat(join(projectDir, sub))).isDirectory()).toBe(true)
+    }
   })
 
-  it('9:16 scaffold uses 1080x1920 dimensions', async () => {
-    const projectDir = resolveVideoStudioProjectDir(userDataPath, 'portrait')
-    const portraitProject = { ...mockProject, id: 'portrait', aspectRatio: '9:16' as const }
-    await scaffoldHyperFramesComposition(projectDir, portraitProject)
-    const config = JSON.parse(await readFile(join(projectDir, 'hyperframes.json'), 'utf8'))
-    expect(config).toMatchObject({ width: 1080, height: 1920 })
+  it('preserves user index.html edits unless overwrite is true', async () => {
+    const projectDir = resolveVideoStudioProjectDir(userDataPath, mockProject.id)
+    await scaffoldHyperFramesComposition(projectDir, mockProject)
+    await writeFile(join(projectDir, 'index.html'), '<!-- custom user edit -->', 'utf8')
+
+    await scaffoldHyperFramesComposition(projectDir, { ...mockProject, title: 'Updated Title' })
+    expect(await readFile(join(projectDir, 'index.html'), 'utf8')).toBe('<!-- custom user edit -->')
+    expect(JSON.parse(await readFile(join(projectDir, 'project.json'), 'utf8'))).toMatchObject({
+      title: 'Updated Title'
+    })
+
+    await scaffoldHyperFramesComposition(
+      projectDir,
+      { ...mockProject, title: 'Overwritten Title' },
+      { overwrite: true }
+    )
+    expect(await readFile(join(projectDir, 'index.html'), 'utf8')).toContain('Overwritten Title')
+  })
+
+  it('reports empty state when composition folder does not exist yet', async () => {
+    const missing = join(userDataPath, 'missing')
+    await mkdir(userDataPath, { recursive: true })
+    expect(await inspectVideoStudioCompositionState(missing)).toEqual({
+      initialized: false,
+      entryExists: false,
+      files: [],
+      previewActive: false
+    })
   })
 })

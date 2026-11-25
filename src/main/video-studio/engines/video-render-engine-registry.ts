@@ -1,10 +1,17 @@
 import type { VideoStudioEngine } from '../../../shared/video-studio/video-studio-project'
-import { hyperFramesEngineAdapter } from './hyperframes-engine-adapter'
+import type { VideoStudioEngineStatus } from '../../../shared/video-studio/video-studio-rpc-contract'
+import { createHyperFramesEngineAdapter } from './hyperframes-engine-adapter'
 import { remotionEngineAdapter } from './remotion-engine-adapter'
-import type { VideoEngineProcessDeps, VideoRenderEngineAdapter } from './video-render-engine'
+import {
+  createHostVideoEngineDeps,
+  type VideoEngineProcessDeps,
+  type VideoRenderEngineAdapter
+} from './video-render-engine'
+
+const hyperframesAdapter = createHyperFramesEngineAdapter()
 
 const REGISTRY: Readonly<Record<VideoStudioEngine, VideoRenderEngineAdapter>> = {
-  hyperframes: hyperFramesEngineAdapter,
+  hyperframes: hyperframesAdapter,
   remotion: remotionEngineAdapter
 }
 
@@ -13,7 +20,10 @@ export function getVideoRenderEngineAdapter(engine: VideoStudioEngine): VideoRen
 }
 
 export async function probeAllVideoRenderEngines(
-  deps: VideoEngineProcessDeps
-): Promise<ReturnType<VideoRenderEngineAdapter['probeEnvironment']>[]> {
-  return Promise.all(Object.values(REGISTRY).map((adapter) => adapter.probeEnvironment(deps)))
+  deps: VideoEngineProcessDeps = createHostVideoEngineDeps()
+): Promise<VideoStudioEngineStatus[]> {
+  return Promise.all([
+    hyperframesAdapter.probeEnvironment(deps),
+    remotionEngineAdapter.probeEnvironment(deps)
+  ])
 }

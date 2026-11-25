@@ -1,9 +1,13 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { access, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { VideoStudioProject } from '../../shared/video-studio/video-studio-project'
-import { videoStudioDimensionsForAspectRatio } from '../../shared/video-studio/video-studio-project'
+import {
+  videoStudioDimensionsForAspectRatio,
+  type VideoStudioProject
+} from '../../shared/video-studio/video-studio-project'
+import type { VideoStudioCompositionState } from '../../shared/video-studio/video-studio-rpc-contract'
+import { inspectVideoStudioCompositionState } from './video-studio-composition-paths'
 
-const GITKEEP = ''
+const COMPOSITION_ID = 'video-studio-main'
 
 function escapeHtml(text: string): string {
   return text
@@ -11,13 +15,21 @@ function escapeHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function fileExists(filePath: string): Promise<boolean> {
+  return access(filePath).then(
+    () => true,
+    () => false
+  )
 }
 
 function buildHyperFramesConfig(project: VideoStudioProject): string {
   const { width, height } = videoStudioDimensionsForAspectRatio(project.aspectRatio)
-  return JSON.stringify(
+  return `${JSON.stringify(
     {
-      id: project.id,
+      id: COMPOSITION_ID,
       width,
       height,
       fps: project.fps,
@@ -25,67 +37,140 @@ function buildHyperFramesConfig(project: VideoStudioProject): string {
     },
     null,
     2
-  )
+  )}\n`
+}
+
+function buildProjectJson(project: VideoStudioProject): string {
+  const { width, height } = videoStudioDimensionsForAspectRatio(project.aspectRatio)
+  return `${JSON.stringify(
+    {
+      id: project.id,
+      title: project.title,
+      prompt: project.prompt,
+      aspectRatio: project.aspectRatio,
+      width,
+      height,
+      durationSeconds: project.durationSeconds,
+      fps: project.fps,
+      engine: project.engine
+    },
+    null,
+    2
+  )}\n`
 }
 
 function buildIndexHtml(project: VideoStudioProject): string {
   const { width, height } = videoStudioDimensionsForAspectRatio(project.aspectRatio)
   const safeTitle = escapeHtml(project.title)
-  return `<!DOCTYPE html>
+  const safePrompt = escapeHtml(
+    project.prompt.trim() || 'Add your scenes inside scenes/ and index.html.'
+  )
+  const duration = project.durationSeconds
+  const exitAt = Math.max(1.2, duration - 0.8)
+
+  return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=${width}, height=${height}" />
     <title>${safeTitle}</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
     <style>
-      * { box-sizing: border-box; margin: 0; padding: 0; }
+      * {
+        box-sizing: border-box;
+      }
+      html,
       body {
-        width: ${width}px;
-        height: ${height}px;
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        background: #0b0f14;
+        color: #f8fafc;
+        font-family: Inter, system-ui, sans-serif;
+      }
+      #root {
+        position: relative;
+        width: 100%;
+        height: 100%;
         overflow: hidden;
-        background: #000;
+      }
+      .clip {
+        position: absolute;
+        inset: 0;
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
-        font-family: system-ui, sans-serif;
-        color: #fff;
+        padding: 8%;
+        gap: 24px;
+        text-align: center;
       }
-      h1 { font-size: clamp(2rem, 5vw, 5rem); text-align: center; padding: 2rem; }
+      .kicker {
+        margin: 0;
+        font-size: 24px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #94a3b8;
+      }
+      .headline {
+        margin: 0;
+        max-width: 18ch;
+        font-size: clamp(48px, 6vw, 96px);
+        line-height: 1.08;
+        font-weight: 700;
+        color: #f8fafc;
+      }
+      .summary {
+        margin: 0;
+        max-width: 52ch;
+        font-size: clamp(22px, 2.2vw, 32px);
+        line-height: 1.45;
+        color: #cbd5e1;
+      }
     </style>
   </head>
-  <body data-duration="${project.durationSeconds}s" data-fps="${project.fps}">
-    <!-- Scene 01 -->
+  <body>
     <div
-      class="clip"
-      data-in="0s"
-      data-out="${project.durationSeconds}s"
-      style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;"
+      id="root"
+      data-composition-id="${COMPOSITION_ID}"
+      data-start="0"
+      data-width="${width}"
+      data-height="${height}"
+      data-fps="${project.fps}"
+      data-duration="${duration}"
     >
-      <h1>${safeTitle}</h1>
+      <section id="scene-opening" class="clip" data-start="0" data-duration="${duration}">
+        <p id="scene-kicker" class="kicker">Orca Video Studio</p>
+        <h1 id="scene-title" class="headline">${safeTitle}</h1>
+        <p id="scene-prompt" class="summary">${safePrompt}</p>
+      </section>
     </div>
+    <script>
+      if (typeof gsap !== 'undefined') {
+        const tl = gsap.timeline({ paused: true })
+        tl.fromTo('#scene-kicker', { y: 20, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: 'power2.out' }, 0.1)
+        tl.fromTo('#scene-title', { y: 36, opacity: 0 }, { y: 0, opacity: 1, duration: 0.75, ease: 'power3.out' }, 0.25)
+        tl.fromTo('#scene-prompt', { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: 0.75, ease: 'power2.out' }, 0.5)
+        tl.to('#scene-title', { y: -6, duration: ${Math.max(0.5, exitAt - 1.2).toFixed(2)}, ease: 'none' }, 1.2)
+        window.__timelines = window.__timelines || {}
+        window.__timelines['${COMPOSITION_ID}'] = tl
+      }
+    </script>
   </body>
 </html>
 `
 }
 
-/** Result of a scaffold call. */
-export type ScaffoldResult = {
-  projectDir: string
-  filesWritten: number
-}
-
 /**
- * Writes the HyperFrames project skeleton to disk.
- * - `index.html` is only written when it does not already exist (idempotent).
- * - `hyperframes.json` is always (re-)written so metadata stays in sync.
- * - `scenes/`, `assets/`, `renders/` are created silently if missing.
- *
- * Returns the number of files actually written (0 when already complete).
+ * Scaffolds a valid HyperFrames composition directory (`project.json`, `hyperframes.json`,
+ * `index.html`, `scenes/`, `assets/`, `renders/`). Preserves existing `index.html` edits
+ * unless `options.overwrite` is explicitly true.
  */
 export async function scaffoldHyperFramesComposition(
   projectDir: string,
-  project: VideoStudioProject
-): Promise<ScaffoldResult> {
+  project: VideoStudioProject,
+  options: { overwrite?: boolean } = {}
+): Promise<VideoStudioCompositionState> {
   await mkdir(projectDir, { recursive: true })
   await Promise.all([
     mkdir(join(projectDir, 'scenes'), { recursive: true }),
@@ -93,45 +178,15 @@ export async function scaffoldHyperFramesComposition(
     mkdir(join(projectDir, 'renders'), { recursive: true })
   ])
 
-  let filesWritten = 0
+  await Promise.all([
+    writeFile(join(projectDir, 'project.json'), buildProjectJson(project), 'utf8'),
+    writeFile(join(projectDir, 'hyperframes.json'), buildHyperFramesConfig(project), 'utf8')
+  ])
 
-  // Always write hyperframes.json (keeps fps/dimensions in sync)
-  await writeFile(join(projectDir, 'hyperframes.json'), buildHyperFramesConfig(project), 'utf8')
-  filesWritten++
-
-  // Write project.json (simple metadata snapshot for tooling)
-  const projectJsonPath = join(projectDir, 'project.json')
-  const projectMeta = {
-    id: project.id,
-    title: project.title,
-    aspectRatio: project.aspectRatio,
-    durationSeconds: project.durationSeconds,
-    fps: project.fps,
-    engine: project.engine
-  }
-  await writeFile(projectJsonPath, JSON.stringify(projectMeta, null, 2), 'utf8')
-  filesWritten++
-
-  // Only scaffold index.html if not yet present
   const indexPath = join(projectDir, 'index.html')
-  const hasIndex = await readFile(indexPath, 'utf8')
-    .then(() => true)
-    .catch(() => false)
-  if (!hasIndex) {
+  if (options.overwrite || !(await fileExists(indexPath))) {
     await writeFile(indexPath, buildIndexHtml(project), 'utf8')
-    filesWritten++
   }
 
-  // .gitkeep files so empty dirs are committed if the user pushes to git
-  for (const sub of ['scenes', 'assets', 'renders']) {
-    const keepPath = join(projectDir, sub, '.gitkeep')
-    const hasKeep = await readFile(keepPath, 'utf8')
-      .then(() => true)
-      .catch(() => false)
-    if (!hasKeep) {
-      await writeFile(keepPath, GITKEEP, 'utf8')
-    }
-  }
-
-  return { projectDir, filesWritten }
+  return inspectVideoStudioCompositionState(projectDir)
 }

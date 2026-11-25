@@ -4,9 +4,11 @@ import {
   normalizeVideoStudioProject,
   videoStudioDimensionsForAspectRatio
 } from './video-studio-project'
-import { VideoStudioUpdateProjectParams } from './video-studio-rpc-contract'
+import {
+  VideoStudioReadRenderOutputChunkParams,
+  VideoStudioUpdateProjectParams
+} from './video-studio-rpc-contract'
 
-// All fields including schema defaults
 const project = {
   id: 'project-1',
   title: 'Bird migration',
@@ -62,58 +64,94 @@ describe('Video Studio project codec', () => {
     ).toEqual({ ...project, aspectRatio: '1:1', workflowStage: 'script' })
   })
 
-  it('normalizes an update without letting the caller override host-owned fields', () => {
-    expect(
-      VideoStudioUpdateProjectParams.safeParse({ id: 'project-1', changes: { title: '  Birds  ' } })
-    ).toMatchObject({ success: true, data: { id: 'project-1', changes: { title: 'Birds' } } })
+  it('defaults engine, fps, and renders for legacy Stage 1 project records', () => {
+    const legacy = {
+      id: 'legacy-1',
+      title: 'Legacy clip',
+      prompt: 'Describe an engine',
+      aspectRatio: '9:16',
+      durationSeconds: 30,
+      workflowStage: 'research',
+      createdAt: 1000,
+      updatedAt: 2000
+    }
+    expect(normalizeVideoStudioProject(legacy)).toEqual({
+      ...legacy,
+      engine: 'hyperframes',
+      fps: 30,
+      renders: []
+    })
+  })
+
+  it('normalizes an update while letting engine and fps change and blocking host-owned fields', () => {
     expect(
       VideoStudioUpdateProjectParams.safeParse({
         id: 'project-1',
-        changes: { title: 'Birds', id: 'replacement', createdAt: 0, updatedAt: 0 }
+        changes: { title: '  Birds  ', engine: 'remotion', fps: 60 }
+      })
+    ).toMatchObject({
+      success: true,
+      data: { id: 'project-1', changes: { title: 'Birds', engine: 'remotion', fps: 60 } }
+    })
+    expect(
+      VideoStudioUpdateProjectParams.safeParse({
+        id: 'project-1',
+        changes: { title: 'Birds', id: 'replacement', createdAt: 0, updatedAt: 0, renders: [] }
       }).success
     ).toBe(false)
   })
 
-  it('applies engine and fps defaults for legacy records without those fields', () => {
-    const legacy = {
-      id: 'legacy-1',
-      title: 'Old project',
-      prompt: '',
-      aspectRatio: '16:9',
-      durationSeconds: 60,
-      workflowStage: 'research',
-      createdAt: 1_700_000_000_000,
-      updatedAt: 1_700_000_001_000
-      // no engine, fps, or renders
-    }
-    const parsed = normalizeVideoStudioProject(legacy)
-    expect(parsed).not.toBeNull()
-    expect(parsed?.engine).toBe('hyperframes')
-    expect(parsed?.fps).toBe(30)
-    expect(parsed?.renders).toEqual([])
-  })
-
-  it('rejects fps values outside [12, 120]', () => {
+  it('rejects out-of-range fps and invalid engine values', () => {
     expect(normalizeVideoStudioProject({ ...project, fps: 11 })).toBeNull()
     expect(normalizeVideoStudioProject({ ...project, fps: 121 })).toBeNull()
-    expect(normalizeVideoStudioProject({ ...project, fps: 12 })).not.toBeNull()
-    expect(normalizeVideoStudioProject({ ...project, fps: 120 })).not.toBeNull()
-  })
-
-  it('rejects unknown engine values', () => {
+    expect(normalizeVideoStudioProject({ ...project, fps: 29.5 })).toBeNull()
     expect(normalizeVideoStudioProject({ ...project, engine: 'premiere' })).toBeNull()
+    expect(normalizeVideoStudioProject({ ...project, engine: 'remotion', fps: 60 })).toMatchObject({
+      engine: 'remotion',
+      fps: 60
+    })
   })
 
-  it('allows the remotion engine', () => {
-    const parsed = normalizeVideoStudioProject({ ...project, engine: 'remotion' })
-    expect(parsed?.engine).toBe('remotion')
-  })
-})
-
-describe('videoStudioDimensionsForAspectRatio', () => {
-  it('returns correct dimensions for each aspect ratio', () => {
+  it('preserves valid render records and maps aspect ratios to pixel dimensions', () => {
+    const withRender = normalizeVideoStudioProject({
+      ...project,
+      renders: [
+        {
+          id: 'render-1',
+          engine: 'hyperframes',
+          quality: 'looks',
+          fileName: 'render-1.mp4',
+          durationSeconds: 5,
+          width: 1920,
+          height: 1080,
+          fps: 30,
+          sizeBytes: 102400,
+          createdAt: 2000
+        }
+      ]
+    })
+    expect(withRender?.renders).toHaveLength(1)
     expect(videoStudioDimensionsForAspectRatio('16:9')).toEqual({ width: 1920, height: 1080 })
     expect(videoStudioDimensionsForAspectRatio('9:16')).toEqual({ width: 1080, height: 1920 })
     expect(videoStudioDimensionsForAspectRatio('1:1')).toEqual({ width: 1080, height: 1080 })
+  })
+
+  it('bounds readRenderOutputChunk maxBytes and non-negative offsets', () => {
+    expect(
+      VideoStudioReadRenderOutputChunkParams.safeParse({
+        projectId: 'p1',
+        renderId: 'r1',
+        offset: 0,
+        maxBytes: 512 * 1024 + 1
+      }).success
+    ).toBe(false)
+    expect(
+      VideoStudioReadRenderOutputChunkParams.safeParse({
+        projectId: 'p1',
+        renderId: 'r1',
+        offset: -1,
+        maxBytes: 1024
+      }).success
+    ).toBe(false)
   })
 })

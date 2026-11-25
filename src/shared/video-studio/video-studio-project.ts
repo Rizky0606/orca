@@ -5,17 +5,22 @@ export const VideoStudioProjectId = z.string().refine((value) => value.trim().le
 export const VideoStudioEngineSchema = z.enum(['hyperframes', 'remotion'])
 export type VideoStudioEngine = z.infer<typeof VideoStudioEngineSchema>
 
-export const VideoStudioRenderQualitySchema = z.enum(['draft', 'standard', 'high'])
+export const VideoStudioRenderQualitySchema = z.enum(['draft', 'looks', 'delivery'])
 export type VideoStudioRenderQuality = z.infer<typeof VideoStudioRenderQualitySchema>
 
+export const VIDEO_STUDIO_FPS_OPTIONS = [24, 30, 60] as const
+
 export const VideoStudioRenderRecordSchema = z.object({
-  id: z.string(),
-  startedAt: z.number(),
-  completedAt: z.number().optional(),
+  id: VideoStudioProjectId,
+  engine: VideoStudioEngineSchema,
   quality: VideoStudioRenderQualitySchema,
-  outputFile: z.string().optional(),
-  durationMs: z.number().optional(),
-  error: z.string().optional()
+  fileName: z.string().trim().min(1),
+  durationSeconds: z.number().positive(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  fps: z.number().int().min(12).max(120),
+  sizeBytes: z.number().int().nonnegative(),
+  createdAt: z.number()
 })
 export type VideoStudioRenderRecord = z.infer<typeof VideoStudioRenderRecordSchema>
 
@@ -31,9 +36,9 @@ export const VideoStudioProjectFields = z.object({
 
 export const VideoStudioProjectSchema = VideoStudioProjectFields.extend({
   id: VideoStudioProjectId,
+  renders: z.array(VideoStudioRenderRecordSchema).default([]),
   createdAt: z.number(),
-  updatedAt: z.number(),
-  renders: z.array(VideoStudioRenderRecordSchema).default([])
+  updatedAt: z.number()
 })
 
 export type VideoStudioProject = z.infer<typeof VideoStudioProjectSchema>
@@ -57,14 +62,15 @@ export function normalizeVideoStudioCatalog(records: readonly unknown[]): {
   return { projects, invalidRecords: records.length - projects.length }
 }
 
-const DIMENSIONS: Record<string, { width: number; height: number }> = {
-  '16:9': { width: 1920, height: 1080 },
-  '9:16': { width: 1080, height: 1920 },
-  '1:1': { width: 1080, height: 1080 }
-}
-
 export function videoStudioDimensionsForAspectRatio(
   aspectRatio: VideoStudioProject['aspectRatio']
 ): { width: number; height: number } {
-  return DIMENSIONS[aspectRatio] ?? { width: 1920, height: 1080 }
+  switch (aspectRatio) {
+    case '9:16':
+      return { width: 1080, height: 1920 }
+    case '1:1':
+      return { width: 1080, height: 1080 }
+    case '16:9':
+      return { width: 1920, height: 1080 }
+  }
 }

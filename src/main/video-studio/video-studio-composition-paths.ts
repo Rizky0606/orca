@@ -1,83 +1,117 @@
-import { lstat, readdir, realpath } from 'node:fs/promises'
-import { join, resolve, sep } from 'node:path'
+import { mkdir, readdir, realpath, stat } from 'node:fs/promises'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import type {
+  VideoStudioCompositionState,
+  VideoStudioPreviewState
+} from '../../shared/video-studio/video-studio-rpc-contract'
 
-// ─── Root resolution ──────────────────────────────────────────────────────────
-
-/**
- * Returns the root directory that hosts all Video Studio composition projects.
- * Located inside the Orca user-data directory so it survives app restarts.
- */
-export function resolveVideoStudioProjectsRoot(userDataPath: string): string {
-  return join(userDataPath, 'video-studio', 'projects')
+function assertSafeSegment(segment: string, errorCode: string): void {
+  const trimmed = segment.trim()
+  if (
+    !trimmed ||
+    trimmed !== segment ||
+    trimmed === '.' ||
+    trimmed === '..' ||
+    trimmed.includes('..') ||
+    trimmed.includes('/') ||
+    trimmed.includes('\\') ||
+    trimmed.includes('\0')
+  ) {
+    throw new Error(errorCode)
+  }
 }
 
-/**
- * Validates `projectId` against path traversal and resolves the per-project
- * directory. Throws `video_studio_invalid_project_id` for suspicious ids.
- */
-export function resolveVideoStudioProjectDir(userDataPath: string, projectId: string): string {
-  if (!projectId || /[/\\]/.test(projectId) || projectId.includes('..')) {
-    throw new Error('video_studio_invalid_project_id')
-  }
-  const root = resolveVideoStudioProjectsRoot(userDataPath)
-  const candidate = join(root, projectId)
-  // Double-check containment after path.join normalises separators
-  const resolved = resolve(candidate)
+function assertContainedPath(root: string, candidate: string, errorCode: string): string {
   const resolvedRoot = resolve(root)
-  if (!resolved.startsWith(resolvedRoot + sep) && resolved !== resolvedRoot) {
-    throw new Error('video_studio_invalid_project_id')
+  const resolvedCandidate = resolve(candidate)
+  const rel = relative(resolvedRoot, resolvedCandidate)
+  if (!rel || rel === '.' || rel.startsWith(`..${sep}`) || rel === '..' || isAbsolute(rel)) {
+    throw new Error(errorCode)
   }
-  return candidate
+  return resolvedCandidate
 }
 
 /**
- * Resolves the MP4 output path for a completed render.
- * Validates that `renderId` is clean (no traversal characters).
+ * Returns the canonical root directory that hosts all Video Studio composition
+ * projects under `<profileDir>/video-studio/projects`.
  */
-export function resolveVideoStudioRenderOutputFile(
-  userDataPath: string,
-  projectId: string,
-  renderId: string
-): string {
-  if (!renderId || /[/\\]/.test(renderId) || renderId.includes('..')) {
-    throw new Error('video_studio_invalid_render_id')
-  }
-  const projectDir = resolveVideoStudioProjectDir(userDataPath, projectId)
-  return join(projectDir, 'renders', `${renderId}.mp4`)
-}
-
-// ─── Composition state inspection ────────────────────────────────────────────
-
-export type VideoStudioCompositionStateResult = {
-  exists: boolean
-  hasIndexHtml: boolean
-  hasConfigFile: boolean
+export function resolveVideoStudioProjectsRoot(profileDir: string): string {
+  return join(resolve(profileDir), 'video-studio', 'projects')
 }
 
 /**
- * Checks whether the composition directory and key files exist on disk.
- * Never throws — returns `exists: false` for any I/O error.
+ * Validates `projectId` against path traversal and resolves its per-project
+ * directory under `<profileDir>/video-studio/projects/<projectId>`.
+ */
+export function resolveVideoStudioProjectDir(profileDir: string, projectId: string): string {
+  assertSafeSegment(projectId, 'video_studio_invalid_project_id')
+  const root = resolveVideoStudioProjectsRoot(profileDir)
+  return assertContainedPath(root, join(root, projectId), 'video_studio_invalid_project_id')
+}
+
+/**
+ * Resolves a rendered MP4 file inside `<projectDir>/renders/<fileName>` with strict containment.
+ */
+export function resolveVideoStudioRenderOutputFile(projectDir: string, fileName: string): string {
+  assertSafeSegment(fileName, 'video_studio_invalid_render_file')
+  const rendersRoot = join(resolve(projectDir), 'renders')
+  return assertContainedPath(
+    rendersRoot,
+    join(rendersRoot, fileName),
+    'video_studio_invalid_render_file'
+  )
+}
+
+async function collectRelativeFiles(
+  rootDir: string,
+  currentDir: string,
+  out: string[]
+): Promise<void> {
+  const entries = await readdir(currentDir, { withFileTypes: true }).catch(() => [])
+  for (const entry of entries) {
+    const full = join(currentDir, entry.name)
+    if (entry.isDirectory()) {
+      await collectRelativeFiles(rootDir, full, out)
+    } else if (entry.isFile() && !entry.name.startsWith('.')) {
+      out.push(relative(rootDir, full).split(sep).join('/'))
+    }
+  }
+}
+
+/** Ensures `<profileDir>/video-studio/projects` exists and returns the realpath when possible. */
+export async function ensureVideoStudioProjectsRoot(profileDir: string): Promise<string> {
+  const root = resolveVideoStudioProjectsRoot(profileDir)
+  await mkdir(root, { recursive: true, mode: 0o700 })
+  return realpath(root).catch(() => root)
+}
+
+/**
+ * Inspects a project composition directory without leaking host paths.
  */
 export async function inspectVideoStudioCompositionState(
-  projectDir: string
-): Promise<VideoStudioCompositionStateResult> {
-  try {
-    await realpath(projectDir)
-  } catch {
-    return { exists: false, hasIndexHtml: false, hasConfigFile: false }
+  projectDir: string,
+  preview?: VideoStudioPreviewState
+): Promise<VideoStudioCompositionState> {
+  const stats = await stat(projectDir).catch(() => null)
+  if (!stats?.isDirectory()) {
+    return {
+      initialized: false,
+      entryExists: false,
+      files: [],
+      previewActive: preview?.active ?? false,
+      ...(preview?.url ? { previewUrl: preview.url } : {})
+    }
   }
-  const names = await readdir(projectDir).catch(() => [] as string[])
-  const set = new Set(names)
+  const files: string[] = []
+  await collectRelativeFiles(projectDir, projectDir, files)
+  files.sort()
+  const entryExists = files.includes('index.html')
+  const initialized = entryExists && files.includes('hyperframes.json')
   return {
-    exists: true,
-    hasIndexHtml: set.has('index.html'),
-    hasConfigFile: set.has('hyperframes.json')
+    initialized,
+    entryExists,
+    files,
+    previewActive: preview?.active ?? false,
+    ...(preview?.url ? { previewUrl: preview.url } : {})
   }
-}
-
-/** Returns true if the given path points to an existing directory. */
-export async function isDirectory(path: string): Promise<boolean> {
-  return lstat(path)
-    .then((s) => s.isDirectory())
-    .catch(() => false)
 }

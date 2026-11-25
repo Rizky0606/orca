@@ -1,247 +1,245 @@
-import { join } from 'node:path'
-import type { VideoStudioEngine } from '../../../shared/video-studio/video-studio-project'
+import {
+  videoStudioDimensionsForAspectRatio,
+  type VideoStudioProject,
+  type VideoStudioRenderRecord
+} from '../../../shared/video-studio/video-studio-project'
 import type {
   VideoStudioCheckResult,
-  VideoStudioEngineStatus,
-  VideoStudioPreviewState,
-  VideoStudioRenderJobSnapshot,
-  VideoStudioStartRenderParams
+  VideoStudioCompositionState
 } from '../../../shared/video-studio/video-studio-rpc-contract'
-import type { VideoEngineProcessDeps, VideoRenderEngineAdapter } from './video-render-engine'
+import { resolveVideoStudioRenderOutputFile } from '../video-studio-composition-paths'
+import { scaffoldHyperFramesComposition } from '../video-studio-hyperframes-template'
+import {
+  parseHyperFramesCheckResult,
+  parsePreviewUrl,
+  parseRenderProgressLine,
+  tryParseJson
+} from './hyperframes-cli-parsers'
+import {
+  probeHyperFramesEnvironment,
+  resolveHyperFramesInvocation
+} from './hyperframes-environment-probe'
+import type {
+  VideoEngineProcessDeps,
+  VideoRenderEngineAdapter,
+  VideoRenderProgressUpdate,
+  VideoRenderRequest,
+  VideoStudioPreviewHandle
+} from './video-render-engine'
 
-const ENGINE: VideoStudioEngine = 'hyperframes'
-
-// ─── Progress parsing ─────────────────────────────────────────────────────────
-
-function parseProgressPercent(line: string): number | undefined {
-  // HyperFrames emits: {"progress": 0.42} or "progress: 42%"
-  try {
-    const obj = JSON.parse(line)
-    if (typeof obj === 'object' && obj !== null && typeof obj.progress === 'number') {
-      return Math.round(obj.progress * 100)
-    }
-  } catch {
-    // not JSON
+async function probeMediaMetadata(
+  projectDir: string,
+  outputPath: string,
+  project: VideoStudioProject,
+  deps: VideoEngineProcessDeps
+): Promise<{ width: number; height: number; durationSeconds: number }> {
+  let { width, height } = videoStudioDimensionsForAspectRatio(project.aspectRatio)
+  let durationSeconds = project.durationSeconds
+  const ffprobeBin = await deps.resolveCommand('ffprobe')
+  if (!ffprobeBin) {
+    return { width, height, durationSeconds }
   }
-  const pct = /progress:\s*(\d+(?:\.\d+)?)%/i.exec(line)
-  if (pct) {
-    return Math.round(Number(pct[1]))
-  }
-  return undefined
-}
-
-function parsePort(line: string): number | undefined {
-  // "Local: http://localhost:3344" or "Listening on port 3344"
-  const m = /(?:localhost|port)[:\s]+(\d{4,5})/i.exec(line)
-  return m ? Number(m[1]) : undefined
-}
-
-// ─── Doctor result parsing ────────────────────────────────────────────────────
-
-type DoctorJson = {
-  hyperframes?: { installed: boolean; version?: string; path?: string }
-  ffmpeg?: { installed: boolean }
-}
-
-function parseDoctorJson(stdout: string): DoctorJson | null {
-  try {
-    return JSON.parse(stdout) as DoctorJson
-  } catch {
-    return null
-  }
-}
-
-// ─── Adapter ─────────────────────────────────────────────────────────────────
-
-export const hyperFramesEngineAdapter: VideoRenderEngineAdapter = {
-  engine: ENGINE,
-
-  async probeEnvironment(deps: VideoEngineProcessDeps): Promise<VideoStudioEngineStatus> {
-    await deps.hydrateShellPath()
-    const hfBin = await deps.resolveCommand('hyperframes')
-    if (!hfBin) {
-      return {
-        engine: ENGINE,
-        available: false,
-        status: 'not_installed',
-        details:
-          'hyperframes CLI not found on PATH. Run: npm install -g @hyperframes/cli (Node.js required)'
-      }
-    }
-    // Run `hyperframes doctor --json` to get detailed status
-    const result = await deps
-      .runProcess({ program: hfBin, args: ['doctor', '--json'], timeoutMs: 15_000 })
-      .catch(() => null)
-
-    const doctor = result ? parseDoctorJson(result.stdout) : null
-    const hf = doctor?.hyperframes
-    const version = hf?.version
-
-    if (!hf?.installed) {
-      return { engine: ENGINE, available: false, status: 'not_installed', version }
-    }
-    const ffmpegOk = doctor?.ffmpeg?.installed ?? false
-    if (!ffmpegOk) {
-      return {
-        engine: ENGINE,
-        available: false,
-        status: 'missing_dependency',
-        details: 'ffmpeg not found. Install ffmpeg and ensure it is on PATH.',
-        version
-      }
-    }
-    return { engine: ENGINE, available: true, status: 'ready', version }
-  },
-
-  async checkComposition(
-    projectDir: string,
-    deps: VideoEngineProcessDeps,
-    signal?: AbortSignal
-  ): Promise<VideoStudioCheckResult> {
-    await deps.hydrateShellPath()
-    const hfBin = await deps.resolveCommand('hyperframes')
-    if (!hfBin) {
-      return {
-        passed: false,
-        issues: [{ severity: 'error', message: 'hyperframes CLI not found' }]
-      }
-    }
-    const start = Date.now()
-    const result = await deps.runProcess({
-      program: hfBin,
-      args: ['check', '--json'],
+  const probeRes = await deps
+    .runProcess({
+      program: ffprobeBin,
+      args: ['-v', 'error', '-show_format', '-show_streams', '-of', 'json', outputPath],
       cwd: projectDir,
-      timeoutMs: 60_000,
-      signal
+      timeoutMs: 10_000
     })
-    const durationMs = Date.now() - start
+    .catch(() => null)
+  const probeJson = probeRes
+    ? tryParseJson<{
+        format?: { duration?: string }
+        streams?: { codec_type?: string; width?: number; height?: number }[]
+      }>(probeRes.stdout)
+    : null
+  const parsedDuration = probeJson?.format?.duration
+    ? Number(probeJson.format.duration)
+    : Number.NaN
+  if (Number.isFinite(parsedDuration) && parsedDuration > 0) {
+    durationSeconds = parsedDuration
+  }
+  const videoStream = probeJson?.streams?.find((s) => s.codec_type === 'video')
+  if (videoStream?.width && videoStream.height && videoStream.width > 0 && videoStream.height > 0) {
+    width = videoStream.width
+    height = videoStream.height
+  }
+  return { width, height, durationSeconds }
+}
 
-    // Try to parse structured JSON output
-    try {
-      const parsed = JSON.parse(result.stdout)
-      if (Array.isArray(parsed?.issues)) {
-        return {
-          passed: (result.code ?? 1) === 0,
-          issues: parsed.issues,
-          durationMs
-        }
+export function createHyperFramesEngineAdapter(): VideoRenderEngineAdapter {
+  return {
+    id: 'hyperframes',
+
+    probeEnvironment: (deps) => probeHyperFramesEnvironment(deps),
+
+    scaffoldProject(
+      projectDir: string,
+      project: VideoStudioProject,
+      options?: { overwrite?: boolean }
+    ): Promise<VideoStudioCompositionState> {
+      return scaffoldHyperFramesComposition(projectDir, project, options)
+    },
+
+    async checkProject(
+      projectDir: string,
+      deps: VideoEngineProcessDeps,
+      signal?: AbortSignal
+    ): Promise<VideoStudioCheckResult> {
+      await deps.hydrateShellPath(true)
+      const invocation = await resolveHyperFramesInvocation(deps, true)
+      if (!invocation) {
+        throw new Error('video_studio_engine_unavailable')
       }
-    } catch {
-      // fall through to raw text
-    }
+      const started = Date.now()
+      const res = await deps.runProcess({
+        program: invocation.program,
+        args: [...invocation.prefixArgs, 'check', '--json'],
+        cwd: projectDir,
+        timeoutMs: 120_000,
+        signal
+      })
+      return parseHyperFramesCheckResult(res.stdout, res.stderr, res.code, Date.now() - started)
+    },
 
-    const passed = (result.code ?? 1) === 0
-    const lines = (result.stdout + result.stderr)
-      .split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean)
-    return {
-      passed,
-      issues: passed
-        ? []
-        : lines.map((message) => ({ severity: 'error' as const, message })).slice(0, 20),
-      durationMs
-    }
-  },
+    async startPreview(
+      projectDir: string,
+      deps: VideoEngineProcessDeps,
+      onExit: () => void,
+      signal?: AbortSignal
+    ): Promise<VideoStudioPreviewHandle> {
+      await deps.hydrateShellPath(true)
+      const invocation = await resolveHyperFramesInvocation(deps, true)
+      if (!invocation) {
+        throw new Error('video_studio_engine_unavailable')
+      }
+      const port = await deps.allocateLoopbackPort()
+      return new Promise<VideoStudioPreviewHandle>((resolve, reject) => {
+        let settled = false
+        let processHandle: ReturnType<typeof deps.spawnPreviewStream>
+        const cleanupTimer = setTimeout(() => {
+          if (!settled) {
+            settled = true
+            void processHandle?.stop()
+            reject(new Error('video_studio_preview_timeout'))
+          }
+        }, 20_000)
 
-  async startPreview(
-    projectDir: string,
-    deps: VideoEngineProcessDeps,
-    signal?: AbortSignal
-  ): Promise<VideoStudioPreviewState> {
-    await deps.hydrateShellPath()
-    const hfBin = await deps.resolveCommand('hyperframes')
-    if (!hfBin) {
-      throw new Error('video_studio_engine_unavailable')
-    }
+        const onAbort = () => {
+          if (!settled) {
+            settled = true
+            clearTimeout(cleanupTimer)
+            void processHandle?.stop()
+            reject(new Error('video_studio_preview_cancelled'))
+          }
+        }
+        signal?.addEventListener('abort', onAbort, { once: true })
 
-    return new Promise<VideoStudioPreviewState>((resolve, reject) => {
-      let resolved = false
-      let handle: { kill(): void; exited: Promise<void> } | null = null
-
-      deps
-        .spawnStream({
-          program: hfBin,
-          args: ['preview', '--port', '0'],
+        processHandle = deps.spawnPreviewStream({
+          program: invocation.program,
+          args: [
+            ...invocation.prefixArgs,
+            'preview',
+            '--foreground',
+            '--json',
+            '--port',
+            String(port)
+          ],
           cwd: projectDir,
-          signal,
-          onLine: (line) => {
-            if (resolved) {
+          onOutputLine: (line) => {
+            if (settled) {
               return
             }
-            const port = parsePort(line)
-            if (port) {
-              resolved = true
-              resolve({ running: true, port, url: `http://localhost:${port}` })
+            const url = parsePreviewUrl(line, port)
+            if (url) {
+              settled = true
+              clearTimeout(cleanupTimer)
+              signal?.removeEventListener('abort', onAbort)
+              resolve({ state: { active: true, url, port }, stop: () => processHandle.stop() })
+            }
+          },
+          onExit: (code) => {
+            if (!settled) {
+              settled = true
+              clearTimeout(cleanupTimer)
+              signal?.removeEventListener('abort', onAbort)
+              reject(new Error(`video_studio_preview_exited:${code ?? 'unknown'}`))
+            } else {
+              onExit()
             }
           }
         })
-        .then((h) => {
-          handle = h
-          if (!resolved) {
-            h.exited.then(() => {
-              if (!resolved) {
-                resolved = true
-                reject(new Error('video_studio_preview_exited_before_ready'))
-              }
-            })
-          }
-        })
-        .catch((err) => {
-          if (!resolved) {
-            resolved = true
-            reject(err)
-          }
-        })
-      void handle
-    })
-  },
+      })
+    },
 
-  async renderProject(
-    projectDir: string,
-    outputPath: string,
-    params: Pick<VideoStudioStartRenderParams, 'quality'>,
-    deps: VideoEngineProcessDeps,
-    onProgress: (snapshot: Partial<VideoStudioRenderJobSnapshot>) => void,
-    signal?: AbortSignal
-  ): Promise<void> {
-    await deps.hydrateShellPath()
-    const hfBin = await deps.resolveCommand('hyperframes')
-    if (!hfBin) {
-      throw new Error('video_studio_engine_unavailable')
-    }
-
-    const qualityArgs: Record<string, string[]> = {
-      draft: ['--quality', 'draft'],
-      standard: [],
-      high: ['--quality', 'high']
-    }
-    const extraArgs = qualityArgs[params.quality] ?? []
-
-    const outputDir = join(outputPath, '..').replace(/\\/g, '/')
-    const fileName = outputPath.split(/[\\/]/).pop() ?? 'output.mp4'
-
-    const result = await deps.runProcess({
-      program: hfBin,
-      args: ['render', '--output-dir', outputDir, '--filename', fileName, ...extraArgs],
-      cwd: projectDir,
-      timeoutMs: 3_600_000,
-      signal
-    })
-
-    // Best-effort progress reporting from stdout lines
-    const lines = result.stdout.split('\n')
-    for (const line of lines) {
-      const pct = parseProgressPercent(line)
-      if (pct !== undefined) {
-        onProgress({ progressPercent: pct, logLines: [line.trim()].filter(Boolean) })
+    async renderProject(
+      projectDir: string,
+      request: VideoRenderRequest,
+      deps: VideoEngineProcessDeps,
+      onProgress: (update: VideoRenderProgressUpdate) => void,
+      signal?: AbortSignal
+    ): Promise<VideoStudioRenderRecord> {
+      await deps.hydrateShellPath(true)
+      const invocation = await resolveHyperFramesInvocation(deps, true)
+      if (!invocation) {
+        throw new Error('video_studio_engine_unavailable')
       }
-    }
+      const outputPath = resolveVideoStudioRenderOutputFile(projectDir, request.fileName)
+      const res = await deps.runProcessStreaming({
+        program: invocation.program,
+        args: [
+          ...invocation.prefixArgs,
+          'render',
+          '--quality',
+          request.quality,
+          '--fps',
+          String(request.project.fps),
+          '--output',
+          `renders/${request.fileName}`
+        ],
+        cwd: projectDir,
+        timeoutMs: 3_600_000,
+        signal,
+        onOutputLine: (line) => {
+          const update = parseRenderProgressLine(line)
+          if (update) {
+            onProgress(update)
+          }
+        }
+      })
 
-    if ((result.code ?? 1) !== 0) {
-      throw new Error(
-        `video_studio_render_failed: exit ${result.code}\n${result.stderr || result.stdout}`
+      if (signal?.aborted) {
+        await deps.removeFile(outputPath).catch(() => {})
+        throw new Error('video_studio_render_cancelled')
+      }
+      if (res.code !== 0) {
+        await deps.removeFile(outputPath).catch(() => {})
+        const detail = (res.stderr || res.stdout).trim().split('\n').pop() ?? `exit ${res.code}`
+        throw new Error(`video_studio_render_failed: ${detail}`)
+      }
+      const fileStats = await deps.statFile(outputPath)
+      if (!fileStats || fileStats.size <= 0) {
+        await deps.removeFile(outputPath).catch(() => {})
+        throw new Error('video_studio_render_empty_output')
+      }
+      const { width, height, durationSeconds } = await probeMediaMetadata(
+        projectDir,
+        outputPath,
+        request.project,
+        deps
       )
+      return {
+        id: request.renderId,
+        engine: 'hyperframes',
+        quality: request.quality,
+        fileName: request.fileName,
+        durationSeconds,
+        width,
+        height,
+        fps: request.project.fps,
+        sizeBytes: fileStats.size,
+        createdAt: Date.now()
+      }
     }
   }
 }

@@ -1,8 +1,9 @@
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { AtomicSnapshotWriter } from '../persistence/atomic-snapshot-writer'
+import { resolveVideoStudioProjectDir } from './video-studio-composition-paths'
 import { openVideoStudioCatalog } from './video-studio-catalog'
 
 const draft = {
@@ -14,7 +15,7 @@ const draft = {
   engine: 'hyperframes',
   fps: 30
 } as const
-const stored = { ...draft, id: 'saved-project', createdAt: 100, updatedAt: 100, renders: [] }
+const stored = { ...draft, id: 'saved-project', renders: [], createdAt: 100, updatedAt: 100 }
 
 let directory: string
 const catalogFile = () => join(directory, 'video-studio-projects.json')
@@ -53,7 +54,12 @@ it('keeps concurrent edits durable without sharing mutable snapshots or changing
     createdAt: before.createdAt
   })
   expect(result.updatedAt).toBeGreaterThan(before.updatedAt)
+
+  const compDir = resolveVideoStudioProjectDir(copy, projectId)
+  await mkdir(compDir, { recursive: true })
+  await writeFile(join(compDir, 'index.html'), '<div />')
   expect(await reopened.remove({ id: projectId })).toEqual({ projects: [], invalidRecords: 0 })
+  await expect(stat(compDir)).rejects.toThrow()
   expect((await catalog.list()).projects[0].title).toBe('A new title')
 })
 
@@ -94,6 +100,26 @@ it('isolates malformed and duplicate rows while preserving them and unknown fiel
   ])
 })
 
+it('appends render records atomically without altering creation time', async () => {
+  await writeFile(catalogFile(), JSON.stringify([stored]))
+  const catalog = await openVideoStudioCatalog(directory)
+  const record = {
+    id: 'render-1',
+    engine: 'hyperframes' as const,
+    quality: 'looks' as const,
+    fileName: 'render-1.mp4',
+    durationSeconds: 30,
+    width: 1920,
+    height: 1080,
+    fps: 30,
+    sizeBytes: 2048,
+    createdAt: 500
+  }
+  const updated = await catalog.appendRender(stored.id, record)
+  expect(updated.projects[0].renders).toEqual([record])
+  expect(updated.projects[0].createdAt).toBe(100)
+})
+
 it('keeps unreadable catalog bytes intact until the file is repaired', async () => {
   await writeFile(catalogFile(), '{broken')
   const catalog = await openVideoStudioCatalog(directory)
@@ -105,40 +131,4 @@ it('keeps unreadable catalog bytes intact until the file is repaired', async () 
   await expect(catalog.create(draft)).resolves.toMatchObject({
     projects: [{ title: 'Flight paths' }]
   })
-})
-it('get returns a project by id and null for missing ids', async () => {
-  await writeFile(catalogFile(), JSON.stringify([stored]))
-  const catalog = await openVideoStudioCatalog(directory)
-
-  const found = await catalog.get(stored.id)
-  expect(found).toMatchObject({ id: stored.id, title: 'Flight paths' })
-
-  const missing = await catalog.get('no-such-id')
-  expect(missing).toBeNull()
-})
-
-it('appendRender persists a render record without losing other fields', async () => {
-  await writeFile(catalogFile(), JSON.stringify([stored]))
-  const catalog = await openVideoStudioCatalog(directory)
-
-  const record = {
-    id: 'render-001',
-    startedAt: Date.now(),
-    completedAt: Date.now() + 5000,
-    quality: 'standard' as const,
-    outputFile: 'renders/render-001.mp4',
-    durationMs: 5000
-  }
-  await catalog.appendRender(stored.id, record)
-
-  const updated = await catalog.get(stored.id)
-  expect(updated?.renders).toHaveLength(1)
-  expect(updated?.renders[0]).toMatchObject({ id: 'render-001', quality: 'standard' })
-})
-
-it('appendRender silently no-ops when project is not found', async () => {
-  const catalog = await openVideoStudioCatalog(directory)
-  await expect(
-    catalog.appendRender('non-existent', { id: 'r1', startedAt: Date.now(), quality: 'standard' })
-  ).resolves.not.toThrow()
 })

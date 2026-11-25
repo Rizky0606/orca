@@ -1,27 +1,43 @@
-import type { VideoStudioEngine } from '../../../shared/video-studio/video-studio-project'
+import type {
+  VideoStudioProject,
+  VideoStudioRenderRecord
+} from '../../../shared/video-studio/video-studio-project'
 import type {
   VideoStudioCheckResult,
-  VideoStudioEngineStatus,
-  VideoStudioPreviewState,
-  VideoStudioRenderJobSnapshot,
-  VideoStudioStartRenderParams
+  VideoStudioCompositionState,
+  VideoStudioEngineStatus
 } from '../../../shared/video-studio/video-studio-rpc-contract'
-import type { VideoEngineProcessDeps, VideoRenderEngineAdapter } from './video-render-engine'
+import type {
+  VideoEngineProcessDeps,
+  VideoRenderEngineAdapter,
+  VideoRenderProgressUpdate,
+  VideoRenderRequest,
+  VideoStudioPreviewHandle
+} from './video-render-engine'
 
-const ENGINE: VideoStudioEngine = 'remotion'
-
+/** Reserved Phase 6 Remotion engine slot; refuses execution cleanly without mock outputs. */
 export const remotionEngineAdapter: VideoRenderEngineAdapter = {
-  engine: ENGINE,
+  id: 'remotion',
 
   async probeEnvironment(_deps: VideoEngineProcessDeps): Promise<VideoStudioEngineStatus> {
     return {
-      engine: ENGINE,
+      engine: 'remotion',
       available: false,
-      status: 'planned'
+      status: 'planned',
+      missingTools: [],
+      doctorOk: false,
+      summary: 'Remotion adapter is reserved for Phase 6.'
     }
   },
 
-  async checkComposition(
+  async scaffoldProject(
+    _projectDir: string,
+    _project: VideoStudioProject
+  ): Promise<VideoStudioCompositionState> {
+    throw new Error('video_studio_engine_unavailable')
+  },
+
+  async checkProject(
     _projectDir: string,
     _deps: VideoEngineProcessDeps,
     _signal?: AbortSignal
@@ -32,19 +48,19 @@ export const remotionEngineAdapter: VideoRenderEngineAdapter = {
   async startPreview(
     _projectDir: string,
     _deps: VideoEngineProcessDeps,
+    _onExit: () => void,
     _signal?: AbortSignal
-  ): Promise<VideoStudioPreviewState> {
+  ): Promise<VideoStudioPreviewHandle> {
     throw new Error('video_studio_engine_unavailable')
   },
 
   async renderProject(
     _projectDir: string,
-    _outputPath: string,
-    _params: Pick<VideoStudioStartRenderParams, 'quality'>,
+    _request: VideoRenderRequest,
     _deps: VideoEngineProcessDeps,
-    _onProgress: (snapshot: Partial<VideoStudioRenderJobSnapshot>) => void,
+    _onProgress: (update: VideoRenderProgressUpdate) => void,
     _signal?: AbortSignal
-  ): Promise<void> {
+  ): Promise<VideoStudioRenderRecord> {
     throw new Error('video_studio_engine_unavailable')
   }
 }

@@ -15,25 +15,26 @@ export const VIDEO_STUDIO_CREATE_PROJECT_METHOD = 'videoStudio.createProject'
 export const VIDEO_STUDIO_UPDATE_PROJECT_METHOD = 'videoStudio.updateProject'
 export const VIDEO_STUDIO_DELETE_PROJECT_METHOD = 'videoStudio.deleteProject'
 
-export const VIDEO_STUDIO_PROBE_ENGINE_METHOD = 'videoStudio.probeEngine'
+export const VIDEO_STUDIO_PROBE_ENGINES_METHOD = 'videoStudio.probeEngines'
 export const VIDEO_STUDIO_GET_COMPOSITION_STATE_METHOD = 'videoStudio.getCompositionState'
 export const VIDEO_STUDIO_SCAFFOLD_COMPOSITION_METHOD = 'videoStudio.scaffoldComposition'
+export const VIDEO_STUDIO_OPEN_COMPOSITION_WORKSPACE_METHOD = 'videoStudio.openCompositionWorkspace'
 export const VIDEO_STUDIO_CHECK_COMPOSITION_METHOD = 'videoStudio.checkComposition'
+export const VIDEO_STUDIO_START_RENDER_METHOD = 'videoStudio.startRender'
+export const VIDEO_STUDIO_CANCEL_RENDER_METHOD = 'videoStudio.cancelRender'
+export const VIDEO_STUDIO_SUBSCRIBE_JOBS_METHOD = 'videoStudio.subscribeJobs'
 export const VIDEO_STUDIO_START_PREVIEW_METHOD = 'videoStudio.startPreview'
 export const VIDEO_STUDIO_STOP_PREVIEW_METHOD = 'videoStudio.stopPreview'
-export const VIDEO_STUDIO_GET_PREVIEW_STATE_METHOD = 'videoStudio.getPreviewState'
-export const VIDEO_STUDIO_START_RENDER_METHOD = 'videoStudio.startRender'
-export const VIDEO_STUDIO_ABORT_RENDER_METHOD = 'videoStudio.abortRender'
-export const VIDEO_STUDIO_SUBSCRIBE_JOBS_METHOD = 'videoStudio.subscribeJobs'
 export const VIDEO_STUDIO_READ_RENDER_OUTPUT_CHUNK_METHOD = 'videoStudio.readRenderOutputChunk'
 
-// ─── CRUD params/results (unchanged shape; engine/fps now part of Fields) ────
+export const VIDEO_STUDIO_MAX_OUTPUT_CHUNK_BYTES = 512 * 1024
+
+// ─── Project CRUD ─────────────────────────────────────────────────────────────
 
 export const VideoStudioListProjectsParams = z.strictObject({})
 export const VideoStudioCreateProjectParams = VideoStudioProjectFields.strict()
 export const VideoStudioUpdateProjectParams = z.strictObject({
   id: VideoStudioProjectId,
-  // engine and fps ARE mutable; id, createdAt, renders are NOT
   changes: VideoStudioProjectFields.partial().strict()
 })
 export const VideoStudioDeleteProjectParams = z.strictObject({ id: VideoStudioProjectId })
@@ -48,137 +49,179 @@ export const VideoStudioCreateProjectResult = VideoStudioListProjectsResult.exte
 export const VideoStudioUpdateProjectResult = VideoStudioCreateProjectResult
 export const VideoStudioDeleteProjectResult = VideoStudioListProjectsResult
 
-// ─── Engine status ────────────────────────────────────────────────────────────
+// ─── Engine Probe ─────────────────────────────────────────────────────────────
+
+export const VideoStudioMissingToolSchema = z.enum(['node22', 'hyperframes', 'ffmpeg'])
+export type VideoStudioMissingTool = z.infer<typeof VideoStudioMissingToolSchema>
 
 export const VideoStudioEngineStatusSchema = z.object({
   engine: VideoStudioEngineSchema,
   available: z.boolean(),
-  /** Short human-readable status line. */
-  status: z.string(),
-  /** Detailed diagnostic text (multi-line). */
-  details: z.string().optional(),
-  /** e.g. '1.4.2' */
-  version: z.string().optional()
+  status: z.enum(['ready', 'missing-tools', 'planned', 'error']),
+  missingTools: z.array(VideoStudioMissingToolSchema).default([]),
+  doctorOk: z.boolean().default(false),
+  version: z.string().optional(),
+  summary: z.string()
 })
 export type VideoStudioEngineStatus = z.infer<typeof VideoStudioEngineStatusSchema>
 
-export const VideoStudioProbeEngineParams = z.strictObject({
-  id: VideoStudioProjectId
+export const VideoStudioProbeEnginesParams = z.strictObject({})
+export const VideoStudioProbeEnginesResult = z.object({
+  engines: z.array(VideoStudioEngineStatusSchema)
 })
-export const VideoStudioProbeEngineResult = VideoStudioEngineStatusSchema
 
-// ─── Composition state ────────────────────────────────────────────────────────
+// ─── Composition State & Workspace ────────────────────────────────────────────
 
 export const VideoStudioCompositionStateSchema = z.object({
-  /** Whether the composition directory exists on disk. */
-  exists: z.boolean(),
-  /** Whether index.html is present. */
-  hasIndexHtml: z.boolean(),
-  /** Whether hyperframes.json is present. */
-  hasConfigFile: z.boolean()
+  initialized: z.boolean(),
+  entryExists: z.boolean(),
+  files: z.array(z.string()),
+  previewActive: z.boolean(),
+  previewUrl: z.string().optional()
 })
 export type VideoStudioCompositionState = z.infer<typeof VideoStudioCompositionStateSchema>
 
-export const VideoStudioGetCompositionStateParams = z.strictObject({ id: VideoStudioProjectId })
+export const VideoStudioGetCompositionStateParams = z.strictObject({
+  projectId: VideoStudioProjectId
+})
 export const VideoStudioGetCompositionStateResult = VideoStudioCompositionStateSchema
 
-// ─── Scaffold ────────────────────────────────────────────────────────────────
-
 export const VideoStudioScaffoldCompositionParams = z.strictObject({
-  id: VideoStudioProjectId
+  projectId: VideoStudioProjectId,
+  overwrite: z.boolean().optional()
 })
-export const VideoStudioScaffoldCompositionResult = z.object({
-  projectDir: z.string(),
-  /** Number of files written (0 means already existed). */
-  filesWritten: z.number().int().nonnegative()
+export const VideoStudioScaffoldCompositionResult = VideoStudioCompositionStateSchema
+
+export const VideoStudioOpenCompositionWorkspaceParams = z.strictObject({
+  projectId: VideoStudioProjectId
+})
+export const VideoStudioOpenCompositionWorkspaceResult = z.object({
+  folderWorkspaceId: z.string().min(1),
+  worktreeId: z.string().min(1)
 })
 
-// ─── Check ───────────────────────────────────────────────────────────────────
+// ─── Composition Check ────────────────────────────────────────────────────────
+
+export const VideoStudioCheckFindingSchema = z.object({
+  severity: z.enum(['error', 'warning', 'info']),
+  code: z.string().optional(),
+  message: z.string(),
+  file: z.string().optional()
+})
+export type VideoStudioCheckFinding = z.infer<typeof VideoStudioCheckFindingSchema>
 
 export const VideoStudioCheckResultSchema = z.object({
   passed: z.boolean(),
-  issues: z.array(
-    z.object({
-      severity: z.enum(['error', 'warning', 'info']),
-      message: z.string(),
-      file: z.string().optional(),
-      line: z.number().int().optional()
-    })
-  ),
+  errors: z.array(VideoStudioCheckFindingSchema),
+  warnings: z.array(VideoStudioCheckFindingSchema),
+  summary: z.string(),
+  checkedAt: z.number(),
   durationMs: z.number().optional()
 })
 export type VideoStudioCheckResult = z.infer<typeof VideoStudioCheckResultSchema>
 
-export const VideoStudioCheckCompositionParams = z.strictObject({ id: VideoStudioProjectId })
+export const VideoStudioCheckCompositionParams = z.strictObject({
+  projectId: VideoStudioProjectId
+})
 export const VideoStudioCheckCompositionResult = VideoStudioCheckResultSchema
 
-// ─── Preview ─────────────────────────────────────────────────────────────────
+// ─── Preview ──────────────────────────────────────────────────────────────────
 
 export const VideoStudioPreviewStateSchema = z.object({
-  running: z.boolean(),
-  port: z.number().int().optional(),
-  url: z.string().optional()
+  active: z.boolean(),
+  url: z.string().optional(),
+  port: z.number().int().optional()
 })
 export type VideoStudioPreviewState = z.infer<typeof VideoStudioPreviewStateSchema>
 
-export const VideoStudioStartPreviewParams = z.strictObject({ id: VideoStudioProjectId })
+export const VideoStudioStartPreviewParams = z.strictObject({
+  projectId: VideoStudioProjectId
+})
 export const VideoStudioStartPreviewResult = VideoStudioPreviewStateSchema
 
-export const VideoStudioStopPreviewParams = z.strictObject({ id: VideoStudioProjectId })
-export const VideoStudioStopPreviewResult = z.object({ stopped: z.boolean() })
-
-export const VideoStudioGetPreviewStateParams = z.strictObject({ id: VideoStudioProjectId })
-export const VideoStudioGetPreviewStateResult = VideoStudioPreviewStateSchema
-
-// ─── Render ───────────────────────────────────────────────────────────────────
-
-export const VideoStudioStartRenderParams = z.strictObject({
-  id: VideoStudioProjectId,
-  quality: VideoStudioRenderQualitySchema.default('standard')
+export const VideoStudioStopPreviewParams = z.strictObject({
+  projectId: VideoStudioProjectId
 })
-export const VideoStudioStartRenderResult = z.object({
-  renderId: z.string()
-})
+export const VideoStudioStopPreviewResult = VideoStudioPreviewStateSchema
 
-export const VideoStudioAbortRenderParams = z.strictObject({ id: VideoStudioProjectId })
-export const VideoStudioAbortRenderResult = z.object({ aborted: z.boolean() })
+// ─── Render & Jobs ────────────────────────────────────────────────────────────
 
-// ─── Job snapshot / streaming ─────────────────────────────────────────────────
+export const VideoStudioRenderJobStatusSchema = z.enum([
+  'queued',
+  'checking',
+  'rendering',
+  'completed',
+  'failed',
+  'cancelled'
+])
+export type VideoStudioRenderJobStatus = z.infer<typeof VideoStudioRenderJobStatusSchema>
 
 export const VideoStudioRenderJobSnapshotSchema = z.object({
   projectId: VideoStudioProjectId,
-  renderId: z.string(),
-  phase: z.enum(['pending', 'running', 'done', 'failed', 'aborted']),
+  renderId: z.string().optional(),
+  kind: z.enum(['check', 'render']),
+  engine: VideoStudioEngineSchema,
+  quality: VideoStudioRenderQualitySchema.optional(),
+  status: VideoStudioRenderJobStatusSchema,
   progressPercent: z.number().min(0).max(100).optional(),
+  stageLabel: z.string().optional(),
   logLines: z.array(z.string()),
-  record: VideoStudioRenderRecordSchema.optional()
+  startedAt: z.number(),
+  completedAt: z.number().optional(),
+  error: z.string().optional(),
+  record: VideoStudioRenderRecordSchema.optional(),
+  checkResult: VideoStudioCheckResultSchema.optional()
 })
 export type VideoStudioRenderJobSnapshot = z.infer<typeof VideoStudioRenderJobSnapshotSchema>
 
-export const VideoStudioJobsEventSchema = z.object({
+export const VideoStudioStartRenderParams = z.strictObject({
   projectId: VideoStudioProjectId,
-  snapshot: VideoStudioRenderJobSnapshotSchema.optional()
+  quality: VideoStudioRenderQualitySchema.default('looks')
+})
+export const VideoStudioStartRenderResult = z.object({
+  job: VideoStudioRenderJobSnapshotSchema
+})
+
+export const VideoStudioCancelRenderParams = z.strictObject({
+  projectId: VideoStudioProjectId
+})
+export const VideoStudioCancelRenderResult = z.object({
+  job: VideoStudioRenderJobSnapshotSchema.nullable()
+})
+
+export const VideoStudioSubscribeJobsParams = z.strictObject({
+  projectId: VideoStudioProjectId.optional()
+})
+
+export const VideoStudioJobsEventSchema = z.object({
+  revision: z.number().int().nonnegative(),
+  engines: z.array(VideoStudioEngineStatusSchema).optional(),
+  jobs: z.array(VideoStudioRenderJobSnapshotSchema),
+  previews: z.record(z.string(), VideoStudioPreviewStateSchema).default({})
 })
 export type VideoStudioJobsEvent = z.infer<typeof VideoStudioJobsEventSchema>
 
-export const VideoStudioSubscribeJobsParams = z.strictObject({ id: VideoStudioProjectId })
-
-// ─── Output chunk ─────────────────────────────────────────────────────────────
+// ─── Bounded MP4 Chunk Streaming ──────────────────────────────────────────────
 
 export const VideoStudioReadRenderOutputChunkParams = z.strictObject({
-  id: VideoStudioProjectId,
-  renderId: z.string(),
-  byteOffset: z.number().int().nonnegative().default(0)
+  projectId: VideoStudioProjectId,
+  renderId: VideoStudioProjectId,
+  offset: z.number().int().nonnegative(),
+  maxBytes: z
+    .number()
+    .int()
+    .min(1)
+    .max(VIDEO_STUDIO_MAX_OUTPUT_CHUNK_BYTES)
+    .default(256 * 1024)
 })
+
 export const VideoStudioReadRenderOutputChunkResult = z.object({
-  /** Base-64 encoded binary chunk (max 512 KiB). */
-  chunk: z.string(),
+  dataBase64: z.string(),
   totalBytes: z.number().int().nonnegative(),
-  done: z.boolean()
+  nextOffset: z.number().int().nonnegative(),
+  eof: z.boolean(),
+  mimeType: z.literal('video/mp4')
 })
-export type VideoStudioReadRenderOutputChunk = z.infer<
-  typeof VideoStudioReadRenderOutputChunkResult
->
 
 // ─── TypeScript exports ───────────────────────────────────────────────────────
 
@@ -190,8 +233,8 @@ export type VideoStudioListProjectsResult = z.infer<typeof VideoStudioListProjec
 export type VideoStudioCreateProjectResult = z.infer<typeof VideoStudioCreateProjectResult>
 export type VideoStudioUpdateProjectResult = z.infer<typeof VideoStudioUpdateProjectResult>
 export type VideoStudioDeleteProjectResult = z.infer<typeof VideoStudioDeleteProjectResult>
-export type VideoStudioProbeEngineParams = z.infer<typeof VideoStudioProbeEngineParams>
-export type VideoStudioProbeEngineResult = z.infer<typeof VideoStudioProbeEngineResult>
+export type VideoStudioProbeEnginesParams = z.infer<typeof VideoStudioProbeEnginesParams>
+export type VideoStudioProbeEnginesResult = z.infer<typeof VideoStudioProbeEnginesResult>
 export type VideoStudioGetCompositionStateParams = z.infer<
   typeof VideoStudioGetCompositionStateParams
 >
@@ -204,18 +247,22 @@ export type VideoStudioScaffoldCompositionParams = z.infer<
 export type VideoStudioScaffoldCompositionResult = z.infer<
   typeof VideoStudioScaffoldCompositionResult
 >
+export type VideoStudioOpenCompositionWorkspaceParams = z.infer<
+  typeof VideoStudioOpenCompositionWorkspaceParams
+>
+export type VideoStudioOpenCompositionWorkspaceResult = z.infer<
+  typeof VideoStudioOpenCompositionWorkspaceResult
+>
 export type VideoStudioCheckCompositionParams = z.infer<typeof VideoStudioCheckCompositionParams>
 export type VideoStudioCheckCompositionResult = z.infer<typeof VideoStudioCheckCompositionResult>
 export type VideoStudioStartPreviewParams = z.infer<typeof VideoStudioStartPreviewParams>
 export type VideoStudioStartPreviewResult = z.infer<typeof VideoStudioStartPreviewResult>
 export type VideoStudioStopPreviewParams = z.infer<typeof VideoStudioStopPreviewParams>
 export type VideoStudioStopPreviewResult = z.infer<typeof VideoStudioStopPreviewResult>
-export type VideoStudioGetPreviewStateParams = z.infer<typeof VideoStudioGetPreviewStateParams>
-export type VideoStudioGetPreviewStateResult = z.infer<typeof VideoStudioGetPreviewStateResult>
 export type VideoStudioStartRenderParams = z.infer<typeof VideoStudioStartRenderParams>
 export type VideoStudioStartRenderResult = z.infer<typeof VideoStudioStartRenderResult>
-export type VideoStudioAbortRenderParams = z.infer<typeof VideoStudioAbortRenderParams>
-export type VideoStudioAbortRenderResult = z.infer<typeof VideoStudioAbortRenderResult>
+export type VideoStudioCancelRenderParams = z.infer<typeof VideoStudioCancelRenderParams>
+export type VideoStudioCancelRenderResult = z.infer<typeof VideoStudioCancelRenderResult>
 export type VideoStudioSubscribeJobsParams = z.infer<typeof VideoStudioSubscribeJobsParams>
 export type VideoStudioReadRenderOutputChunkParams = z.infer<
   typeof VideoStudioReadRenderOutputChunkParams
