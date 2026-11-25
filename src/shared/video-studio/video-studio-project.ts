@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import * as z from 'zod'
 
 export const VideoStudioProjectId = z.string().refine((value) => value.trim().length > 0)
 
