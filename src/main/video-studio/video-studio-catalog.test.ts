@@ -10,9 +10,11 @@ const draft = {
   prompt: 'Follow a flock',
   aspectRatio: '16:9',
   durationSeconds: 30,
-  workflowStage: 'research'
+  workflowStage: 'research',
+  engine: 'hyperframes',
+  fps: 30
 } as const
-const stored = { ...draft, id: 'saved-project', createdAt: 100, updatedAt: 100 }
+const stored = { ...draft, id: 'saved-project', createdAt: 100, updatedAt: 100, renders: [] }
 
 let directory: string
 const catalogFile = () => join(directory, 'video-studio-projects.json')
@@ -103,4 +105,40 @@ it('keeps unreadable catalog bytes intact until the file is repaired', async () 
   await expect(catalog.create(draft)).resolves.toMatchObject({
     projects: [{ title: 'Flight paths' }]
   })
+})
+it('get returns a project by id and null for missing ids', async () => {
+  await writeFile(catalogFile(), JSON.stringify([stored]))
+  const catalog = await openVideoStudioCatalog(directory)
+
+  const found = await catalog.get(stored.id)
+  expect(found).toMatchObject({ id: stored.id, title: 'Flight paths' })
+
+  const missing = await catalog.get('no-such-id')
+  expect(missing).toBeNull()
+})
+
+it('appendRender persists a render record without losing other fields', async () => {
+  await writeFile(catalogFile(), JSON.stringify([stored]))
+  const catalog = await openVideoStudioCatalog(directory)
+
+  const record = {
+    id: 'render-001',
+    startedAt: Date.now(),
+    completedAt: Date.now() + 5000,
+    quality: 'standard' as const,
+    outputFile: 'renders/render-001.mp4',
+    durationMs: 5000
+  }
+  await catalog.appendRender(stored.id, record)
+
+  const updated = await catalog.get(stored.id)
+  expect(updated?.renders).toHaveLength(1)
+  expect(updated?.renders[0]).toMatchObject({ id: 'render-001', quality: 'standard' })
+})
+
+it('appendRender silently no-ops when project is not found', async () => {
+  const catalog = await openVideoStudioCatalog(directory)
+  await expect(
+    catalog.appendRender('non-existent', { id: 'r1', startedAt: Date.now(), quality: 'standard' })
+  ).resolves.not.toThrow()
 })

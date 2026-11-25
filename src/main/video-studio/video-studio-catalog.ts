@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, realpath } from 'node:fs/promises'
+import { mkdir, readFile, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   normalizeVideoStudioProject,
   VideoStudioProjectSchema,
-  type VideoStudioProject
+  type VideoStudioProject,
+  type VideoStudioRenderRecord
 } from '../../shared/video-studio/video-studio-project'
 import type {
   VideoStudioCreateProjectParams,
@@ -53,12 +54,23 @@ class VideoStudioCatalog {
   private lane: Promise<void> = Promise.resolve()
   private readonly writer: AtomicSnapshotWriter
 
-  constructor(private readonly file: string) {
+  constructor(
+    private readonly file: string,
+    /** Root directory for per-project composition folders; deleted on remove. */
+    private readonly projectsRoot: string | null = null
+  ) {
     this.writer = new AtomicSnapshotWriter(() => file, { fileMode: 0o600 })
   }
 
   list(): Promise<VideoStudioListProjectsResult> {
     return this.lane.then(async () => snapshot(await readRows(this.file)))
+  }
+
+  get(id: string): Promise<VideoStudioProject | null> {
+    return this.lane.then(async () => {
+      const entry = indexProjects(await readRows(this.file)).get(id)
+      return entry ? entry.project : null
+    })
   }
 
   create(input: VideoStudioCreateProjectParams) {
@@ -92,21 +104,51 @@ class VideoStudioCatalog {
     })
   }
 
-  remove({ id }: VideoStudioDeleteProjectParams) {
+  /**
+   * Atomically appends a render record to the project's `renders` array.
+   * No-ops if the project is not found (render may finish after project delete).
+   */
+  appendRender(projectId: string, record: VideoStudioRenderRecord) {
     return this.mutate((rows) => {
+      const entry = indexProjects(rows).get(projectId)
+      if (!entry) {
+        return { projectId }
+      }
+      const { index, project } = entry
+      const updated = VideoStudioProjectSchema.parse({
+        ...project,
+        renders: [...project.renders, record],
+        updatedAt: Math.max(Date.now(), project.updatedAt + 1)
+      })
+      const raw = rows[index]
+      rows[index] = { ...(typeof raw === 'object' && raw !== null ? raw : {}), ...updated }
+      return { projectId }
+    })
+  }
+
+  remove({ id }: VideoStudioDeleteProjectParams) {
+    return this.mutate(async (rows) => {
       const entry = indexProjects(rows).get(id)
       if (!entry) {
         throw new Error('video_studio_project_not_found')
       }
       rows.splice(entry.index, 1)
+      // Best-effort cleanup of the composition directory
+      if (this.projectsRoot) {
+        const { join: pathJoin } = await import('node:path')
+        const projectDir = pathJoin(this.projectsRoot, id)
+        await rm(projectDir, { recursive: true, force: true }).catch(() => {})
+      }
       return {}
     })
   }
 
-  private mutate<T>(apply: (rows: unknown[]) => T): Promise<VideoStudioListProjectsResult & T> {
+  private mutate<T>(
+    apply: (rows: unknown[]) => T | Promise<T>
+  ): Promise<VideoStudioListProjectsResult & T> {
     const mutation = this.lane.then(async () => {
       const rows = await readRows(this.file)
-      const result = apply(rows)
+      const result = await apply(rows)
       try {
         await this.writer.write(() => JSON.stringify(rows))
       } catch (error) {
@@ -126,7 +168,10 @@ const catalogs = new Map<string, VideoStudioCatalog>()
 
 export type { VideoStudioCatalog }
 
-export async function openVideoStudioCatalog(userDataPath: string): Promise<VideoStudioCatalog> {
+export async function openVideoStudioCatalog(
+  userDataPath: string,
+  projectsRoot?: string
+): Promise<VideoStudioCatalog> {
   const directory = await mkdir(userDataPath, { recursive: true, mode: 0o700 })
     .then(() => realpath(userDataPath))
     .catch((error) => {
@@ -134,7 +179,10 @@ export async function openVideoStudioCatalog(userDataPath: string): Promise<Vide
     })
   let catalog = catalogs.get(directory)
   if (!catalog) {
-    catalog = new VideoStudioCatalog(join(directory, 'video-studio-projects.json'))
+    catalog = new VideoStudioCatalog(
+      join(directory, 'video-studio-projects.json'),
+      projectsRoot ?? null
+    )
     catalogs.set(directory, catalog)
   }
   return catalog
