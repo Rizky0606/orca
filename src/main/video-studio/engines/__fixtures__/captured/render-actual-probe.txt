@@ -1,0 +1,12 @@
+
+✗  FFmpeg not found
+
+   FFmpeg is required to encode video.
+   winget install --id Gyan.FFmpeg -e, or download the 64-bit build from https://ffmpeg.org/download.html#build-windows and add its bin/ directory to PATH.
+
+
+✗  FFprobe not found
+
+   FFprobe is required to probe media assets. It ships with FFmpeg but was not found on PATH.
+   winget install --id Gyan.FFmpeg -e, or download the 64-bit build from https://ffmpeg.org/download.html#build-windows and add its bin/ directory to PATH.
+
