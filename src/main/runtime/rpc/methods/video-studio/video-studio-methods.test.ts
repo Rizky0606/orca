@@ -15,8 +15,10 @@ import {
 import { RpcDispatcher } from '../../dispatcher'
 import { VIDEO_STUDIO_METHODS } from './video-studio-methods'
 
+const OkEnvelopeSchema = z.object({ ok: z.literal(true), result: z.unknown() })
+
 function expectOkResult<S extends z.ZodTypeAny>(response: unknown, schema: S): z.infer<S> {
-  return z.object({ ok: z.literal(true), result: schema }).parse(response).result
+  return schema.parse(OkEnvelopeSchema.parse(response).result)
 }
 
 const directories: string[] = []
