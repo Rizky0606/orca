@@ -184,7 +184,7 @@ describe('VideoStudioJobManager', () => {
       }),
       renderProject: vi.fn(async (_dir, req) => ({
         id: req.renderId,
-        engine: 'hyperframes',
+        engine: 'hyperframes' as const,
         quality: req.quality,
         fileName: req.fileName,
         durationSeconds: 30,

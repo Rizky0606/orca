@@ -1072,9 +1072,20 @@ import {
   SkillUploadCommitRequestSchema
 } from '../skills/sharing/skill-upload-session-contract'
 import {
+  VideoStudioCancelRenderParams,
+  VideoStudioCheckCompositionParams,
   VideoStudioCreateProjectParams,
   VideoStudioDeleteProjectParams,
+  VideoStudioGetCompositionStateParams,
   VideoStudioListProjectsParams,
+  VideoStudioOpenCompositionWorkspaceParams,
+  VideoStudioProbeEnginesParams,
+  VideoStudioReadRenderOutputChunkParams,
+  VideoStudioScaffoldCompositionParams,
+  VideoStudioStartPreviewParams,
+  VideoStudioStartRenderParams,
+  VideoStudioStopPreviewParams,
+  VideoStudioSubscribeJobsParams,
   VideoStudioUpdateProjectParams
 } from '../video-studio/video-studio-rpc-contract'
 
@@ -2185,9 +2196,20 @@ export const RPC_PARAMS_BY_METHOD = {
   'updater.getStatus': null,
   'updater.install': null,
   'usage.call': UsageCallParams,
+  'videoStudio.cancelRender': VideoStudioCancelRenderParams,
+  'videoStudio.checkComposition': VideoStudioCheckCompositionParams,
   'videoStudio.createProject': VideoStudioCreateProjectParams,
   'videoStudio.deleteProject': VideoStudioDeleteProjectParams,
+  'videoStudio.getCompositionState': VideoStudioGetCompositionStateParams,
   'videoStudio.listProjects': VideoStudioListProjectsParams,
+  'videoStudio.openCompositionWorkspace': VideoStudioOpenCompositionWorkspaceParams,
+  'videoStudio.probeEngines': VideoStudioProbeEnginesParams,
+  'videoStudio.readRenderOutputChunk': VideoStudioReadRenderOutputChunkParams,
+  'videoStudio.scaffoldComposition': VideoStudioScaffoldCompositionParams,
+  'videoStudio.startPreview': VideoStudioStartPreviewParams,
+  'videoStudio.startRender': VideoStudioStartRenderParams,
+  'videoStudio.stopPreview': VideoStudioStopPreviewParams,
+  'videoStudio.subscribeJobs': VideoStudioSubscribeJobsParams,
   'videoStudio.updateProject': VideoStudioUpdateProjectParams,
   'webhooks.call': WebhookCallShow,
   'webhooks.calls': WebhookCalls,

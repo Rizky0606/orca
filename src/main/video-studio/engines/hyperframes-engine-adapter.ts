@@ -86,7 +86,7 @@ export function createHyperFramesEngineAdapter(): VideoRenderEngineAdapter {
       deps: VideoEngineProcessDeps,
       signal?: AbortSignal
     ): Promise<VideoStudioCheckResult> {
-      await deps.hydrateShellPath(true)
+      await deps.hydrateShellPath(false)
       const invocation = await resolveHyperFramesInvocation(deps, true)
       if (!invocation) {
         throw new Error('video_studio_engine_unavailable')
@@ -108,7 +108,7 @@ export function createHyperFramesEngineAdapter(): VideoRenderEngineAdapter {
       onExit: () => void,
       signal?: AbortSignal
     ): Promise<VideoStudioPreviewHandle> {
-      await deps.hydrateShellPath(true)
+      await deps.hydrateShellPath(false)
       const invocation = await resolveHyperFramesInvocation(deps, true)
       if (!invocation) {
         throw new Error('video_studio_engine_unavailable')
@@ -179,7 +179,7 @@ export function createHyperFramesEngineAdapter(): VideoRenderEngineAdapter {
       onProgress: (update: VideoRenderProgressUpdate) => void,
       signal?: AbortSignal
     ): Promise<VideoStudioRenderRecord> {
-      await deps.hydrateShellPath(true)
+      await deps.hydrateShellPath(false)
       const invocation = await resolveHyperFramesInvocation(deps, true)
       if (!invocation) {
         throw new Error('video_studio_engine_unavailable')

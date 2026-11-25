@@ -4,44 +4,13 @@
 // covers every session, and unlike a transcript subscription it retains none of them.
 
 import { prepareStructuredTabsIfSupported } from '../../session-tabs/structured-session-tab-restore'
-import { defineStreamingMethod, type RpcContext } from '../../../core'
+import { defineStreamingMethod } from '../../../core'
+import { bindRpcSubscriptionStream } from '../../../core-subscription-stream'
 import { requireStructuredHost as requireHost } from '../creation/structured-agent-session-gate'
 import { structuredAgentSessionStatusSubscriptionId } from './structured-agent-session-subscription-id'
 import { clientReadsStructuredSessionAgent } from '../structured-agent-session-policy'
 
-/** Ties a stream to both ends that can close it — the runtime's subscription registry and the
- *  transport abort — so either one runs `onClose` exactly once. */
-export function bindStructuredAgentSessionStream(
-  ctx: RpcContext,
-  subscriptionId: string,
-  onClose: () => void
-): { isClosed: () => boolean; close: () => void } {
-  let closed = false
-  let releaseTransportSubscription = (): void => {}
-  const onTransportAbort = (): void => releaseTransportSubscription()
-  const cleanup = (): void => {
-    closed = true
-    ctx.signal?.removeEventListener('abort', onTransportAbort)
-    onClose()
-  }
-  let registration: { releaseIfCurrent: () => void }
-  if (typeof ctx.runtime.registerOwnedSubscriptionCleanup === 'function') {
-    registration = ctx.runtime.registerOwnedSubscriptionCleanup(
-      subscriptionId,
-      cleanup,
-      ctx.connectionId
-    )
-  } else {
-    ctx.runtime.registerSubscriptionCleanup(subscriptionId, cleanup, ctx.connectionId)
-    registration = { releaseIfCurrent: () => ctx.runtime.cleanupSubscription(subscriptionId) }
-  }
-  releaseTransportSubscription = registration.releaseIfCurrent
-  ctx.signal?.addEventListener('abort', onTransportAbort, { once: true })
-  if (ctx.signal?.aborted) {
-    onTransportAbort()
-  }
-  return { isClosed: () => closed, close: () => releaseTransportSubscription() }
-}
+export const bindStructuredAgentSessionStream = bindRpcSubscriptionStream
 
 export const STRUCTURED_AGENT_SESSION_STATUS_METHODS = [
   defineStreamingMethod({

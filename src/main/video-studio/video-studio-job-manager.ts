@@ -18,10 +18,10 @@ import {
   inspectVideoStudioCompositionState,
   resolveVideoStudioProjectDir
 } from './video-studio-composition-paths'
-import {
-  createHostVideoEngineDeps,
-  type VideoEngineProcessDeps,
-  type VideoStudioPreviewHandle
+import { createHostVideoEngineDeps } from './engines/host-video-engine-deps'
+import type {
+  VideoEngineProcessDeps,
+  VideoStudioPreviewHandle
 } from './engines/video-render-engine'
 import {
   getVideoRenderEngineAdapter,

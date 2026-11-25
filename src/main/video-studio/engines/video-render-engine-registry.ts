@@ -1,12 +1,9 @@
 import type { VideoStudioEngine } from '../../../shared/video-studio/video-studio-project'
 import type { VideoStudioEngineStatus } from '../../../shared/video-studio/video-studio-rpc-contract'
+import { createHostVideoEngineDeps } from './host-video-engine-deps'
 import { createHyperFramesEngineAdapter } from './hyperframes-engine-adapter'
 import { remotionEngineAdapter } from './remotion-engine-adapter'
-import {
-  createHostVideoEngineDeps,
-  type VideoEngineProcessDeps,
-  type VideoRenderEngineAdapter
-} from './video-render-engine'
+import type { VideoEngineProcessDeps, VideoRenderEngineAdapter } from './video-render-engine'
 
 const hyperframesAdapter = createHyperFramesEngineAdapter()
 
