@@ -110,7 +110,9 @@ export abstract class StructuredSessionWorkspaceScope extends OrcaRuntimeWithStr
 
   /** The one workspace a catalog read names, derived from its selector and the repo rows without
    *  listing worktrees: a model picker's cost must not grow with the fleet. */
-  private structuredAgentCatalogTarget(selector: string) {
+  private structuredAgentCatalogTarget(
+    selector: string
+  ): Awaited<ReturnType<RuntimeWorkspaceFileTargets['resolveRuntimeFileTarget']>> | null {
     const generalChat = this.generalChatWorkspaceForSelector(selector)
     if (generalChat) {
       return {

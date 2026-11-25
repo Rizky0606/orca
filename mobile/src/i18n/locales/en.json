@@ -266,7 +266,8 @@
       "clearSearch": "Clear search"
     },
     "waitingForHost": "Waiting for host…",
-    "connectingToHost": "Connecting to host…"
+    "connectingToHost": "Connecting to host…",
+    "loading": "Loading…"
   },
   "host": {
     "edit": {
@@ -998,6 +999,10 @@
     },
     "identity": {
       "hostNotFound": "Host not found"
+    },
+    "featureBrowse": {
+      "loadError": "Could not load this host. Try again.",
+      "openError": "Could not open this conversation. Try again."
     }
   },
   "webShell": {
@@ -8335,5 +8340,18 @@
     "cardSlot": {
       "working": "Working"
     }
+  },
+  "generalChat": {
+    "title": "General Chat",
+    "noConversations": "No conversations yet."
+  },
+  "videoStudio": {
+    "title": "Video Studio",
+    "stage": "Stage",
+    "aspectRatio": "Aspect ratio",
+    "duration": "Duration",
+    "prompt": "Prompt",
+    "noProjects": "No projects yet.",
+    "invalidRecords": "Some projects could not be displayed."
   }
 }

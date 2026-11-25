@@ -20,6 +20,17 @@ import { createNonSecureContextUuid } from '../../../../shared/identifiers/non-s
 import type { RuntimeClientTarget } from '../../../../shared/remote-runtime/host-catalog/runtime-client-target'
 import { useGeneralChatSelection } from './general-chat-selection-store'
 
+async function withLaunchFlag(
+  flag: { current: boolean },
+  work: () => Promise<void>
+): Promise<void> {
+  try {
+    await work()
+  } finally {
+    flag.current = false
+  }
+}
+
 export type GeneralChatConversation = {
   sessionId: string
   tabId: string
@@ -152,61 +163,61 @@ export function useGeneralChatController(hostId: ExecutionHostId, target: Runtim
       return
     }
     launchInFlight.current = true
-    const startingNavigationRevision = navigationRevision.current
-    const selectionUnchanged = () => navigationRevision.current === startingNavigationRevision
-    setPickedAgent(provider)
-    setLaunch({ kind: 'ensuring' })
-    let phase: 'ensure-failed' | 'launch-failed' = 'ensure-failed'
-    let started: ReturnType<typeof startStructuredAgentLaunch> | undefined
-    try {
-      const currentHome = await ensureGeneralChatHomeForTarget(target)
-      if (!mounted.current) {
-        return
-      }
-      setHome({ kind: 'ready', worktreeId: currentHome.worktreeId })
-      phase = 'launch-failed'
-      setLaunch({ kind: 'launching' })
-      started = startStructuredAgentLaunch(currentHome.worktreeId, provider, {
-        requestId: createNonSecureContextUuid(),
-        executionHostId: currentHome.executionHostId,
-        activate: false,
-        promptDelivery: 'draft'
-      })
-      setOpening({
-        sessionId: started.sessionId,
-        tabId: structuredAgentSessionTabId(started.sessionId),
-        worktreeId: currentHome.worktreeId,
-        title: structuredAgentLabel(provider),
-        agent: provider
-      })
-      if (selectionUnchanged()) {
-        selectConversation(started.sessionId)
-      }
-      await started.launchResult
-      if (mounted.current) {
-        setLaunch({ kind: 'idle' })
-      }
-    } catch (error) {
-      if (mounted.current) {
-        if (started?.isVisibilityUnknown()) {
-          // Native chat retains the original launch and can recover its outcome.
-          setLaunch({ kind: 'idle' })
+    await withLaunchFlag(launchInFlight, async () => {
+      const startingNavigationRevision = navigationRevision.current
+      const selectionUnchanged = () => navigationRevision.current === startingNavigationRevision
+      setPickedAgent(provider)
+      setLaunch({ kind: 'ensuring' })
+      let phase: 'ensure-failed' | 'launch-failed' = 'ensure-failed'
+      let started: ReturnType<typeof startStructuredAgentLaunch> | undefined
+      try {
+        const currentHome = await ensureGeneralChatHomeForTarget(target)
+        if (!mounted.current) {
           return
         }
-        if (started) {
-          setOpening(null)
-          if (
-            selectionUnchanged() &&
-            useGeneralChatSelection.getState().sessionId === started.sessionId
-          ) {
-            selectConversation(sessionId)
-          }
+        setHome({ kind: 'ready', worktreeId: currentHome.worktreeId })
+        phase = 'launch-failed'
+        setLaunch({ kind: 'launching' })
+        started = startStructuredAgentLaunch(currentHome.worktreeId, provider, {
+          requestId: createNonSecureContextUuid(),
+          executionHostId: currentHome.executionHostId,
+          activate: false,
+          promptDelivery: 'draft'
+        })
+        setOpening({
+          sessionId: started.sessionId,
+          tabId: structuredAgentSessionTabId(started.sessionId),
+          worktreeId: currentHome.worktreeId,
+          title: structuredAgentLabel(provider),
+          agent: provider
+        })
+        if (selectionUnchanged()) {
+          selectConversation(started.sessionId)
         }
-        setLaunch({ kind: phase, ...failure(error) })
+        await started.launchResult
+        if (mounted.current) {
+          setLaunch({ kind: 'idle' })
+        }
+      } catch (error) {
+        if (mounted.current) {
+          if (started?.isVisibilityUnknown()) {
+            // Native chat retains the original launch and can recover its outcome.
+            setLaunch({ kind: 'idle' })
+            return
+          }
+          if (started) {
+            setOpening(null)
+            if (
+              selectionUnchanged() &&
+              useGeneralChatSelection.getState().sessionId === started.sessionId
+            ) {
+              selectConversation(sessionId)
+            }
+          }
+          setLaunch({ kind: phase, ...failure(error) })
+        }
       }
-    } finally {
-      launchInFlight.current = false
-    }
+    })
   }
 
   return {

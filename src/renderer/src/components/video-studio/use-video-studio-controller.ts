@@ -16,6 +16,22 @@ import type {
 } from '../../../../shared/video-studio/video-studio-rpc-contract'
 import { useVideoStudioSelection } from './video-studio-selection'
 
+async function runWithMutationFlag(
+  flag: { current: boolean },
+  setSaving: (saving: boolean) => void,
+  current: () => boolean,
+  work: () => Promise<boolean>
+): Promise<boolean> {
+  try {
+    return await work()
+  } finally {
+    flag.current = false
+    if (current()) {
+      setSaving(false)
+    }
+  }
+}
+
 export function useVideoStudioController(
   hostId: ExecutionHostId,
   target: RuntimeClientTarget,
@@ -52,7 +68,7 @@ export function useVideoStudioController(
     )
   }, [hostId, pairingRevision, target])
 
-  function showError(reason: unknown, action: 'load' | 'save') {
+  function applyControllerError(reason: unknown, isSave: boolean) {
     const code = reason instanceof RuntimeRpcCallError ? reason.code : undefined
     if (code === 'method_not_found' || code === 'runtime_unavailable' || code === 'forbidden') {
       setError(
@@ -72,7 +88,7 @@ export function useVideoStudioController(
           'This project is no longer available. Reload the project list.'
         )
       )
-    } else if (action === 'save') {
+    } else if (isSave) {
       setError(
         t(
           'videoStudio.mutationFailed',
@@ -84,7 +100,7 @@ export function useVideoStudioController(
     }
   }
 
-  const showLoadError = useEffectEvent((reason: unknown) => showError(reason, 'load'))
+  const showLoadError = useEffectEvent((reason: unknown) => applyControllerError(reason, false))
 
   useEffect(() => {
     let ignore = false
@@ -124,27 +140,24 @@ export function useVideoStudioController(
     mutating.current = true
     setSaving(true)
     setError(null)
-    try {
-      const result = await work()
-      if (!current()) {
+    return runWithMutationFlag(mutating, setSaving, current, async () => {
+      try {
+        const result = await work()
+        if (!current()) {
+          return false
+        }
+        setSnapshot({ projects: result.projects, invalidRecords: result.invalidRecords })
+        if (result.projectId || clearSelection) {
+          selectProject(result.projectId ?? null)
+        }
+        return true
+      } catch (reason) {
+        if (current()) {
+          applyControllerError(reason, true)
+        }
         return false
       }
-      setSnapshot({ projects: result.projects, invalidRecords: result.invalidRecords })
-      if (result.projectId || clearSelection) {
-        selectProject(result.projectId ?? null)
-      }
-      return true
-    } catch (reason) {
-      if (current()) {
-        showError(reason, 'save')
-      }
-      return false
-    } finally {
-      mutating.current = false
-      if (current()) {
-        setSaving(false)
-      }
-    }
+    })
   }
 
   return {
