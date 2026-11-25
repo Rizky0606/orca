@@ -1,4 +1,5 @@
 import { useId, useState, type FormEvent } from 'react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,11 +13,13 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslate } from '@/i18n/use-translate'
 import {
+  VIDEO_STUDIO_FPS_OPTIONS,
+  VideoStudioEngineSchema,
   VideoStudioProjectFields,
   type VideoStudioProject
 } from '../../../../shared/video-studio/video-studio-project'
 import type { VideoStudioCreateProjectParams } from '../../../../shared/video-studio/video-studio-rpc-contract'
-import { VideoStudioWorkflow } from './VideoStudioWorkflow'
+import { VideoStudioWorkflow, type VideoStudioProductionController } from './VideoStudioWorkflow'
 import {
   parseVideoStudioDraft,
   videoStudioDraft,
@@ -26,12 +29,14 @@ import {
 export function VideoStudioProjectForm({
   project,
   busy,
+  production,
   onSave,
   onCancel,
   onDelete
 }: {
   project?: VideoStudioProject
   busy: boolean
+  production?: VideoStudioProductionController
   onSave: (fields: VideoStudioCreateProjectParams) => void
   onCancel: () => void
   onDelete: (trigger: HTMLButtonElement) => void
@@ -43,12 +48,14 @@ export function VideoStudioProjectForm({
   const parsed = parseVideoStudioDraft(draft)
   const titleError = submitted && parsed.errors?.includes('title')
   const durationError = submitted && parsed.errors?.includes('durationSeconds')
+
   function change<Field extends keyof VideoStudioDraft>(
     field: Field,
     value: VideoStudioDraft[Field]
   ) {
     setDraft((state) => ({ ...state, [field]: value }))
   }
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSubmitted(true)
@@ -144,8 +151,68 @@ export function VideoStudioProjectForm({
             ) : null}
           </div>
         </div>
+        <div className="grid min-w-0 gap-4 @sm:grid-cols-2">
+          <div className="grid min-w-0 content-start gap-2">
+            <Label htmlFor={`${formId}-engine`}>{t('videoStudio.engine', 'Render engine')}</Label>
+            <Select
+              value={draft.engine}
+              disabled={busy}
+              onValueChange={(value) => {
+                const engine = VideoStudioEngineSchema.safeParse(value)
+                if (engine.success) {
+                  change('engine', engine.data)
+                }
+              }}
+            >
+              <SelectTrigger id={`${formId}-engine`} className="min-h-11 w-full @lg:min-h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                <SelectItem value="hyperframes" className="min-h-11 sm:min-h-8">
+                  {t('videoStudio.engineHyperFrames', 'HyperFrames')}
+                </SelectItem>
+                <SelectItem value="remotion" disabled className="min-h-11 sm:min-h-8">
+                  <span className="flex items-center gap-2">
+                    <span>{t('videoStudio.engineRemotion', 'Remotion')}</span>
+                    <Badge variant="comingSoon">{t('videoStudio.phaseSix', 'Phase 6')}</Badge>
+                  </span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid min-w-0 content-start gap-2">
+            <Label htmlFor={`${formId}-fps`}>{t('videoStudio.fps', 'Frame rate (FPS)')}</Label>
+            <Select
+              value={String(draft.fps)}
+              disabled={busy}
+              onValueChange={(value) => {
+                const parsedFps = VideoStudioProjectFields.shape.fps.safeParse(Number(value))
+                if (parsedFps.success) {
+                  change('fps', parsedFps.data)
+                }
+              }}
+            >
+              <SelectTrigger id={`${formId}-fps`} className="min-h-11 w-full @lg:min-h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                {VIDEO_STUDIO_FPS_OPTIONS.map((fpsOption) => (
+                  <SelectItem
+                    key={fpsOption}
+                    value={String(fpsOption)}
+                    className="min-h-11 sm:min-h-8"
+                  >
+                    {t('videoStudio.fpsOption', '{{fps}} fps', { fps: fpsOption })}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
         <VideoStudioWorkflow
           stage={draft.workflowStage}
+          project={project}
+          production={production}
           onChange={(stage) => change('workflowStage', stage)}
         />
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">

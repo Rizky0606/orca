@@ -3,19 +3,33 @@ import {
   type VideoStudioCreateProjectParams as ProjectFields
 } from '../../../../shared/video-studio/video-studio-rpc-contract'
 
-export type VideoStudioDraft = Omit<ProjectFields, 'durationSeconds'> & { durationSeconds: string }
+export const DEFAULT_FPS = 30
+
+export type VideoStudioDraft = Omit<ProjectFields, 'durationSeconds'> & {
+  durationSeconds: string
+}
 
 const defaults: ProjectFields = {
   title: '',
   prompt: '',
   aspectRatio: '16:9',
   durationSeconds: 30,
-  workflowStage: 'research'
+  workflowStage: 'research',
+  engine: 'hyperframes',
+  fps: DEFAULT_FPS
 }
 
 export function videoStudioDraft(project: ProjectFields = defaults): VideoStudioDraft {
-  const { title, prompt, aspectRatio, durationSeconds, workflowStage } = project
-  return { title, prompt, aspectRatio, durationSeconds: String(durationSeconds), workflowStage }
+  const { title, prompt, aspectRatio, durationSeconds, workflowStage, engine, fps } = project
+  return {
+    title,
+    prompt,
+    aspectRatio,
+    durationSeconds: String(durationSeconds),
+    workflowStage,
+    engine,
+    fps
+  }
 }
 
 export function parseVideoStudioDraft(draft: VideoStudioDraft) {

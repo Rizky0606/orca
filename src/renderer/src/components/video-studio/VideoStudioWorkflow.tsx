@@ -1,6 +1,9 @@
-import { useTranslate } from '@/i18n/use-translate'
 import { Button } from '@/components/ui/button'
+import { useTranslate } from '@/i18n/use-translate'
 import type { VideoStudioProject } from '../../../../shared/video-studio/video-studio-project'
+import type { VideoStudioProductionController } from './use-video-studio-production'
+
+export type { VideoStudioProductionController }
 
 type Stage = VideoStudioProject['workflowStage']
 
@@ -15,9 +18,12 @@ export function useVideoStudioStages(): Record<Stage, string> {
 
 export function VideoStudioWorkflow({
   stage,
+  project,
   onChange
 }: {
   stage: Stage
+  project?: VideoStudioProject
+  production?: VideoStudioProductionController
   onChange: (stage: Stage) => void
 }) {
   const t = useTranslate()
@@ -42,11 +48,11 @@ export function VideoStudioWorkflow({
           </Button>
         ))}
       </div>
-      {stage === 'production' ? (
+      {stage === 'production' && !project ? (
         <p className="rounded-md border border-border bg-card p-3 text-sm text-card-foreground">
           {t(
-            'videoStudio.renderUnavailable',
-            'Rendering is not connected yet. You can still save this project in Production.'
+            'videoStudio.saveToProduceHint',
+            'Save this project first to scaffold and render its HyperFrames composition.'
           )}
         </p>
       ) : null}

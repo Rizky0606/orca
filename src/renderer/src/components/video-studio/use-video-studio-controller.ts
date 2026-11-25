@@ -172,6 +172,9 @@ export function useVideoStudioController(
       setError(null)
       setAttempt((value) => value + 1)
     },
+    refresh() {
+      setAttempt((value) => value + 1)
+    },
     saveProject(id: string | null, fields: VideoStudioCreateProjectParams) {
       return mutate(() =>
         id

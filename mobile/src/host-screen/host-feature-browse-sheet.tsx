@@ -208,6 +208,12 @@ function BrowseDrawer({
                 title={t('videoStudio.duration', 'Duration')}
                 value={`${selected.durationSeconds} s`}
               />
+              <ListRow title={t('videoStudio.engine', 'Engine')} value={selected.engine} />
+              <ListRow title={t('videoStudio.fps', 'FPS')} value={`${selected.fps} fps`} />
+              <ListRow
+                title={t('videoStudio.renders', 'Renders')}
+                value={String(selected.renders.length)}
+              />
               {selected.prompt ? (
                 <ListRow title={t('videoStudio.prompt', 'Prompt')} subtitle={selected.prompt} />
               ) : null}

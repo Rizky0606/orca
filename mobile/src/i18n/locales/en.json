@@ -8352,6 +8352,9 @@
     "duration": "Duration",
     "prompt": "Prompt",
     "noProjects": "No projects yet.",
-    "invalidRecords": "Some projects could not be displayed."
+    "invalidRecords": "Some projects could not be displayed.",
+    "engine": "Engine",
+    "fps": "FPS",
+    "renders": "Renders"
   }
 }

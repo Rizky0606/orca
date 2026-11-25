@@ -13,14 +13,18 @@ import {
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { useTranslate } from '@/i18n/use-translate'
 import { cn } from '@/lib/class-names'
+import { VideoStudioProductionPanel } from './VideoStudioProductionPanel'
 import { VideoStudioProjectForm } from './VideoStudioProjectForm'
 import { VideoStudioProjectList } from './VideoStudioProjectList'
 import type { useVideoStudioController } from './use-video-studio-controller'
+import type { VideoStudioProductionController } from './use-video-studio-production'
 
 export function VideoStudioProjects({
-  controller
+  controller,
+  production
 }: {
   controller: ReturnType<typeof useVideoStudioController>
+  production?: VideoStudioProductionController
 }) {
   const t = useTranslate()
   const { snapshot, loading, saving, error, projectId } = controller
@@ -169,6 +173,7 @@ export function VideoStudioProjects({
                 key={creating ? 'new' : `${project?.id}:${project?.updatedAt}`}
                 project={creating ? undefined : project}
                 busy={loading || saving}
+                production={production}
                 onSave={(fields) => {
                   void controller.saveProject(creating ? null : projectId, fields).then((saved) => {
                     if (saved) {
@@ -187,6 +192,9 @@ export function VideoStudioProjects({
                   setConfirmDelete(true)
                 }}
               />
+              {!creating && project && project.workflowStage === 'production' && production ? (
+                <VideoStudioProductionPanel project={project} production={production} />
+              ) : null}
             </div>
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
