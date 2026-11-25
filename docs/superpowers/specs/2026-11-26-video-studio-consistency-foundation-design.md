@@ -159,6 +159,13 @@ export type ValidationReport = {
   status: ValidationStatus
   engine: VideoStudioEngine
   engineVersion?: string
+  inputFingerprint: string          // SHA-256 over entry HTML, compositions/scenes, hyperframes.json, style-profile.json, asset-registry.json
+  revisions?: {
+    compositionSha256: string
+    styleSha256?: string
+    assetsSha256?: string
+  }
+  stale?: boolean                   // True when current workspace inputFingerprint differs from when this report ran
   findings: VideoStudioCheckFinding[]
   skippedChecks: string[]
   sectionStatuses: Record<string, { status: ValidationStatus; errorCount: number; warningCount: number }>
@@ -205,18 +212,21 @@ export interface VideoEngineAdapter {
 }
 ```
 
-### Validation Status vs Production Gate Semantics
-- `passed`: All required checks executed and `errorCount === 0` (`browserSkipped !== true`). `productionGate.allowed = true`.
-- `failed`: One or more checks reported error-level findings (`errorCount > 0`). `productionGate.allowed = false`.
-- `partial`: CLI executed (`ok` not false from fatal lint), or `browserSkipped === true`, or optional sections were skipped/unavailable (e.g., `--no-contrast` or browser launch skipped while static lint ran). `productionGate.allowed` is `false` when production policy requires full browser audits (`browserSkipped: true` adds `'Required browser layout/contrast audit was skipped'`), while remaining distinct from `failed` for diagnostics and future Quality Control agents.
-- `error`: Engine validator process crashed, timed out, returned unparseable failure payload, or failed usage. `productionGate.allowed = false`.
+### Validation Status, Precedence, Freshness & Production Gate Semantics
+- **Strict Precedence Order (highest to lowest):** `unsupported` -> `error` -> `failed` -> `partial` -> `passed`.
 - `unsupported`: Engine adapter does not implement structured check (`remotion` planned slot). `productionGate.allowed = false`.
+- `error`: Engine validator process crashed, timed out, returned an unparseable failure payload, or failed invocation/CLI usage. `productionGate.allowed = false`.
+- `failed`: Validator executed and reported one or more error-level findings (`errorCount > 0`), **regardless** of whether optional or browser checks were skipped. `productionGate.allowed = false`.
+- `partial`: Validator executed with **zero** error-level findings (`errorCount === 0`), **and** one or more requested checks did not execute (e.g., `browserSkipped === true` or an audit section was skipped/unavailable). **CLI exit success (`ok: true` / exit code `0`) alone never implies `partial`**; when all requested checks run with zero errors, status is `passed`. `productionGate.allowed` is `false` when production policy requires skipped audits (e.g., `browserSkipped: true` appends `'Required browser layout/contrast audit was skipped'` to `blockingReasons`), while keeping `status` cleanly distinct from `failed`.
+- `passed`: All requested checks executed and `errorCount === 0` (`browserSkipped !== true`). `productionGate.allowed = true` (subject to freshness check below).
+- **Freshness & Input Fingerprinting:** Every `ValidationReport` records `inputFingerprint` (SHA-256 across `index.html`, `compositions/*.html` / `scenes/*.html`, `hyperframes.json`, `styles/style-profile.json`, and `assets/asset-registry.json`). Before honoring `productionGate.allowed` for final delivery render or displaying a cached check badge, Orca recomputes the project's current `inputFingerprint`; if it changed since `checkedAt`, the cached report is flagged `stale: true` and `productionGate` blocks delivery until validation re-runs against the current revision.
 
 ### HyperFrames `0.9.94` CLI Alignment Fixes
 1. **Exact Version Pinning (`0.9.94`):**
-   - Adapter declares `HYPERFRAMES_PINNED_VERSION = '0.9.94'`.
-   - `probe()` checks `node >= 22`, `ffmpeg`, `ffprobe`, and `hyperframes` (direct or `npx --no hyperframes --version`; never auto-installs `latest` silently).
-   - `doctor --json` parser extracts status from `checks[]` (case-insensitive matching on `name`: `'FFmpeg'`, `'FFprobe'`, `'Chrome'`, `'Node.js'`, `'Version'`) and `_meta.version` (with backward tolerance for legacy test shapes). Emits version compatibility warning if installed CLI differs from pinned `0.9.94` major/minor.
+   - Adapter declares `HYPERFRAMES_PINNED_VERSION = '0.9.94'` and verifies **exact semver string equality** (`detectedVersion === '0.9.94'`) — comparing only major/minor versions is explicitly rejected as unverified.
+   - Declaring `package.json` `engines` alone does not pin a dependency. Orca resolves the executable deterministically from an Orca-managed/lockfile-pinned `hyperframes@0.9.94` runtime installation first (or an explicit pinned binary path in `node_modules/.bin/hyperframes` / configured runtime dir) before falling back to PATH `hyperframes`, never relies on unpinned `npx latest`, and never auto-installs silently.
+   - `probe()` checks `node >= 22`, `ffmpeg`, `ffprobe`, and `hyperframes` via deterministic binary resolution + `--version` / `doctor --json` (`checks[]` case-insensitive on `'FFmpeg'`, `'FFprobe'`, `'Chrome'`, `'Node.js'`, `'Version'` plus `_meta.version`).
+   - Any detected CLI version other than `'0.9.94'` (whether newer or older) is marked `compatibility: 'unverified'` in `probe()` and surfaced as an explicit warning/gate note until contract compatibility is proven against that exact version's CLI schema and fixtures.
 2. **Dynamic `check --json` Parser:**
    - Parses known sections (`lint`, `runtime`, `layout`, `motion`, `contrast`, `craft`, `audio`, `hdr`) **and any unknown top-level section object** that contains `findings: unknown[]` or `errors`/`warnings` arrays, preventing silent blind spots when HyperFrames adds new audit categories.
    - Reads `browserSkipped`, `scope` / `components`, and `snapshots.files` / `snapshots.findingFiles`.
@@ -245,12 +255,13 @@ export interface VideoEngineAdapter {
 ```text
 <profileDir>/video-studio/
 ├── video-studio-projects.json          # Atomic project index catalog
-├── styles/                             # Host User Style Library
+├── styles/                             # Host User Style Library (versioned/reusable)
 │   └── <styleId>/
 │       ├── style-profile.json
 │       ├── frame.md
+│       ├── DESIGN.md                   # Preserved when style carries design philosophy / OpenMotion context
 │       └── MOTION.md
-├── assets/                             # Host Reusable Asset Library
+├── assets/                             # Host Reusable Asset Library (immutable published versions v<n>/)
 │   ├── library.json
 │   └── <assetId>/v<n>/...
 └── projects/
@@ -298,6 +309,16 @@ export interface VideoEngineAdapter {
 ### Schema Contracts (Engine-Agnostic, Zod-Validated)
 
 #### A. Style Profile (`styles/style-profile.json`)
+### Style & Asset Identity, Versioning & Snapshot Model
+Both Style Profiles and Master Assets share strict separation between identity, contract schema, immutable library publication, and local project edits:
+- **`id` (Logical Identity):** Permanent slug identifying the semantic style or entity across projects (e.g., `technical-explainer-01`, `ac_indoor_001`).
+- **`schemaVersion`:** Structural contract revision (`1`) governing JSON validation and migrations.
+- **`version` (Published Version):** Monotonic immutable integer (`1, 2, ...`) assigned inside the Host Library (`styles/<styleId>/` or `assets/<assetId>/v<n>/`). Once published, a library version `v<n>` is immutable and NEVER silently mutated in place.
+- **`snapshotRevision` / `sourceVersion` (Project Snapshot Revision):** Local project-scoped copy (`styles/style-profile.json`, `assets/asset-registry.json`) tracking the source Host Library `id` + `version` plus its local SHA-256 / monotonic edit count. Editing a project snapshot updates only the project files and never mutates the Host Library; updating the Host Library (`v<n+1>`) never alters existing project snapshots.
+- **`asset state` vs `asset instance`:** Inside an asset, `states[stateName]` defines named, verified visual/animation files (`closed`, `cutaway`, `operating`), whereas scene usage in `STORYBOARD.md` / `compositions/*.html` instantiates an `AssetInstanceRef` (`{ assetId, state, sceneId, overrides? }`).
+
+When saving or applying a Host Library Style (`styles/<styleId>/`), `DESIGN.md` is stored alongside `style-profile.json`, `frame.md`, and `MOTION.md` whenever present or customized so design philosophy and OpenMotion-compatible tokens travel cleanly across projects.
+
 ```ts
 type StyleProfileTier = 'built-in' | 'library' | 'snapshot'
 
@@ -305,6 +326,7 @@ type StyleProfile = {
   schemaVersion: 1
   id: string
   version: number
+  snapshotRevision?: string
   name: string
   description: string
   category: string // e.g. 'technical-explainer', 'editorial', 'infographic', 'product-showcase', 'storytelling'
@@ -445,11 +467,19 @@ type AssetStateEntry = {
   dependencies?: string[] // Relative paths to textures, fonts, or helper files
 }
 
+### Asset & Style Snapshot Integrity Invariants (Validated on Write, Import, Apply, and Save-to-Library)
+1. `defaultState` MUST exist as a key in `states` (non-empty).
+2. Every `components[].id` within a `MasterAssetRecord` MUST be unique (no duplicate component IDs).
+3. `components[].parentComponentId` hierarchy MUST be acyclic (no self-parenting or cycles detected via DFS, and any specified `parentComponentId` must exist in `components[]`).
+4. Every relative file in `states[stateKey].file`, every path in `dependencies[]`, and any `DESIGN.md`/`frame.md`/`MOTION.md` referenced by a style/asset package MUST pass containment validation, exist on disk, and verify against its recorded `sha256` hash.
+5. Published Host Library versions (`assets/<assetId>/v<n>/` and published style revisions) are strictly immutable; modifying metadata/states/components creates a new version (`v<n+1>`) in the Host Library or updates only the local `snapshotRevision` inside the active project.
+
+```ts
 type AssetComponentSpec = {
   id: string                  // Permanent component identity (e.g. 'fan', 'evaporator')
   name?: string
   selector?: string           // CSS/SVG selector or 3D node name (e.g. '#fan', 'Mesh_Impeller')
-  parentComponentId?: string  // Component hierarchy
+  parentComponentId?: string  // Component hierarchy (acyclic; references another components[].id)
   animatable: boolean
   pivot?: { x: number; y: number; z?: number }
   anchor?: { x: number; y: number; z?: number }
@@ -459,7 +489,8 @@ type AssetComponentSpec = {
 type MasterAssetRecord = {
   id: string                  // Stable logical asset ID (e.g. 'ac_indoor_001')
   schemaVersion: 1
-  version: number
+  version: number             // Published library version (or pinned source version in snapshot)
+  snapshotRevision?: string   // Local project edit revision / hash when modified inside a project
   name: string
   type: AssetType
   format: AssetFormat
@@ -544,25 +575,30 @@ All methods live in `src/shared/video-studio/video-studio-rpc-contract.ts`, regi
 | `videoStudio.getStyleReconciliationDiff` | Compares `style-profile.json` tokens vs Markdown tokens (`frame.md`/`DESIGN.md`/`MOTION.md`) | Read-only diff |
 | `videoStudio.reconcileProjectStyle` | Resolves drift (`'import-from-markdown'` or `'reapply-json'`) | Multi-file TX + `expectedRevisions` |
 | **Brief, Storyboard & Research Methods** | | |
-| `videoStudio.getProjectDocuments` | Parsed `BRIEF.md`, `STORYBOARD.md`, `SCRIPT.md`, `references/sources.json`, `research-notes.md` + `revisions` map | Read-only |
+| `videoStudio.getProjectDocuments` | Parsed `BRIEF.md`, `STORYBOARD.md`, `SCRIPT.md`, `references/sources.json`, `research-notes.md` + `revisions` map + trust state | Read-only |
 | `videoStudio.updateProjectBrief` | Updates `BRIEF.md` frontmatter/sections (`expectedRevision`) | Project TX |
+| `videoStudio.updateProjectScript` | Updates `SCRIPT.md` narration/voiceover markdown (`expectedRevision`) | Project TX |
+| `videoStudio.upsertResearchSource` | Adds or edits a verified/manual source in `references/sources.json` & syncs `research-notes.md` (`expectedRevision`) | URL/schema validation + Project TX |
+| `videoStudio.deleteResearchSource` | Removes a source from `references/sources.json` (`expectedRevision`) | Project TX |
+| `videoStudio.approveProjectExecution` | Records explicit user execution approval (`trustState: 'approved-preview' | 'approved-render'`) bound to current `inputFingerprint` | Project TX + Audit state |
 | `videoStudio.addStoryboardFrame` | Appends/inserts a frame with new permanent `scene_id` into `STORYBOARD.md` | Project TX + `expectedRevision` |
 | `videoStudio.patchStoryboardFrame` | Patches one frame by `scene_id` (title, status, duration, transition, engine, src, assets, voiceover, motion_presets, camera, narrative) | Project TX + `expectedRevision` |
 | `videoStudio.deleteStoryboardFrame` | Removes a frame by `scene_id` (does not delete `compositions/*.html` on disk) | Project TX + `expectedRevision` |
 | `videoStudio.reorderStoryboardFrames` | Reorders frames by `scene_id[]` while preserving every `scene_id` and `## Locked` | Project TX + `expectedRevision` |
 | **Master Asset Registry Methods** | | |
-| `videoStudio.listLibraryAssets` / `listProjectAssets` | Lists Host Asset Library and project `asset-registry.json` (plus dependency warnings) | Read-only |
-| `videoStudio.registerOrImportAsset` | Imports uploaded/base64-bounded or workspace-relative asset into project or library, writes hash & metadata | Containment validation + Lock + `expectedRevision` |
-| `videoStudio.updateAssetMetadata` | Updates asset name, type, tags, states, structured `components`, provenance, license, consistency locks | Lock + `expectedRevision` |
-| `videoStudio.applyLibraryAssetToProject` | Copies versioned library asset + state files + dependencies into project `assets/` | Shared Library + Project TX |
+| `videoStudio.listLibraryAssets` / `listProjectAssets` | Lists Host Asset Library and project `asset-registry.json` (plus invariant/dependency warnings) | Read-only |
+| `videoStudio.registerOrImportAsset` | Imports uploaded/base64-bounded or workspace-relative asset into project or immutable Host Library `v1`, validates invariants, writes SHA-256 & metadata | Containment validation + Host Asset Lock -> Project TX + `expectedRevision` |
+| `videoStudio.updateAssetMetadata` | Updates asset name, type, tags, **asset state CRUD** (`add/update/remove` in `states` + `defaultState`), structured `components`, dependencies, provenance, license, and consistency locks (validating all invariants) | Project TX + `expectedRevision` |
+| `videoStudio.applyLibraryAssetToProject` | Copies immutable versioned library asset (`v<n>`) + state files + verified dependencies into project `assets/` | Host Asset Library Lock -> Project TX |
+| `videoStudio.saveProjectAssetToLibrary` | Publishes a project asset + state files + verified dependencies into Host Asset Library as immutable new version (`v1` or `v<n+1>`) without mutating prior library versions | Host Asset Library Lock -> Project TX |
 | `videoStudio.removeProjectAsset` | Removes asset from registry (and optionally unreferenced files); blocks if referenced unless `force: true` | Dependency scan + Project TX |
-| `videoStudio.deleteLibraryAsset` | Deletes asset from Host Asset Library | Shared Library Lock |
+| `videoStudio.deleteLibraryAsset` | Deletes asset from Host Asset Library | Host Asset Library Lock |
 | **Motion Extension Method** | | |
 | `videoStudio.listMotionPresets` | Returns read-only Universal Motion Registry entries for Inspector/Storyboard selectors | Read-only |
 
 ### Mobile Routing & Passthrough Codes
 - **Mobile Read-Only Allowlist (`runtime-rpc-mobile-video-studio-methods.ts`):** Add `listStyleProfiles`, `getProjectStyleState`, `getProjectDocuments`, `listLibraryAssets`, `listProjectAssets`, `listMotionPresets` for read-only mobile inspection; keep SSH hosts explicitly refused via `mobileRpcSshRefusal`.
-- **New Passthrough Error Codes (`runtime-passthrough-codes.ts`):** `video_studio_file_conflict`, `video_studio_tx_recovery_conflict`, `video_studio_invalid_path`, `video_studio_style_not_found`, `video_studio_style_readonly`, `video_studio_asset_not_found`, `video_studio_asset_in_use`, `video_studio_scene_not_found`, `video_studio_invalid_state_file`, `video_studio_preview_session_stale`.
+- **New Passthrough Error Codes (`runtime-passthrough-codes.ts`):** `video_studio_file_conflict`, `video_studio_tx_recovery_conflict`, `video_studio_invalid_path`, `video_studio_style_not_found`, `video_studio_style_readonly`, `video_studio_asset_not_found`, `video_studio_asset_in_use`, `video_studio_asset_invariant_invalid`, `video_studio_scene_not_found`, `video_studio_invalid_state_file`, `video_studio_preview_session_stale`, `video_studio_execution_approval_required`.
 
 ---
 
@@ -642,17 +678,23 @@ Untrusted HTML/CSS/JS inside `index.html`, `compositions/*.html`, or imported SV
        +---------------------------+  +---------------------------+
 ```
 
-### Enforced Security Controls (Phase 02–03)
-1. **Zero Electron Privilege Exposure:** Generated composition HTML/JS is never injected into Orca's privileged React renderer (`no dangerouslySetInnerHTML`, `no file://` load, `no Node/preload`). External browser preview opens strictly through `normalizeExternalBrowserUrl` ([browser-url.ts](file:///C:/Coding/Project/orca/.worktrees/orca-ai-studio/src/shared/browser/navigation/browser-url.ts#L325)) verified to `http://127.0.0.1:<port>/...` or `http://localhost:<port>/...` with valid port bounds.
-2. **Environment Credential Isolation (`host-video-engine-deps.ts`):** Replace full `process.env` inheritance (`copyDefinedProcessEnv()`) with an explicit **allowlist** (`PATH`, `PATHEXT`, `SystemRoot`, `COMSPEC`, `TEMP`, `TMP`, `HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `LANG`, `LC_*`, `HYPERFRAMES_*` non-secret flags) so `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GITHUB_TOKEN`, search provider secrets, or Orca tokens are **never** inherited by `hyperframes` preview/render/check subprocesses.
-3. **Filesystem Containment:** Every project ID, style ID, asset ID, and relative asset/composition/render path is validated for traversal (`..`, NUL bytes, drive prefixes, UNC paths, mixed `/` & `\` separators) AND verified post-resolution via `realpath()` containment under its canonical root (`projects/<projectId>/`, `styles/`, `assets/`), blocking Windows symlink and directory junction escapes.
-4. **RPC Authorization & Input Bounds:** All RPC handlers require valid runtime host authorization (`permission: 'workspace'`), refuse SSH mutations explicitly, cap imported asset payload chunks / file sizes, and disallow raw host paths in RPC responses.
-5. **Resource Limits & Process Lifecycle:** Single active check/render per project, bounded 100-line log ring, output byte sinks capped (`DEFAULT_MAX_OUTPUT_BYTES`), hard timeouts (`15s` probe, `120s` check, `1h` render), and process-tree termination on `AbortSignal` / shutdown via `@orca/process-host`.
-6. **Untrusted Project File Hygiene:** PIDs, ports, URLs, or `src` paths read from `project.json`, `.orca/project-state.json`, `STORYBOARD.md`, or `asset-registry.json` are never trusted without validation and OS/containment verification.
+### Enforced Security Controls & Minimal Execution Trust Policy (Phase 02–03)
+1. **Minimal Project Trust & Execution Approval Policy:**
+   - Each project tracks trust state in `.orca/project-state.json`: `{ sourceOrigin: 'orca-scaffold' | 'ai-generated' | 'imported-external', trustState: 'untrusted' | 'approved', approvedFingerprint?: string, approvedAt?: number }`.
+   - Imported external templates, third-party HTML/SVG/JS scripts, and unreviewed AI-generated composition edits are treated as `untrusted` (or invalidated whenever `inputFingerprint` changes beyond Orca's untouched baseline scaffold).
+   - Executing Chrome-backed preview, browser check, or `hyperframes render` on an `untrusted` / unapproved revision requires explicit user approval via `videoStudio.approveProjectExecution` bound to the exact `inputFingerprint` (`video_studio_execution_approval_required` otherwise).
+   - **Prohibition of Unattended Untrusted Execution:** Unattended background rendering or autonomous agent-triggered execution against untrusted external/AI-generated HTML/JS sources is **prohibited** in Phase 02–03 until full container/guest sandbox isolation is implemented in Phase 04–05.
+2. **Zero Electron Privilege Exposure:** Generated composition HTML/JS is never injected into Orca's privileged React renderer (`no dangerouslySetInnerHTML`, `no file://` load, `no Node/preload`). External browser preview opens strictly through `normalizeExternalBrowserUrl` ([browser-url.ts](file:///C:/Coding/Project/orca/.worktrees/orca-ai-studio/src/shared/browser/navigation/browser-url.ts#L325)) verified to `http://127.0.0.1:<port>/...` or `http://localhost:<port>/...` with valid port bounds.
+3. **Environment Credential Isolation (`host-video-engine-deps.ts`):** Replace full `process.env` inheritance (`copyDefinedProcessEnv()`) with an explicit **allowlist** (`PATH`, `PATHEXT`, `SystemRoot`, `COMSPEC`, `TEMP`, `TMP`, `HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `LANG`, `LC_*`, `HYPERFRAMES_*` non-secret flags) so `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GITHUB_TOKEN`, search provider secrets, or Orca tokens are **never** inherited by `hyperframes` preview/render/check subprocesses.
+4. **Filesystem Containment:** Every project ID, style ID, asset ID, and relative asset/composition/render path is validated for traversal (`..`, NUL bytes, drive prefixes, UNC paths, mixed `/` & `\` separators) AND verified post-resolution via `realpath()` containment under its canonical root (`projects/<projectId>/`, `styles/`, `assets/`), blocking Windows symlink and directory junction escapes.
+5. **RPC Authorization & Input Bounds:** All RPC handlers require valid runtime host authorization (`permission: 'workspace'`), refuse SSH mutations explicitly, cap imported asset payload chunks / file sizes, and disallow raw host paths in RPC responses.
+6. **Resource Limits & Process Lifecycle:** Single active check/render per project, bounded 100-line log ring, output byte sinks capped (`DEFAULT_MAX_OUTPUT_BYTES`), hard timeouts (`15s` probe, `120s` check, `1h` render), and process-tree termination on `AbortSignal` / shutdown via `@orca/process-host`.
+7. **Untrusted Project File Hygiene:** PIDs, ports, URLs, or `src` paths read from `project.json`, `.orca/project-state.json`, `STORYBOARD.md`, or `asset-registry.json` are never trusted without validation and OS/containment verification.
 
-### Documented Security Limits in Phase 02–03 (To Be Hardened in Later Phases)
-- **External Browser Network/Localhost Access:** When preview opens in the user's system browser during Phase 02–03, scripts inside `http://127.0.0.1:<port>` execute under the system browser's origin sandbox — they have zero access to Electron/Orca IPC or local files outside the preview server, **but** can still attempt outbound HTTP requests or access other unauthenticated localhost services reachable by the user's browser. Strict CSP/request interception inside an isolated embedded guest or `--docker` / network-isolated render container is scheduled for Phase 04+.
-- **Untrusted Render Network Egress:** Native Chrome launched locally by `hyperframes render` may fetch external CDN URLs (e.g., `cdn.jsdelivr.net` for GSAP/fonts) unless `--docker` or offline asset localization is enforced. Phase 04+ will introduce asset bundling/offline CDN vendoring and optional strict `--no-network` container render mode.
+### Documented Security Limits in Phase 02–03 (Not a Full Sandbox Yet)
+- **Not a Full Execution Sandbox:** Environment variable allowlisting, path containment validation, and opening previews in an external system browser are necessary defense-in-depth boundaries, **NOT a full execution sandbox** for arbitrary untrusted HTML/CSS/JavaScript.
+- **External Browser Network/Localhost Access:** When preview opens in the user's system browser during Phase 02–03, scripts inside `http://127.0.0.1:<port>` run under the browser's localhost origin — they cannot access Electron/Orca IPC or host files outside the preview server, **but** can attempt outbound HTTP requests or talk to other unauthenticated localhost ports reachable by the user's browser. Strict CSP/request interception inside an isolated embedded guest or `--docker` container is scheduled for Phase 04+.
+- **Untrusted Render Network Egress:** Native Chrome launched locally by `hyperframes render` may fetch external CDN URLs (e.g., `cdn.jsdelivr.net` for GSAP/fonts) unless `--docker` or offline asset localization is enforced. Phase 04+ will introduce asset bundling/offline CDN vendoring and strict isolated container rendering.
 
 ---
 
@@ -660,14 +702,18 @@ Untrusted HTML/CSS/JS inside `index.html`, `compositions/*.html`, or imported SV
 
 Because operations such as `applyStyleProfileToProject` and `reconcileProjectStyle` update multiple files (`styles/style-profile.json`, `frame.md`, `DESIGN.md`, `MOTION.md`), single-file atomic rename alone is insufficient.
 
-### Concurrency Architecture
-1. **Per-Project Mutation Queue:** Serializes all document/registry/style mutations inside a project (`projects/<projectId>/`).
-2. **Shared Host Library Locks:** Separate serialized mutation lanes (`HostStyleLibraryLock`, `HostAssetLibraryLock`) protect `<profileDir>/video-studio/styles/` and `<profileDir>/video-studio/assets/` when multiple projects read/snapshot or update the global library concurrently.
-3. **Commit Protocol with Transaction Journal (`.orca/tx.log`):**
-   - **Step 1 (Validate & Snapshot):** Re-read target files inside the queue, verify every `expectedRevision` (`sha256` hash) matches disk, and record `{ txId, state: 'preparing', targets: [{ path, beforeSha256, backupPath, afterSha256, stagedPath }] }` into `.orca/tx.log` atomically.
-   - **Step 2 (Stage):** Write new contents into `.orca/.staging/<txId>/...` via `durableWriteTempPath`.
-   - **Step 3 (Commit):** Update `.orca/tx.log` state to `'committing'` and atomically rename each staged file onto its target path.
-   - **Step 4 (Cleanup):** Mark `'committed'` / unlink `.orca/tx.log` and staging backups. Suppress watcher conflict alerts for Orca's own write generations.
+### Concurrency Architecture & Canonical Lock Order
+1. **Canonical Lock Acquisition Order (Deadlock Prevention):**
+   Operations spanning both Host Libraries and a Project MUST acquire locks strictly in this global order and **never** invert it (`Project` -> `Host*Library` is forbidden):
+   1. `HostStyleLibraryLock` (`<profileDir>/video-studio/styles/`)
+   2. `HostAssetLibraryLock` (`<profileDir>/video-studio/assets/`)
+   3. `ProjectMutationQueue[projectId]` (`projects/<projectId>/`)
+   Operations scoped strictly to a single resource acquire only that resource's lock.
+2. **Commit Protocol with Pre-Commit Backup & Staged Hash Verification (`.orca/tx.log`):**
+   - **Step 1 (Validate & Backup):** Inside the acquired locks, re-read target files, verify every `expectedRevision` (`sha256` hash) matches disk, write pre-image backups of existing targets into `.orca/.staging/<txId>/backups/...`, and record `{ txId, state: 'preparing', targets: [{ path, existed, beforeSha256, backupPath, afterSha256, stagedPath }] }` into `.orca/tx.log` atomically.
+   - **Step 2 (Stage & Verify Before Commit):** Write new contents into `.orca/.staging/<txId>/staged/...` via `durableWriteTempPath`. **Mandatory Gate:** Re-read every staged file and every pre-image backup on disk and verify both existence and exact SHA-256 equality (`staged == afterSha256`, `backup == beforeSha256` for pre-existing files) **before** advancing `.orca/tx.log`.
+   - **Step 3 (Commit):** Only after Step 2 verification succeeds, update `.orca/tx.log` state to `'committing'` and atomically rename each staged file onto its target path.
+   - **Step 4 (Cleanup):** Mark `'committed'` / unlink `.orca/tx.log` and `.orca/.staging/<txId>/`. Suppress watcher conflict alerts for Orca's own write generations.
 4. **Failure & Startup Crash Recovery Rules:**
    - **Failure before `'committing'`:** Discard `.orca/.staging/<txId>/` and delete `.orca/tx.log`; target files remain untouched.
    - **Failure or Crash during `'committing'` (detected on next project open or catalog startup):**
@@ -694,7 +740,7 @@ Because operations such as `applyStyleProfileToProject` and `reconcileProjectSty
 
 ## 13. Upstream Feature Integration Roadmap and Matrix
 
-The long-term product target is **native feature integration** of **HyperFrames**, **OpenMotion**, and **Remotion** into Orca Video Studio (not running external studio apps separately). Because OpenMotion (`Apache 2.0`) is itself built on HyperFrames, Orca avoids duplicating overlapping editors by consolidating on one Orca UI, one Runtime RPC layer, and unified registries.
+The long-term product target is **mandatory native feature integration** of **HyperFrames** (`Apache 2.0`), **OpenMotion** (`Apache 2.0`), and **Remotion** (License-gated engine adapter) directly inside Orca AI Video Studio — using official packages, direct Apache-2.0 source extraction/refactoring into Orca modules, and unified adapters rather than treating OpenMotion as mere design inspiration or relying on external standalone apps. Because OpenMotion is itself built on HyperFrames, Orca avoids duplicating overlapping editors by consolidating on one Orca UI, one Runtime RPC layer, and unified registries.
 
 | Upstream Repo | Source Module / Feature | Upstream Version / Commit | License | Integration Method | Shared Dependencies | Target Orca Module | Target Phase |
 |---|---|---|---|---|---|---|---|
@@ -717,63 +763,66 @@ The long-term product target is **native feature integration** of **HyperFrames*
 
 ## 14. Acceptance Criteria
 
-1. **HyperFrames `0.9.94` Contract Compliance:**
-   - `probe()` accurately reports missing `ffmpeg`/`ffprobe`/`node22`/`hyperframes` from real `0.9.94` `doctor --json` `checks[]` and surfaces `_meta.version`.
-   - `validate()` returns 5-state `ValidationReport` (`passed`, `failed`, `partial`, `error`, `unsupported`); `browserSkipped: true` produces `status: 'partial'` and sets `productionGate.allowed = false` without misclassifying as `failed`.
+1. **HyperFrames `0.9.94` Contract Compliance & Exact Version Resolution:**
+   - `probe()` resolves an exact pinned `0.9.94` runtime (`detectedVersion === '0.9.94'`, flagging any mismatched version as `unverified`), accurately reports missing `ffmpeg`/`ffprobe`/`node22`/`hyperframes` from real `0.9.94` `doctor --json` `checks[]`, and surfaces `_meta.version`.
+   - `validate()` enforces strict precedence (`unsupported` > `error` > `failed` > `partial` > `passed`), keeps `ValidationReport.status` separate from `productionGate`, marks `partial` only when requested checks were skipped AND `errorCount === 0`, and attaches `inputFingerprint` so edited files invalidate cached reports (`stale: true`).
    - `validate()` parses `lint`, `runtime`, `layout`, `motion`, `contrast`, `craft`, `audio`, `hdr`, and unknown finding sections dynamically.
    - `startPreview()` uses `--foreground --json --no-open`, attaches `--force-new` only when replacing an unhealthy/stale session, and opens external preview strictly via validated loopback URL.
    - `render()` tracks non-TTY `@hf-progress` percentage and stage labels accurately.
 2. **Engine-Agnostic File-First Layout & Compatibility:**
-   - Newly scaffolded projects create modular `compositions/*.html` (`<template>` + `data-composition-src`), valid `hyperframes.json` (`0.9.94`), `meta.json`, `package.json`, `.orca/`, `styles/style-profile.json`, `frame.md`, `DESIGN.md`, `MOTION.md`, `BRIEF.md`, `STORYBOARD.md`, `assets/asset-registry.json`, and `references/sources.json`.
+   - Newly scaffolded projects create modular `compositions/*.html` (`<template>` + `data-composition-src`), valid `hyperframes.json` (`0.9.94`), `meta.json`, `package.json`, `.orca/`, `styles/style-profile.json`, `frame.md`, `DESIGN.md`, `MOTION.md`, `BRIEF.md`, `STORYBOARD.md`, `SCRIPT.md`, `assets/asset-registry.json`, and `references/sources.json`.
    - Stage 1/2 legacy projects continue to load, inspect, check, and render non-destructively.
 3. **Dual-Scope Style & General-Purpose Consistency:**
-   - Built-in presets (`technical-explainer-01`, `clean-editorial-01`) and User Library styles can be applied to multiple projects.
-   - Updating a style in the User Library does **not** mutate existing project snapshots.
+   - Built-in presets (`technical-explainer-01`, `clean-editorial-01`) and User Library styles (`styles/<styleId>/` including `DESIGN.md` when present) can be applied to multiple projects.
+   - Published Host Library versions are immutable; updating a style in the User Library creates a new version and does **not** mutate existing project snapshots.
    - Editing managed tokens in `frame.md` / `MOTION.md` externally triggers reconciliation detection (`getStyleReconciliationDiff`) rather than silent overwrite.
-4. **Storyboard & Master Asset Registry:**
+4. **Storyboard, Master Asset Registry & RPC Completeness:**
    - Reordering or renaming frames in `STORYBOARD.md` preserves every permanent `scene_id` and `## Locked` sections.
    - `CompositionDriftReport` detects differences between planned storyboard durations/assets and actual `compositions/*.html`.
-   - `asset-registry.json` supports diverse asset types (`object`, `character`, `environment`, `graphic`, `model3d`, `audio`, `video`, `custom`), arbitrary custom state keys, structured `components`, dependency portability, and blocks unforced removal of assets in use.
+   - `asset-registry.json` enforces asset invariants (`defaultState` valid, unique `components[].id`, acyclic `parentComponentId` hierarchy, existing dependency/state files, SHA-256 verification), supports arbitrary custom states/types, supports `saveProjectAssetToLibrary` without mutating existing library versions, and blocks unforced removal of assets in use.
+   - Every UI/Inspector action (`updateProjectScript`, `upsertResearchSource`/`deleteResearchSource`, asset state management via `updateAssetMetadata`, `saveProjectAssetToLibrary`, `approveProjectExecution`) has a typed RPC contract.
 5. **Security, Concurrency & Crash Recovery:**
-   - Render/preview/check subprocess environments never receive user API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.).
+   - Render/preview/check subprocess environments never receive user API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.), and untrusted/external/AI-generated compositions require explicit approval (`videoStudio.approveProjectExecution`) before Chrome execution (no unattended untrusted execution in Phase 02–03).
    - Path validation blocks traversal, UNC/drive escapes, symlinks, and Windows junctions outside project/library roots.
-   - Multi-file transactions serialize per project and per shared host library, detect `expectedRevision` conflicts, and perform hash-verified startup crash recovery without overwriting post-crash external agent edits.
+   - Multi-file transactions obey canonical lock order (`HostStyleLibraryLock -> HostAssetLibraryLock -> ProjectMutationQueue`), verify staged + backup files and SHA-256 hashes before `.orca/tx.log` transitions to `'committing'`, detect `expectedRevision` conflicts, and perform hash-verified startup crash recovery without overwriting post-crash external agent edits.
    - Preview Session Manager verifies OS PID + creation time/command + loopback health before reusing or killing a process.
-6. **General-Purpose Renderable Consistency Fixtures:**
-   - Three minimal, deterministic renderable project fixtures validate end-to-end contracts:
-     - **Fixture A (Technical Explainer — AC Mechanism):** Verifies modular sub-compositions, `technical-explainer-01` snapshot, and multi-state animatable SVG asset (`closed` / `cutaway` / `operating` with `fan` component) without changing asset ID.
-     - **Fixture B (General Explainer — Inflation):** Verifies the **exact same** `technical-explainer-01` Style Profile applied to a non-technical topic and different assets, with zero regressions when the library style updates.
-     - **Fixture C (Alternative Style — Product Showcase):** Verifies `clean-editorial-01` applied cleanly, proving Video Core and UI are not hardcoded to technical explainers.
+6. **General-Purpose Renderable Consistency Fixtures (`1080×1920`, `30 FPS`, Actual Render Smoke Tests):**
+   - Three minimal, deterministic renderable short project fixtures validate **both** metadata/file contracts and **actual end-to-end HyperFrames `render` execution** (`1080×1920`, `30 FPS`, reproducible keyframe/transition HTML — no full AI generation / Agent Runner required):
+     - **Fixture A (Technical Explainer — AC Mechanism):** Verifies modular sub-compositions, `technical-explainer-01` snapshot, multi-state animatable SVG asset (`closed` / `cutaway` / `operating` with `fan` component) without changing asset ID, real MP4 render output (`ffprobe` dimensions/fps/duration), seek-safe multi-timestamp frame extraction, and golden-frame visual regression.
+     - **Fixture B (General Explainer — Inflation):** Verifies the **exact same** `technical-explainer-01` Style Profile applied to a non-technical topic and different assets, zero regressions when Host Library updates, portable directory relocation, real MP4 render output, and golden-frame visual regression.
+     - **Fixture C (Alternative Style — Product Showcase):** Verifies `clean-editorial-01` applied cleanly, proving Video Core and UI are not hardcoded to technical explainers, with real MP4 render output and golden-frame visual regression.
 
 ---
 
 ## 15. Detailed Test Plan
 
-Aligned with `AGENTS.md` (focusing on real code invariants, parsing/round-trips, security boundaries, persistence/crash recovery, cross-platform Windows filesystem invariants, and visual fixtures — avoiding low-value UI glue tests):
+Aligned with `AGENTS.md` (focusing on real code invariants, parsing/round-trips, security boundaries, persistence/crash recovery, cross-platform Windows filesystem invariants, and real render visual fixtures — avoiding low-value UI glue tests):
 
 1. **Upstream CLI `0.9.94` Fixture Contract Tests (`hyperframes-engine-adapter.test.ts`, `hyperframes-cli-parsers.test.ts`):**
    - Capture real outputs from `hyperframes 0.9.94` into `src/main/video-studio/engines/__fixtures__/`: `doctor-ready.json`, `doctor-missing-ffmpeg.json`, `check-passed.json`, `check-failed-contrast-layout.json`, `check-browser-skipped.json`, `check-hdr-unknown-section.json`, `preview-started.json`, `render-progress.txt`.
-   - Assert 5-state `ValidationReport` + `productionGate` across `passed`, `failed`, `partial` (`browserSkipped: true`), `error`, and `unsupported` (`remotion`).
-   - Assert version-pin check and non-TTY `@hf-progress` parsing.
+   - Assert exact `0.9.94` version pinning (rejecting unverified version drift), 5-state `ValidationReport` precedence (`errorCount > 0` + `browserSkipped: true` -> `failed`; `errorCount === 0` + `browserSkipped: true` -> `partial` with `productionGate.allowed = false`), `inputFingerprint` staleness invalidation, and non-TTY `@hf-progress` parsing.
 2. **Markdown Round-Trip & Drift Detection Tests (`video-studio-documents.test.ts`):**
-   - `STORYBOARD.md` parse -> reorder -> patch -> reparse invariant: `scene_id` immutable, `## Locked` and unknown `extra` keys preserved, CRLF/LF round-trip safe.
+   - `STORYBOARD.md`, `SCRIPT.md`, `BRIEF.md`, `references/sources.json` parse -> reorder -> patch -> reparse invariant: `scene_id` immutable, `## Locked` and unknown `extra` keys preserved, CRLF/LF round-trip safe.
    - `frame.md` / `DESIGN.md` / `MOTION.md` targeted frontmatter sync preserves prose; external agent edits to managed colors/fonts trigger `getStyleReconciliationDiff` and both reconciliation paths (`import-from-markdown` and `reapply-json`).
    - Planned-vs-actual composition diff accurately flags duration mismatch (`6s` planned vs `8s` actual) and unmounted scenes.
-3. **Multi-File Transaction & Crash Recovery Tests (`video-studio-transactions.test.ts`):**
-   - Simulated write failure on 2nd file restores 1st file cleanly.
+3. **Asset Registry Invariant Tests (`video-studio-asset-registry.test.ts`):**
+   - Reject missing `defaultState` in `states`, duplicate `components[].id`, cyclic `components[].parentComponentId` hierarchies, missing state/dependency files, and corrupted SHA-256 hashes; verify immutable Host Library versioning (`saveProjectAssetToLibrary` creates `v<n+1>`, leaves `v<n>` untouched) and project snapshot isolation.
+4. **Multi-File Transaction, Lock Order & Crash Recovery Tests (`video-studio-transactions.test.ts`):**
+   - Verify backups + staged files are written and hash-verified before `.orca/tx.log` reaches `'committing'`; failure during staging leaves targets untouched and removes `.orca/tx.log`.
    - Simulated crash mid-commit (`.orca/tx.log` left on disk):
      - Clean hashes -> deterministic recovery completes cleanly.
      - Simulated external agent edit after partial commit -> recovery refuses blind rollback and surfaces `video_studio_tx_recovery_conflict`.
    - `expectedRevision` conflict returns `video_studio_file_conflict`.
-   - Concurrent mutations across two projects targeting the shared Host Style/Asset Library serialize cleanly via library lock.
-4. **Windows-Specific Security & Filesystem Invariant Tests (`video-studio-composition-paths.test.ts`, `video-studio-preview-session.test.ts`, `host-video-engine-deps.test.ts`):**
+   - Concurrent mutations across two projects targeting shared Host Style/Asset Libraries serialize without deadlock under canonical lock order (`HostStyleLibraryLock -> HostAssetLibraryLock -> ProjectMutationQueue`).
+5. **Windows-Specific Security & Filesystem Invariant Tests (`video-studio-composition-paths.test.ts`, `video-studio-preview-session.test.ts`, `host-video-engine-deps.test.ts`):**
    - Path traversal (`../`, `..\`, NUL byte, UNC/drive prefix), Windows case-insensitive collisions, and symlink/junction containment bypass attempts (creating real temp symlink/junction pointing outside project root and verifying `realpath` check rejects it).
    - `host-video-engine-deps` env allowlist test: confirm `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GITHUB_TOKEN`, `TAVILY_API_KEY` in `process.env` are stripped from child process env.
+   - Project trust gate test: unapproved external/AI compositions refuse unattended Chrome render/preview with `video_studio_execution_approval_required`, and re-require approval when `inputFingerprint` changes.
    - Preview Session Manager: mock PID reuse (`creationTimeMs` / command mismatch in process table) verifies Orca clears stale `.orca/project-state.json` without killing the unrelated PID, and cleans up verified preview processes on `dispose()`.
-5. **General-Purpose Consistency Fixture Tests (`video-studio-consistency-fixtures.test.ts`):**
-   - Exercise **Fixture A (AC Technical Explainer)**, **Fixture B (Inflation General Explainer)**, and **Fixture C (Product Showcase Alternative Style)** through real Project/Style/Asset/Storyboard services: verify snapshot isolation when User Library updates, stable `scene_id` on reorder, stable `asset_id` across states, asset-in-use delete blocking, portable copy/relocation with dependency files, and `hyperframes lint` / `check` structure compatibility.
-6. **RPC, Mobile Bundle & Static Gates:**
-   - `video-studio-methods.test.ts` (all new RPC methods, `expectedRevision`, `removeProjectAsset` dependency check, SSH refusal, passthrough error codes).
+6. **General-Purpose Render & Consistency Fixture Tests (`video-studio-consistency-fixtures.test.ts` + actual render smoke suite):**
+   - Exercise **Fixture A (AC Technical Explainer)**, **Fixture B (Inflation General Explainer)**, and **Fixture C (Product Showcase Alternative Style)** at `1080×1920`, `30 FPS`: verify snapshot isolation, stable `scene_id`, stable `asset_id` across states, asset-in-use delete blocking, portable relocation copy rendering cleanly, **actual HyperFrames `render` MP4 output + `ffprobe` validation**, seek-safe multi-timestamp frame extraction, and **golden-frame PNG visual regression** (gracefully reporting environment prerequisite gap locally if `ffmpeg`/`chrome` is absent, while running full render verification wherever `ffmpeg` + `chrome` + `hyperframes 0.9.94` are installed).
+7. **RPC, Mobile Bundle & Static Gates:**
+   - `video-studio-methods.test.ts` (all new RPC methods including `updateProjectScript`, `upsertResearchSource`, `deleteResearchSource`, `saveProjectAssetToLibrary`, `approveProjectExecution`, `expectedRevision`, `removeProjectAsset` dependency check, SSH refusal, passthrough error codes).
    - `pnpm run verify:rpc-params-catalog`, `pnpm run build:mobile-web` (Zod tree-shaking check), `pnpm run sync:localization-catalog`, `pnpm run sync:mobile-localization`.
    - Component fixtures in `VideoStudioPage.fixture.tsx` verified via `pnpm fixtures:shot` (desktop & narrow, light & dark) for `research`, `scriptStoryboard`, `scriptAssets`, `styleConflict`, `validationPartial`, and `production`.
    - Final gates: `pnpm tc:node`, `pnpm tc:web`, mobile typecheck, `pnpm check:react-compiler-compat-ratchet`, and `pnpm check:changed --base=main`.
@@ -783,6 +832,6 @@ Aligned with `AGENTS.md` (focusing on real code invariants, parsing/round-trips,
 ## 16. Definition of Done
 
 - All 15 sections above are implemented cleanly on branch `feature/orca-ai-studio` (no merge to `main` until final review).
-- HyperFrames `0.9.94` CLI contract fixtures and all invariant, security, transaction recovery, and Windows filesystem tests pass.
-- Three consistency fixture projects (Technical Explainer, General Explainer, Alternative Style) verify style reuse, snapshot isolation, permanent `scene_id`, multi-state animatable assets, and dependency portability.
+- HyperFrames `0.9.94` exact version pinning, CLI contract fixtures, security/trust gates, asset/style invariants, transaction hash-verified recovery, and Windows filesystem tests pass.
+- Three consistency fixture projects (Technical Explainer, General Explainer, Alternative Style) verify style reuse, snapshot isolation, permanent `scene_id`, multi-state animatable assets, dependency portability, actual `1080×1920` `30 FPS` MP4 render smoke output, and golden-frame visual regression.
 - `pnpm fixtures:shot`, `pnpm run verify:rpc-params-catalog`, `pnpm run build:mobile-web`, localization verification, typechecks, `check:react-compiler-compat-ratchet`, and `pnpm check:changed --base=main` pass with zero errors.
