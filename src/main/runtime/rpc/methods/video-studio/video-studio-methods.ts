@@ -84,7 +84,7 @@ async function readRenderChunk(
     const fileStats = await handle.stat()
     const totalBytes = fileStats.size
     if (offset > totalBytes) {
-      throw new Error('invalid_argument')
+      throw Object.assign(new Error('invalid_argument'), { code: 'invalid_argument' })
     }
     const bytesToRead = Math.min(maxBytes, Math.max(0, totalBytes - offset))
     const buffer = Buffer.allocUnsafe(bytesToRead)
