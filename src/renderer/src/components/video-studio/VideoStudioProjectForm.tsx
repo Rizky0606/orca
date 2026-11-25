@@ -1,0 +1,180 @@
+import { useId, useState, type FormEvent } from 'react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { useTranslate } from '@/i18n/use-translate'
+import {
+  VideoStudioProjectFields,
+  type VideoStudioProject
+} from '../../../../shared/video-studio/video-studio-project'
+import type { VideoStudioCreateProjectParams } from '../../../../shared/video-studio/video-studio-rpc-contract'
+import { VideoStudioWorkflow } from './VideoStudioWorkflow'
+import {
+  parseVideoStudioDraft,
+  videoStudioDraft,
+  type VideoStudioDraft
+} from './video-studio-draft'
+
+export function VideoStudioProjectForm({
+  project,
+  busy,
+  onSave,
+  onCancel,
+  onDelete
+}: {
+  project?: VideoStudioProject
+  busy: boolean
+  onSave: (fields: VideoStudioCreateProjectParams) => void
+  onCancel: () => void
+  onDelete: (trigger: HTMLButtonElement) => void
+}) {
+  const t = useTranslate()
+  const formId = useId()
+  const [draft, setDraft] = useState(() => videoStudioDraft(project))
+  const [submitted, setSubmitted] = useState(false)
+  const parsed = parseVideoStudioDraft(draft)
+  const titleError = submitted && parsed.errors?.includes('title')
+  const durationError = submitted && parsed.errors?.includes('durationSeconds')
+  function change<Field extends keyof VideoStudioDraft>(
+    field: Field,
+    value: VideoStudioDraft[Field]
+  ) {
+    setDraft((state) => ({ ...state, [field]: value }))
+  }
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSubmitted(true)
+    if (parsed.project) {
+      onSave(parsed.project)
+      return
+    }
+    const field = parsed.errors?.[0]
+    if (typeof field === 'string') {
+      document.getElementById(`${formId}-${field}`)?.focus()
+    }
+  }
+
+  return (
+    <form onSubmit={submit} noValidate>
+      <fieldset className="grid min-w-0 gap-5" disabled={busy}>
+        <div className="grid min-w-0 gap-2">
+          <Label htmlFor={`${formId}-title`}>
+            {t('videoStudio.projectTitle', 'Project title')}
+          </Label>
+          <Input
+            id={`${formId}-title`}
+            required
+            className="min-h-11 @lg:min-h-9"
+            value={draft.title}
+            aria-invalid={titleError || undefined}
+            aria-describedby={titleError ? `${formId}-title-error` : undefined}
+            onChange={(event) => change('title', event.currentTarget.value)}
+          />
+          {titleError ? (
+            <p id={`${formId}-title-error`} className="text-xs text-destructive">
+              {t('videoStudio.titleRequired', 'Enter a project title.')}
+            </p>
+          ) : null}
+        </div>
+        <div className="grid min-w-0 gap-2">
+          <Label htmlFor={`${formId}-prompt`}>{t('videoStudio.prompt', 'Prompt')}</Label>
+          <Textarea
+            id={`${formId}-prompt`}
+            rows={4}
+            value={draft.prompt}
+            onChange={(event) => change('prompt', event.currentTarget.value)}
+          />
+        </div>
+        <div className="grid min-w-0 gap-4 @sm:grid-cols-2">
+          <div className="grid min-w-0 content-start gap-2">
+            <Label htmlFor={`${formId}-ratio`}>
+              {t('videoStudio.aspectRatio', 'Aspect ratio')}
+            </Label>
+            <Select
+              value={draft.aspectRatio}
+              disabled={busy}
+              onValueChange={(value) => {
+                const ratio = VideoStudioProjectFields.shape.aspectRatio.safeParse(value)
+                if (ratio.success) {
+                  change('aspectRatio', ratio.data)
+                }
+              }}
+            >
+              <SelectTrigger id={`${formId}-ratio`} className="min-h-11 w-full @lg:min-h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                {VideoStudioProjectFields.shape.aspectRatio.options.map((ratio) => (
+                  <SelectItem key={ratio} value={ratio} className="min-h-11 sm:min-h-8">
+                    {ratio}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid min-w-0 content-start gap-2">
+            <Label htmlFor={`${formId}-durationSeconds`}>
+              {t('videoStudio.durationSeconds', 'Duration (seconds)')}
+            </Label>
+            <Input
+              id={`${formId}-durationSeconds`}
+              type="number"
+              min={5}
+              max={3600}
+              step={1}
+              required
+              className="min-h-11 @lg:min-h-9"
+              value={draft.durationSeconds}
+              aria-invalid={durationError || undefined}
+              aria-describedby={durationError ? `${formId}-duration-error` : undefined}
+              onChange={(event) => change('durationSeconds', event.currentTarget.value)}
+            />
+            {durationError ? (
+              <p id={`${formId}-duration-error`} className="text-xs text-destructive">
+                {t('videoStudio.durationInvalid', 'Enter a whole number from 5 to 3,600.')}
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <VideoStudioWorkflow
+          stage={draft.workflowStage}
+          onChange={(stage) => change('workflowStage', stage)}
+        />
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">
+          {project ? (
+            <Button
+              className="min-h-11 @lg:min-h-9"
+              type="button"
+              variant="ghost-destructive"
+              onClick={(event) => onDelete(event.currentTarget)}
+            >
+              {t('videoStudio.deleteProject', 'Delete project')}
+            </Button>
+          ) : (
+            <Button
+              className="min-h-11 @lg:min-h-9"
+              type="button"
+              variant="ghost"
+              onClick={onCancel}
+            >
+              {t('videoStudio.cancel', 'Cancel')}
+            </Button>
+          )}
+          <Button className="min-h-11 @lg:min-h-9" type="submit">
+            {project
+              ? t('videoStudio.saveChanges', 'Save changes')
+              : t('videoStudio.createProject', 'Create project')}
+          </Button>
+        </div>
+      </fieldset>
+    </form>
+  )
+}

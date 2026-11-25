@@ -14,39 +14,55 @@ import {
 } from '../../../../shared/video-studio/video-studio-rpc-contract'
 import { callRuntimeRpc } from '../rpc/calls/runtime-rpc-call'
 
-export function listVideoStudioProjectsForTarget(target: RuntimeClientTarget) {
-  return callRuntimeRpc<VideoStudioListProjectsResult>(target, VIDEO_STUDIO_LIST_PROJECTS_METHOD)
+export function listVideoStudioProjectsForTarget(
+  target: RuntimeClientTarget,
+  expectedEnvironmentPairingRevision?: number
+) {
+  return callRuntimeRpc<VideoStudioListProjectsResult>(
+    target,
+    VIDEO_STUDIO_LIST_PROJECTS_METHOD,
+    {},
+    {
+      expectedEnvironmentPairingRevision
+    }
+  )
 }
 
 export function createVideoStudioProjectForTarget(
   target: RuntimeClientTarget,
-  params: VideoStudioCreateProjectParams
+  params: VideoStudioCreateProjectParams,
+  expectedEnvironmentPairingRevision?: number
 ) {
   return callRuntimeRpc<VideoStudioCreateProjectResult>(
     target,
     VIDEO_STUDIO_CREATE_PROJECT_METHOD,
-    params
+    params,
+    { expectedEnvironmentPairingRevision }
   )
 }
 
 export function updateVideoStudioProjectForTarget(
   target: RuntimeClientTarget,
-  params: VideoStudioUpdateProjectParams
+  params: VideoStudioUpdateProjectParams,
+  expectedEnvironmentPairingRevision?: number
 ) {
   return callRuntimeRpc<VideoStudioUpdateProjectResult>(
     target,
     VIDEO_STUDIO_UPDATE_PROJECT_METHOD,
-    params
+    params,
+    { expectedEnvironmentPairingRevision }
   )
 }
 
 export function deleteVideoStudioProjectForTarget(
   target: RuntimeClientTarget,
-  params: VideoStudioDeleteProjectParams
+  params: VideoStudioDeleteProjectParams,
+  expectedEnvironmentPairingRevision?: number
 ) {
   return callRuntimeRpc<VideoStudioDeleteProjectResult>(
     target,
     VIDEO_STUDIO_DELETE_PROJECT_METHOD,
-    params
+    params,
+    { expectedEnvironmentPairingRevision }
   )
 }
