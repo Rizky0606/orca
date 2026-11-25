@@ -255,6 +255,9 @@ export interface VideoEngineAdapter {
 ```text
 <profileDir>/video-studio/
 ├── video-studio-projects.json          # Atomic project index catalog
+├── security/                           # Host-managed security & runtime authority (outside project dirs)
+│   ├── trust-store.json                # Execution approval state keyed by (projectId, projectRootRealpath)
+│   └── preview-sessions.json           # Host-verified active preview PID/exe/port/session records
 ├── styles/                             # Host User Style Library (versioned/reusable)
 │   └── <styleId>/
 │       ├── style-profile.json
@@ -520,7 +523,7 @@ type MasterAssetRecord = {
   updatedAt: number
 }
 ```
-- Deletion guard: Removing an asset from a project checks both `STORYBOARD.md` frame `assets:` references and static file references in `index.html` / `compositions/*.html`. If referenced, deletion is refused with `video_studio_asset_in_use` (returning reference locations) unless `force: true` is explicitly passed after UI confirmation.
+- Deletion guard & dynamic reference caveat: Removing an asset from a project checks `STORYBOARD.md` frame `assets:` references and static file references in `index.html`, `compositions/*.html`, `scenes/*.html`, CSS, and SVG files. Because static scanning cannot exhaustively detect dynamic/evaluated JavaScript references, the registry reports dynamic-script heuristics (`mayBeReferencedDynamically`), blocks deletion with `video_studio_asset_in_use` if statically referenced (unless `force: true`), and **never deletes potentially referenced files on disk without explicit confirmation** (`forceDeleteFiles: true`).
 
 #### D. Research Sources (`references/sources.json`)
 Reuses `GeneralChatSource` identity fields from `src/shared/general-chat/general-chat-research-contract.ts` and extends them for video verification:
@@ -540,7 +543,7 @@ type VideoStudioResearchSource = {
 
 #### E. Extension Points (Contracts Only in Phase 02–03)
 1. **Universal Motion Registry (`src/shared/video-studio/motion-registry-contract.ts`):**
-   - Defines `MotionPresetMetadata` (`id`, `version`, `category`, `parameters`, `dependencies`, `implementations: Record<string, { status: 'available' | 'planned' | 'unsupported'; adapterType?: string }>`), plus a small read-only built-in starter catalog matching common storyboard presets (`camera.smooth_zoom`, `camera.pan`, `typography.counter_up`, `typography.word_highlight`, `object.pop_in`, `diagram.flow_path`, `chart.line_draw`).
+   - Defines `MotionPresetMetadata` (`id`, `version`, `category`, `parameters`, `dependencies`, `executionKind: 'executable' | 'knowledge-only' | 'planned'`, `implementations: Record<string, { status: 'executable' | 'knowledge-only' | 'planned' | 'unsupported'; adapterType?: string }>`), plus a small read-only built-in starter catalog matching common storyboard presets (`camera.smooth_zoom`, `camera.pan`, `typography.counter_up`, `typography.word_highlight`, `object.pop_in`, `diagram.flow_path`, `chart.line_draw`). **Presets whose status is `'knowledge-only'` or `'planned'` MUST NOT be reported as executable (`'executable'`) or runnable until an implementation adapter exists.**
 2. **OpenMotion Motion Package Adapter Interface (`src/main/video-studio/extensions/motion-package-contract.ts`):**
    - Defines TypeScript types & Zod boundary for `motion-package.json` v0.2 (`name`, `version`, `license`, `entry`, `dependencies`, `hashedInventory`, `inputsSchemaPath`, `elementsDir`, `materialsDir`, `presetsDir`) and an adapter interface (`inspectPackage`, `validateManifest`, `mapToStyleAndAssets`) to be implemented when OpenMotion source modules are extracted in Phase 04.
 
@@ -606,23 +609,25 @@ All methods live in `src/shared/video-studio/video-studio-rpc-contract.ts`, regi
 
 All UI work follows `docs/STYLEGUIDE.md`, `main.css` design tokens, `components/ui/` primitives, Lucide icons, `useTranslate()`, React Compiler compatibility (no `try/finally` inside hooks), and responsive desktop/narrow touch targets (`min-h-11 @lg:min-h-9`).
 
-### Stage-Aware Project Detail Surface (`VideoStudioProjects.tsx`)
-Instead of showing only a static metadata form plus `Production` panel, the selected project detail view presents the three workflow stages clearly with dedicated structured inspectors:
+### Stage-Aware Project Detail Surface (`VideoStudioProjects.tsx`, `VideoStudioWorkflow.tsx`)
+Instead of showing only a static metadata form plus `Production` panel, the selected project detail view presents **four explicit workflow stages** (`workflowStage`: `'research' | 'script' | 'style' | 'production'`, preserving backward compatibility for legacy saved projects):
 
 1. **`Research` Stage:**
    - **Brief Editor (`BRIEF.md`):** Message, target audience, language, narrative arc, intent notes.
-   - **Research Sources (`references/sources.json`):** Collapsible source cards from General Chat handoff (or manually added URLs) showing title, domain, `verificationStatus` badge (`verified` / `unverified` / `assumed`), and `research-notes.md` summary.
-   - **Style Profile Selector:** Displays active project snapshot (`name`, `version`, `sourceTier`, visual palette swatches, typography, camera, subtitle preview), dropdown to apply a preset from Built-in or User Library, button to edit tokens inline or **Save as new User Library Style**, and a **Reconciliation Banner** when `frame.md` / `MOTION.md` was modified externally by a coding agent.
-2. **`Script` Stage (Storyboard & Master Assets):**
-   - **Structured Storyboard List (`STORYBOARD.md`):**
-     - Ordered frame cards keyed by permanent `scene_id` (showing `Frame N`, `scene_id` chip, `status` badge `outline/built/animated`, planned `duration`, `transition_in`, `voiceover`, assigned `assets` & `motion_presets`).
-     - Supports **Add Frame**, **Edit Frame**, **Move Up / Move Down** (reorder), and **Delete Frame** (with confirmation).
+   - **Research Sources (`references/sources.json`):** Collapsible source cards from General Chat handoff (or manually added/edited URLs via `upsertResearchSource` / `deleteResearchSource`) showing title, domain, `verificationStatus` badge (`verified` / `unverified` / `assumed`), and `research-notes.md` summary.
+2. **`Script` Stage (Storyboard, `SCRIPT.md` & Master Assets):**
+   - **Structured Storyboard List (`STORYBOARD.md`) & Narration (`SCRIPT.md`):**
+     - Ordered `## Frame N — Title` cards keyed by permanent `scene_id` (showing `Frame N`, `scene_id` chip, `status` badge `outline/built/animated`, planned `duration`, `transition_in`, `voiceover`, assigned `assets` & namespaced `motion_presets`).
+     - Supports **Add Frame**, **Edit Frame**, **Move Up / Move Down** (reorder), and **Delete Frame** (with confirmation), plus inline **`SCRIPT.md` Editor**.
      - Displays **Planned vs Actual Drift** badge when `compositions/*.html` exists and differs from storyboard duration, target file presence, or referenced assets.
    - **Master Asset Registry Panel (`assets/asset-registry.json`):**
      - Lists project assets with type icon, format, version, `consistency` lock badges, custom `states` pills (e.g. `closed`, `cutaway`, `operating` or `idle`, `walking`), and expandable structured `components` list (`id`, `selector`, `allowedTransforms`).
-     - Supports **Import File**, **Add State**, **Edit Metadata/Components**, **Copy from Host Library**, **Save to Host Library**, and **Remove** (showing dependency warning dialog if referenced by a frame or HTML file).
-3. **`Production` Stage (`VideoStudioProductionPanel.tsx`):**
-   - **Engine Readiness Banner:** Displays `HyperFrames 0.9.94` readiness (`node 22+`, `ffmpeg`, `ffprobe`, `chrome`, pinned version check) + **Recheck** button + `Remotion (Phase 06)` status.
+     - Supports **Import File**, **Add/Edit State**, **Edit Metadata/Components**, **Copy from Host Library**, **Save to Host Library** (creates immutable new version `v<n+1>`), and **Remove** (showing dependency warning dialog if statically/potentially referenced; never deletes disk files without explicit confirmation).
+3. **`Style` Stage (Dual-Scope Style Profile & Universal Motion Registry):**
+   - **Style Profile Selector & Token Inspector:** Displays active project snapshot (`name`, `version`, `sourceTier`, `visual.palette` swatches, `visual.lighting`/`renderingStyle`, `typography`, `camera`, `motion`, `effects`, `composition`, `subtitle`, `openMotionPackageRef`), dropdown to apply Built-in (`technical-explainer-01`, `clean-editorial-01`) or Host Library profiles, inline token editing (`updateProjectStyleTokens`), **Save / Duplicate to Host Library**, and a **Reconciliation Banner** when `frame.md` / `DESIGN.md` / `MOTION.md` was modified externally by a coding agent.
+   - **Universal Motion Registry Inspector:** Browses available namespaced motion presets explicitly labeled as `executable`, `knowledge-only`, or `planned` so unimplemented presets are never misreported as runnable.
+4. **`Production` Stage (`VideoStudioProductionPanel.tsx`):**
+   - **Engine Readiness & Trust Banner:** Displays `HyperFrames 0.9.94` readiness (`node 22+`, `ffmpeg`, `ffprobe`, `chrome`, exact pinned version check) + **Recheck** button + `Remotion (Phase 06)` status, plus **Execution Trust Approval Prompt** (hosted in `<profileDir>/video-studio/security/trust-store.json`) before spawning Chrome on unapproved external/AI-modified compositions.
    - **Composition Actions:** *Scaffold / Re-scaffold* (non-destructive `overwrite: false`, filling missing Phase 02–03 files without touching user/agent compositions) + confirmation-gated *Reset entry HTML* (`overwrite: true`), *Open in Workspace* (switches to Coding Workspace with the project folder mounted so coding agents can author `compositions/*.html`), *Run Check* (displays 5-state `ValidationReport` badge, `skippedChecks`, `productionGate` notice, findings with `fixHint`/`suggestedColor`), and *Start / Open / Stop Preview* managed by Preview Session Manager.
    - **Render & Playback:** Quality (`Draft`, `Looks`, `Delivery`), `Render MP4` (gated by `productionGate.allowed` when required browser checks were skipped unless an explicit override/draft setting is added later), live `@hf-progress` progress bar & bounded logs, render history list, and chunked Blob `<video controls>` playback + *Save MP4*.
 4. **External Edit Conflict Handling:**
@@ -641,12 +646,14 @@ Instead of showing only a static metadata form plus `Production` panel, the sele
    - **Embedded Remotion Player** + **Unified Multi-Engine Preview**.
 
 ### Preview Session Manager (`src/main/video-studio/video-studio-preview-manager.ts`)
-- Tracks active preview handles in memory per `(profileDir, projectId)` AND writes non-portable cache state to `.orca/project-state.json`.
-- **Startup / Reuse Verification (Never Trust Raw PID Alone):**
-  Before reusing or stopping a session recorded in `.orca/project-state.json`:
-  1. Verify process existence and identity: on Windows via [windows-process-table.ts](file:///C:/Coding/Project/orca/.worktrees/orca-ai-studio/src/main/windows/windows-process-table.ts) (`pid` + `creationTimeMs` + command line matching `hyperframes`/`node` and project/port); on POSIX via process inspection (`ps` / `/proc/<pid>`) + creation/command check.
-  2. Probe `127.0.0.1:<port>` loopback HTTP health endpoint to verify it belongs to the expected project preview server.
-  3. Only reuse if both process identity and loopback health pass. If stale/mismatched PID, clear the cached `.orca/project-state.json` entry without touching the unrelated OS process; only pass `--force-new` to HyperFrames CLI when replacing an unhealthy/orphaned session for that same project directory.
+- Tracks active preview handles in memory per `(profileDir, projectId)`, stores authoritative session records in host-managed `<profileDir>/video-studio/security/preview-sessions.json`, and mirrors non-authoritative cache state into `.orca/project-state.json`.
+- **Startup / Reuse Verification (Six-Factor Process & Ownership Check — Never Trust Raw PID or Generic HTTP 200 Alone):**
+  Before reusing or stopping a session:
+  1. Verify process existence and OS **process identity + `creationTimeMs`**: on Windows via [windows-process-table.ts](file:///C:/Coding/Project/orca/.worktrees/orca-ai-studio/src/main/windows/windows-process-table.ts); on POSIX via `ps`/process inspection.
+  2. Verify resolved **executable path** matches expected Node/HyperFrames runtime (not merely substring `'hyperframes'` anywhere in args).
+  3. Verify **project identity** (`projectDirRealpath` in command line args / cwd matches the canonical project root).
+  4. Verify **port ownership & loopback server identity**: confirm the listening TCP socket on `127.0.0.1:<port>` is owned by that PID (via OS socket/netstat check or HyperFrames session metadata) AND probe its HTTP response / headers / project title/root marker + recorded `sessionId`.
+  5. Only reuse if all identity checks and health pass. If stale or mismatched on any factor, clear the cached entry without touching the unrelated OS process; only pass `--force-new` to HyperFrames CLI when replacing an unhealthy/orphaned session confirmed to belong to that project.
 - **Teardown:** Automatically stops preview processes on project deletion, runtime `dispose()`, and app quit.
 
 ---
@@ -679,11 +686,12 @@ Untrusted HTML/CSS/JS inside `index.html`, `compositions/*.html`, or imported SV
 ```
 
 ### Enforced Security Controls & Minimal Execution Trust Policy (Phase 02–03)
-1. **Minimal Project Trust & Execution Approval Policy:**
-   - Each project tracks trust state in `.orca/project-state.json`: `{ sourceOrigin: 'orca-scaffold' | 'ai-generated' | 'imported-external', trustState: 'untrusted' | 'approved', approvedFingerprint?: string, approvedAt?: number }`.
-   - Imported external templates, third-party HTML/SVG/JS scripts, and unreviewed AI-generated composition edits are treated as `untrusted` (or invalidated whenever `inputFingerprint` changes beyond Orca's untouched baseline scaffold).
-   - Executing Chrome-backed preview, browser check, or `hyperframes render` on an `untrusted` / unapproved revision requires explicit user approval via `videoStudio.approveProjectExecution` bound to the exact `inputFingerprint` (`video_studio_execution_approval_required` otherwise).
-   - **Prohibition of Unattended Untrusted Execution:** Unattended background rendering or autonomous agent-triggered execution against untrusted external/AI-generated HTML/JS sources is **prohibited** in Phase 02–03 until full container/guest sandbox isolation is implemented in Phase 04–05.
+1. **Host-Managed Execution Trust Store & Verification Policy (Outside Project Dir):**
+   - Authoritative execution approval lives **strictly outside the project directory** in host-managed `<profileDir>/video-studio/security/trust-store.json`, keyed by `(projectId, projectRootRealpath)`. **Project files inside `projects/<projectId>/` (including `.orca/project-state.json`) MUST NEVER be able to grant or persist execution approval to themselves.**
+   - Trust record tracks `{ projectId, projectRootRealpath, sourceOrigin: 'orca-scaffold' | 'ai-generated' | 'imported-external', trustState: 'untrusted' | 'approved', approvedFingerprint?: string, approvedAt?: number }`.
+   - **`inputFingerprint` Completeness:** The fingerprint MUST hash **all executable sources, dependencies, and runtime config**: `index.html`, `compositions/**/*.html`, `scenes/**/*.html`, any `.js`/`.mjs`/`.css`/`.svg` under `compositions/`, `scenes/`, `assets/`, or project root, `hyperframes.json`, `package.json`, `styles/style-profile.json`, `assets/asset-registry.json`, `engineConfig`, and pinned `runtimeIdentity` (`hyperframes@0.9.94`).
+   - Browser-backed `check` (unless `--no-browser` static lint), `preview`, and `render` MUST verify trust against `<profileDir>/video-studio/security/trust-store.json` before spawning Chrome. If `trustState !== 'approved'` or current `inputFingerprint !== approvedFingerprint`, Orca rejects with `video_studio_execution_approval_required` until the user explicitly approves via `videoStudio.approveProjectExecution`.
+   - **Pre-Spawn TOCTOU / Execution Snapshot Mitigation:** Orca computes and verifies `inputFingerprint` under host lock right before spawning Chrome, captures a verified temporary/read-only execution snapshot (or re-verifies fingerprint atomically before launch and aborts/invalidates if modified between approval and spawn), and continues to **strictly prohibit unattended execution of untrusted sources** until full sandbox isolation exists in Phase 04–05.
 2. **Zero Electron Privilege Exposure:** Generated composition HTML/JS is never injected into Orca's privileged React renderer (`no dangerouslySetInnerHTML`, `no file://` load, `no Node/preload`). External browser preview opens strictly through `normalizeExternalBrowserUrl` ([browser-url.ts](file:///C:/Coding/Project/orca/.worktrees/orca-ai-studio/src/shared/browser/navigation/browser-url.ts#L325)) verified to `http://127.0.0.1:<port>/...` or `http://localhost:<port>/...` with valid port bounds.
 3. **Environment Credential Isolation (`host-video-engine-deps.ts`):** Replace full `process.env` inheritance (`copyDefinedProcessEnv()`) with an explicit **allowlist** (`PATH`, `PATHEXT`, `SystemRoot`, `COMSPEC`, `TEMP`, `TMP`, `HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `LANG`, `LC_*`, `HYPERFRAMES_*` non-secret flags) so `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GITHUB_TOKEN`, search provider secrets, or Orca tokens are **never** inherited by `hyperframes` preview/render/check subprocesses.
 4. **Filesystem Containment:** Every project ID, style ID, asset ID, and relative asset/composition/render path is validated for traversal (`..`, NUL bytes, drive prefixes, UNC paths, mixed `/` & `\` separators) AND verified post-resolution via `realpath()` containment under its canonical root (`projects/<projectId>/`, `styles/`, `assets/`), blocking Windows symlink and directory junction escapes.
@@ -782,15 +790,16 @@ The long-term product target is **mandatory native feature integration** of **Hy
    - `asset-registry.json` enforces asset invariants (`defaultState` valid, unique `components[].id`, acyclic `parentComponentId` hierarchy, existing dependency/state files, SHA-256 verification), supports arbitrary custom states/types, supports `saveProjectAssetToLibrary` without mutating existing library versions, and blocks unforced removal of assets in use.
    - Every UI/Inspector action (`updateProjectScript`, `upsertResearchSource`/`deleteResearchSource`, asset state management via `updateAssetMetadata`, `saveProjectAssetToLibrary`, `approveProjectExecution`) has a typed RPC contract.
 5. **Security, Concurrency & Crash Recovery:**
-   - Render/preview/check subprocess environments never receive user API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.), and untrusted/external/AI-generated compositions require explicit approval (`videoStudio.approveProjectExecution`) before Chrome execution (no unattended untrusted execution in Phase 02–03).
+   - Render/preview/check subprocess environments never receive user API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.). Authoritative execution approval lives in host-managed `<profileDir>/video-studio/security/trust-store.json` (project files cannot self-approve), covers all HTML/JS/CSS/SVG/asset/config/runtime inputs, re-verifies before Chrome spawn against TOCTOU edits, and prohibits unattended untrusted execution in Phase 02–03.
    - Path validation blocks traversal, UNC/drive escapes, symlinks, and Windows junctions outside project/library roots.
-   - Multi-file transactions obey canonical lock order (`HostStyleLibraryLock -> HostAssetLibraryLock -> ProjectMutationQueue`), verify staged + backup files and SHA-256 hashes before `.orca/tx.log` transitions to `'committing'`, detect `expectedRevision` conflicts, and perform hash-verified startup crash recovery without overwriting post-crash external agent edits.
-   - Preview Session Manager verifies OS PID + creation time/command + loopback health before reusing or killing a process.
-6. **General-Purpose Renderable Consistency Fixtures (`1080×1920`, `30 FPS`, Actual Render Smoke Tests):**
-   - Three minimal, deterministic renderable short project fixtures validate **both** metadata/file contracts and **actual end-to-end HyperFrames `render` execution** (`1080×1920`, `30 FPS`, reproducible keyframe/transition HTML — no full AI generation / Agent Runner required):
-     - **Fixture A (Technical Explainer — AC Mechanism):** Verifies modular sub-compositions, `technical-explainer-01` snapshot, multi-state animatable SVG asset (`closed` / `cutaway` / `operating` with `fan` component) without changing asset ID, real MP4 render output (`ffprobe` dimensions/fps/duration), seek-safe multi-timestamp frame extraction, and golden-frame visual regression.
+   - Multi-file transactions obey canonical lock order (`HostStyleLibraryLock -> HostAssetLibraryLock -> ProjectMutationQueue`), verify staged + backup files and SHA-256 hashes before `.orca/tx.log` transitions to `'committing'`, detect `expectedRevision` conflicts, handle new-file rollback (`existed: false`), tampered logs, missing backups, interrupted recovery, and perform hash-verified startup crash recovery without overwriting post-crash external agent edits.
+   - Preview Session Manager verifies OS `pid`, `creationTimeMs`, resolved `executablePath`, `projectDirRealpath`, `port` ownership, and `sessionId` / server identity before reusing or killing a process.
+6. **General-Purpose Renderable Consistency Fixtures (`1080×1920`, `30 FPS`, Two-Tier Smoke + Representative Visual Quality):**
+   - Three minimal, deterministic renderable project fixtures validate **both** fast smoke checks (~2s) **and** representative multi-scene visual quality fixtures (~8–12s) with **actual end-to-end HyperFrames `render` execution** (`1080×1920`, `30 FPS`, no full AI generation / Agent Runner required):
+     - **Fixture A (Technical Explainer — AC Mechanism):** Verifies modular sub-compositions, `## Frame N` transitions (`STORYBOARD.md`), `technical-explainer-01` visual tokens & word-highlight subtitle styling, multi-state animatable SVG asset (`closed` -> `cutaway` -> `operating` with non-360°-congruent `#fan` rotation angles across sample timestamps) without changing asset ID, real MP4 render output (`ffprobe` dimensions/fps/duration), seek determinism, pixel proof that style + asset states affect rendered frames, and golden-frame visual regression.
      - **Fixture B (General Explainer — Inflation):** Verifies the **exact same** `technical-explainer-01` Style Profile applied to a non-technical topic and different assets, zero regressions when Host Library updates, portable directory relocation, real MP4 render output, and golden-frame visual regression.
-     - **Fixture C (Alternative Style — Product Showcase):** Verifies `clean-editorial-01` applied cleanly, proving Video Core and UI are not hardcoded to technical explainers, with real MP4 render output and golden-frame visual regression.
+     - **Fixture C (Alternative Style — Product Showcase):** Verifies `clean-editorial-01` applied cleanly (visually distinct palette/typography/subtitle from `technical-explainer-01`), proving Video Core and UI are not hardcoded to technical explainers, with real MP4 render output and golden-frame visual regression.
+   - **Mandatory Gate Semantics:** Actual render smoke & visual regression tests are a **mandatory release gate** wherever prerequisites (`hyperframes 0.9.94`, Chrome, `ffmpeg`, `ffprobe`) exist or `ORCA_REQUIRE_RENDER_SMOKE=1` is set; skipped render checks due to missing local prerequisites MUST be reported as `[PREREQUISITE_MISSING]` and MUST NEVER be counted as passing end-to-end render validation.
 
 ---
 
@@ -809,18 +818,17 @@ Aligned with `AGENTS.md` (focusing on real code invariants, parsing/round-trips,
    - Reject missing `defaultState` in `states`, duplicate `components[].id`, cyclic `components[].parentComponentId` hierarchies, missing state/dependency files, and corrupted SHA-256 hashes; verify immutable Host Library versioning (`saveProjectAssetToLibrary` creates `v<n+1>`, leaves `v<n>` untouched) and project snapshot isolation.
 4. **Multi-File Transaction, Lock Order & Crash Recovery Tests (`video-studio-transactions.test.ts`):**
    - Verify backups + staged files are written and hash-verified before `.orca/tx.log` reaches `'committing'`; failure during staging leaves targets untouched and removes `.orca/tx.log`.
-   - Simulated crash mid-commit (`.orca/tx.log` left on disk):
-     - Clean hashes -> deterministic recovery completes cleanly.
-     - Simulated external agent edit after partial commit -> recovery refuses blind rollback and surfaces `video_studio_tx_recovery_conflict`.
+   - New-file rollback (`existed: false` unlinks newly created targets), corrupt/missing backup detection, tampered `.orca/tx.log` journal rejection, and interrupted recovery idempotency.
+   - Simulated crash mid-commit (`.orca/tx.log` left on disk): clean hashes recover deterministically; external agent edit after partial commit refuses blind rollback and surfaces `video_studio_tx_recovery_conflict`.
    - `expectedRevision` conflict returns `video_studio_file_conflict`.
    - Concurrent mutations across two projects targeting shared Host Style/Asset Libraries serialize without deadlock under canonical lock order (`HostStyleLibraryLock -> HostAssetLibraryLock -> ProjectMutationQueue`).
 5. **Windows-Specific Security & Filesystem Invariant Tests (`video-studio-composition-paths.test.ts`, `video-studio-preview-session.test.ts`, `host-video-engine-deps.test.ts`):**
    - Path traversal (`../`, `..\`, NUL byte, UNC/drive prefix), Windows case-insensitive collisions, and symlink/junction containment bypass attempts (creating real temp symlink/junction pointing outside project root and verifying `realpath` check rejects it).
    - `host-video-engine-deps` env allowlist test: confirm `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GITHUB_TOKEN`, `TAVILY_API_KEY` in `process.env` are stripped from child process env.
-   - Project trust gate test: unapproved external/AI compositions refuse unattended Chrome render/preview with `video_studio_execution_approval_required`, and re-require approval when `inputFingerprint` changes.
-   - Preview Session Manager: mock PID reuse (`creationTimeMs` / command mismatch in process table) verifies Orca clears stale `.orca/project-state.json` without killing the unrelated PID, and cleans up verified preview processes on `dispose()`.
-6. **General-Purpose Render & Consistency Fixture Tests (`video-studio-consistency-fixtures.test.ts` + actual render smoke suite):**
-   - Exercise **Fixture A (AC Technical Explainer)**, **Fixture B (Inflation General Explainer)**, and **Fixture C (Product Showcase Alternative Style)** at `1080×1920`, `30 FPS`: verify snapshot isolation, stable `scene_id`, stable `asset_id` across states, asset-in-use delete blocking, portable relocation copy rendering cleanly, **actual HyperFrames `render` MP4 output + `ffprobe` validation**, seek-safe multi-timestamp frame extraction, and **golden-frame PNG visual regression** (gracefully reporting environment prerequisite gap locally if `ffmpeg`/`chrome` is absent, while running full render verification wherever `ffmpeg` + `chrome` + `hyperframes 0.9.94` are installed).
+   - Host-managed Trust Store test (`<profileDir>/video-studio/security/trust-store.json`): confirms project-local files cannot self-approve, tests full fingerprint invalidation (HTML/JS/CSS/SVG/assets/config/runtime), pre-spawn TOCTOU re-check, and `video_studio_execution_approval_required` before Chrome check/preview/render.
+   - Preview Session Manager: mock PID reuse (`creationTimeMs` / `executablePath` / `projectDirRealpath` / `port` ownership / `sessionId` mismatch) verifies Orca clears stale state without killing unrelated PIDs, and cleans up verified preview processes on `dispose()`.
+6. **General-Purpose Render & Consistency Fixture Tests (`video-studio-consistency-fixtures.test.ts` + actual render smoke & quality suite):**
+   - Exercise **Fixture A (AC Technical Explainer)**, **Fixture B (Inflation General Explainer)**, and **Fixture C (Product Showcase Alternative Style)** at `1080×1920`, `30 FPS` across both short smoke (~2s) and representative quality (8–12s) compositions: verify snapshot isolation, permanent `scene_id`, stable `asset_id` across states, asset-in-use delete & dynamic-JS-reference file deletion guard, portable relocation copy, **actual HyperFrames `render` MP4 output + `ffprobe` validation**, seek determinism, non-congruent `#fan` rotation visual progression, pixel proof that style & asset states alter output, and **golden-frame PNG visual regression**. Mandatory release gate whenever prerequisites are installed (`ORCA_REQUIRE_RENDER_SMOKE=1` in CI; never mark prerequisite-missing skips as end-to-end validation pass).
 7. **RPC, Mobile Bundle & Static Gates:**
    - `video-studio-methods.test.ts` (all new RPC methods including `updateProjectScript`, `upsertResearchSource`, `deleteResearchSource`, `saveProjectAssetToLibrary`, `approveProjectExecution`, `expectedRevision`, `removeProjectAsset` dependency check, SSH refusal, passthrough error codes).
    - `pnpm run verify:rpc-params-catalog`, `pnpm run build:mobile-web` (Zod tree-shaking check), `pnpm run sync:localization-catalog`, `pnpm run sync:mobile-localization`.
