@@ -75,6 +75,77 @@ it('returns a structured refusal when the host has no workspace store', async ()
   })
 })
 
+it('manages sources, research error codes, and video studio handoff over RPC', async () => {
+  const store = createSqliteTestStore(Store)
+  const runtime = new OrcaRuntimeService(store)
+  const dispatcher = new RpcDispatcher({
+    runtime,
+    methods: ALL_RPC_METHODS
+  })
+
+  const providers = await dispatcher.dispatch({
+    id: 'providers',
+    authToken: 'test',
+    method: 'generalChat.listSearchProviders',
+    params: {}
+  })
+  expect(providers.ok).toBe(true)
+
+  const missingJob = await dispatcher.dispatch({
+    id: 'missing-job',
+    authToken: 'test',
+    method: 'generalChat.getDeepResearch',
+    params: { jobId: 'does-not-exist' }
+  })
+  expect(missingJob).toMatchObject({
+    ok: false,
+    error: { code: 'general_chat_research_not_found' }
+  })
+
+  const emptySources = await dispatcher.dispatch({
+    id: 'sources-list',
+    authToken: 'test',
+    method: 'generalChat.listSources',
+    params: { sessionId: 'sess-rpc-1' }
+  })
+  expect(emptySources).toMatchObject({
+    ok: true,
+    result: { sources: [] }
+  })
+
+  const handoff = await dispatcher.dispatch({
+    id: 'handoff',
+    authToken: 'test',
+    method: 'generalChat.handoffToVideoStudio',
+    params: {
+      sessionId: 'sess-rpc-1',
+      title: 'Edge AI Runtime Walkthrough',
+      briefMarkdown: '# Brief\nExplain how Orca orchestrates local and paired hosts.',
+      aspectRatio: '16:9',
+      durationSeconds: 30,
+      engine: 'hyperframes'
+    }
+  })
+  expect(handoff.ok).toBe(true)
+  const projectId =
+    handoff.ok &&
+    typeof handoff.result === 'object' &&
+    handoff.result !== null &&
+    'projectId' in handoff.result
+      ? handoff.result.projectId
+      : null
+  expect(typeof projectId).toBe('string')
+
+  const projects = await dispatcher.dispatch({
+    id: 'vs-list',
+    authToken: 'test',
+    method: 'videoStudio.listProjects',
+    params: {}
+  })
+  expect(projects.ok).toBe(true)
+  expect(JSON.stringify(projects)).toContain('Edge AI Runtime Walkthrough')
+})
+
 it('returns a structured refusal when the store lacks folder-workspace persistence', async () => {
   const store = createSqliteTestStore(Store)
   Object.defineProperty(store, 'createFolderWorkspace', { value: undefined })

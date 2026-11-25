@@ -1,4 +1,8 @@
 import * as z from 'zod'
+import {
+  GeneralChatListDeepResearchResult,
+  type DeepResearchJob
+} from '../../../src/shared/general-chat/general-chat-research-contract'
 import { VideoStudioListProjectsResult } from '../../../src/shared/video-studio/video-studio-rpc-contract'
 import { bindDeferredRpcOperation, defineRpcOperation } from '../transport/rpc/rpc-operation'
 import { rpcResultVariant } from '../transport/rpc/rpc-operation-result-reader'
@@ -25,6 +29,16 @@ const generalChatTabs = bindDeferredRpcOperation(
   })
 )
 
+const generalChatResearchJobs = bindDeferredRpcOperation(
+  defineRpcOperation({
+    name: 'general-chat.deep-research',
+    method: 'generalChat.listDeepResearch',
+    acceptance: 'require-result-or-throw-message',
+    barrier: 'after-caller-barrier',
+    read: rpcResultVariant('general-chat-deep-research', GeneralChatListDeepResearchResult)
+  })
+)
+
 const videoProjects = bindDeferredRpcOperation(
   defineRpcOperation({
     name: 'video-studio.projects',
@@ -43,15 +57,26 @@ export async function listHostGeneralChats(client: RpcClient, current: () => boo
     throw new Error('Host changed')
   }
   const worktree = readGeneralChatHome(generalChatHome.interpret(homeReply))
-  const tabsReply = await generalChatTabs.request(
-    client,
-    { worktree: `id:${worktree}` },
-    readOptions
-  )
+  const [tabsReply, jobsReply] = await Promise.all([
+    generalChatTabs.request(client, { worktree: `id:${worktree}` }, readOptions),
+    generalChatResearchJobs.request(client, {}, readOptions).catch(() => null)
+  ])
   if (!current()) {
     throw new Error('Host changed')
   }
-  return { worktree, tabs: readGeneralChatTabs(worktree, generalChatTabs.interpret(tabsReply)) }
+  let researchJobs: DeepResearchJob[] = []
+  if (jobsReply) {
+    try {
+      researchJobs = generalChatResearchJobs.interpret(jobsReply).jobs
+    } catch {
+      researchJobs = []
+    }
+  }
+  return {
+    worktree,
+    tabs: readGeneralChatTabs(worktree, generalChatTabs.interpret(tabsReply)),
+    researchJobs
+  }
 }
 
 export async function listHostVideoProjects(client: RpcClient, current: () => boolean) {

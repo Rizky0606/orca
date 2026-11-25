@@ -17,8 +17,10 @@ import type {
 import type { StructuredAgentContextUsage } from '../../../../../../shared/agent-session/conversation-context/structured-agent-session-context-usage'
 import type { NativeChatComposerErrorDetail } from '../controls/native-chat-composer-error-detail'
 import type { NativeChatSideChat } from '../../messages/actions/use-native-chat-side-chat'
+import type { NativeChatStructuredPrepareTurn } from '../../native-chat-view-types'
 
 export type NativeChatStructuredComposerTransport = {
+  prepareTurn?: NativeChatStructuredPrepareTurn
   capturePresentation: CaptureStructuredAgentSessionPresentation
   conversationCommands?: readonly AgentSessionConversationCommand[]
   compactInstructions?: boolean

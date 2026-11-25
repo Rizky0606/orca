@@ -179,22 +179,38 @@ function BrowseDrawer({
           </SettingsSection>
         ) : null}
         {feature === 'general-chat' && chats ? (
-          <SettingsSection>
-            {chats.tabs.length ? (
-              chats.tabs.map((tab) => (
-                <ListRow
-                  key={tab.id}
-                  title={tab.title}
-                  disabled={opening}
-                  onPress={() => void openChat(tab)}
-                />
-              ))
-            ) : (
-              <SettingsEmptyRow>
-                {t('generalChat.noConversations', 'No conversations yet.')}
-              </SettingsEmptyRow>
-            )}
-          </SettingsSection>
+          <>
+            <SettingsSection>
+              {chats.tabs.length ? (
+                chats.tabs.map((tab) => (
+                  <ListRow
+                    key={tab.id}
+                    title={tab.title}
+                    disabled={opening}
+                    onPress={() => void openChat(tab)}
+                  />
+                ))
+              ) : (
+                <SettingsEmptyRow>
+                  {t('generalChat.noConversations', 'No conversations yet.')}
+                </SettingsEmptyRow>
+              )}
+            </SettingsSection>
+            {chats.researchJobs.length > 0 ? (
+              <SettingsSection title={t('generalChat.researchJobs', 'Deep Research')}>
+                {chats.researchJobs.slice(0, 6).map((job) => (
+                  <ListRow
+                    key={job.id}
+                    title={job.topic}
+                    subtitle={t('generalChat.researchSourcesCount', '{{count}} source(s)', {
+                      count: job.sourcesCollected
+                    })}
+                    value={job.status}
+                  />
+                ))}
+              </SettingsSection>
+            ) : null}
+          </>
         ) : null}
         {feature === 'video-studio' && projects ? (
           selected ? (

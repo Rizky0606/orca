@@ -147,13 +147,6 @@ export function useNativeChatStructuredComposerSend({
           }
         }
       )
-      const stagedInput =
-        !hostCommand &&
-        !structuredTransport.attachmentStagingScope &&
-        hasNativeChatStagedFiles(draftScopeKey)
-          ? captureNativeChatStagedInput(draftScopeKey, { text, attachments })
-          : undefined
-      let transferred = false
       const consume = () => {
         // A round trip may outlast edits in any composer for this conversation; remove only the submitted content.
         const submitted = submission.draft
@@ -192,6 +185,50 @@ export function useNativeChatStructuredComposerSend({
         setCaret(composing ? 0 : left.text.length)
         clearSkillOrigin()
       }
+      const prepareTurn = structuredTransport.prepareTurn
+      if (!hostCommand && prepareTurn) {
+        let preparedText = text
+        try {
+          const outcome = await prepareTurn(
+            { text, attachmentCount: attachments.length },
+            isCurrent
+          )
+          if (!isCurrent()) {
+            finishNativeChatComposerSubmission(draftScopeKey, submission, false)
+            return false
+          }
+          if (outcome.intercepted) {
+            consume()
+            structuredTransport.onError(null)
+            finishNativeChatComposerSubmission(draftScopeKey, submission, false)
+            return true
+          }
+          if (typeof outcome.text === 'string' && outcome.text.trim()) {
+            preparedText = outcome.text
+          }
+        } catch (prepareError) {
+          finishNativeChatComposerSubmission(draftScopeKey, submission, true)
+          if (isCurrent()) {
+            const msg =
+              prepareError instanceof Error
+                ? prepareError.message
+                : translate(
+                    'components.native-chat.composer.webSearchFailed',
+                    'Web search could not complete. Try again or switch back to Normal mode.'
+                  )
+            structuredTransport.onError(msg)
+          }
+          return false
+        }
+        text = preparedText
+      }
+      const stagedInput =
+        !hostCommand &&
+        !structuredTransport.attachmentStagingScope &&
+        hasNativeChatStagedFiles(draftScopeKey)
+          ? captureNativeChatStagedInput(draftScopeKey, { text, attachments })
+          : undefined
+      let transferred = false
       // A refused command returns only to an empty composer; a lone command typed since would be replaced.
       const recoversDraft = () => {
         const current = readNativeChatComposerDraft(draftScopeKey)

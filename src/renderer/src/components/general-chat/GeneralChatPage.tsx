@@ -93,16 +93,20 @@ export function GeneralChatPageFrame({
 
 function GeneralChatOnHost({
   hostId,
-  target
+  target,
+  pairingRevision
 }: {
   hostId: ExecutionHostId
   target: RuntimeClientTarget
+  pairingRevision?: number
 }) {
   const controller = useGeneralChatController(hostId, target)
   return (
     <GeneralChatAvailable
       controller={controller}
       target={target}
+      hostId={hostId}
+      pairingRevision={pairingRevision}
       onOpenAgentSettings={() => openChatSettings('agents', target)}
     />
   )
@@ -228,6 +232,7 @@ export default function GeneralChatPage(): React.JSX.Element {
         key={`${selectedHost.id}:${pairingRevision ?? ''}`}
         hostId={selectedHost.id}
         target={target}
+        pairingRevision={pairingRevision}
       />
     )
   }

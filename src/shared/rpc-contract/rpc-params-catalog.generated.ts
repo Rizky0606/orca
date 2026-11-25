@@ -39,6 +39,19 @@ import {
   DesktopBrowserBridgeResultChunkParams,
   DesktopBrowserBridgeResultParams
 } from '../browser/client-hosting/desktop-browser-bridge-protocol'
+import {
+  GeneralChatClearSourcesParams,
+  GeneralChatDeepResearchJobActionParams,
+  GeneralChatDeleteSourceParams,
+  GeneralChatHandoffVideoStudioParams,
+  GeneralChatListDeepResearchParams,
+  GeneralChatListSearchProvidersParams,
+  GeneralChatListSourcesParams,
+  GeneralChatSearchWebParams,
+  GeneralChatSetSearchProviderKeyParams,
+  GeneralChatStartDeepResearchParams,
+  GeneralChatSubscribeDeepResearchParams
+} from '../general-chat/general-chat-contract'
 import { MobileWebBundleChunkParamsSchema } from '../mobile-web-bundle/bundle-rpc-contract'
 import { MobileWebBundleLocaleCatalogParamsSchema } from '../mobile-web-bundle/locale-catalog-contract'
 import { OrcadMigrationBlobChunkRequestSchema } from '../orcad-migration/orcad-migration-blob-transfer'
@@ -1589,7 +1602,21 @@ export const RPC_PARAMS_BY_METHOD = {
   'folderWorkspace.getPathStatus': FolderWorkspacePathStatus,
   'folderWorkspace.list': null,
   'folderWorkspace.update': FolderWorkspaceUpdate,
+  'generalChat.cancelDeepResearch': GeneralChatDeepResearchJobActionParams,
+  'generalChat.clearSources': GeneralChatClearSourcesParams,
+  'generalChat.deleteSource': GeneralChatDeleteSourceParams,
   'generalChat.ensureHome': null,
+  'generalChat.getDeepResearch': GeneralChatDeepResearchJobActionParams,
+  'generalChat.handoffToVideoStudio': GeneralChatHandoffVideoStudioParams,
+  'generalChat.listDeepResearch': GeneralChatListDeepResearchParams,
+  'generalChat.listSearchProviders': GeneralChatListSearchProvidersParams,
+  'generalChat.listSources': GeneralChatListSourcesParams,
+  'generalChat.pauseDeepResearch': GeneralChatDeepResearchJobActionParams,
+  'generalChat.resumeDeepResearch': GeneralChatDeepResearchJobActionParams,
+  'generalChat.searchWeb': GeneralChatSearchWebParams,
+  'generalChat.setSearchProviderKey': GeneralChatSetSearchProviderKeyParams,
+  'generalChat.startDeepResearch': GeneralChatStartDeepResearchParams,
+  'generalChat.subscribeDeepResearch': GeneralChatSubscribeDeepResearchParams,
   'git.abortMerge': WorktreeSelectorOfGitParams,
   'git.abortRebase': WorktreeSelectorOfGitParams,
   'git.atRiskLocalFiles': WorktreeSelectorOfGitParams,
