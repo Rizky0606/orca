@@ -3,8 +3,10 @@ import { Pressable, Text, type HostInstance } from 'react-native'
 import {
   CalendarClock,
   ChevronLeft,
+  Clapperboard,
   Link,
   List,
+  MessageSquare,
   MoreHorizontal,
   PanelLeftClose,
   SquareTerminal,
@@ -30,6 +32,7 @@ import {
 } from '../transport/connection/connection-health'
 import type { HostScreenController } from './use-host-screen-controller'
 import { HostSharedLinksSheet } from './host-shared-links-sheet'
+import { HostFeatureBrowseSheet, type HostBrowseFeature } from './host-feature-browse-sheet'
 import { LOCAL_EXECUTION_HOST_ID } from '../../../src/shared/execution-host/execution-host'
 
 function isErrorVerdict(v: ConnectionVerdict): boolean {
@@ -101,6 +104,7 @@ export function HostScreenHeader({
   const moreRef = useRef<HostInstance>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [sharedLinksOpen, setSharedLinksOpen] = useState(false)
+  const [browseFeature, setBrowseFeature] = useState<HostBrowseFeature | null>(null)
   // The computer's own bot links, once it lists bots; a server's live under that server's account.
   const listsBots = controller.bots.some(
     (entry) => entry.kind === 'listed' && entry.hostId === LOCAL_EXECUTION_HOST_ID
@@ -110,6 +114,22 @@ export function HostScreenHeader({
   const hostPath = `/h/${encodeURIComponent(hostId)}`
 
   const navigationGroup: ActionSheetAction[] = [
+    {
+      id: 'general-chat',
+      label: t('generalChat.title', 'General Chat'),
+      icon: MessageSquare,
+      disabled: disconnected,
+      closeBeforePress: true,
+      onPress: () => setBrowseFeature('general-chat')
+    },
+    {
+      id: 'video-studio',
+      label: t('videoStudio.title', 'Video Studio'),
+      icon: Clapperboard,
+      disabled: disconnected,
+      closeBeforePress: true,
+      onPress: () => setBrowseFeature('video-studio')
+    },
     {
       id: 'tasks',
       label: t('hostScreen.hostScreenHeader.tasks', 'Tasks'),
@@ -203,6 +223,11 @@ export function HostScreenHeader({
         anchorRef={moreRef}
         groups={[navigationGroup, hostGroup]}
         onClose={() => setMenuOpen(false)}
+      />
+      <HostFeatureBrowseSheet
+        controller={controller}
+        feature={browseFeature}
+        onClose={() => setBrowseFeature(null)}
       />
       {listsBots ? (
         <HostSharedLinksSheet
