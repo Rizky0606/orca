@@ -1,15 +1,8 @@
 import * as z from 'zod'
+import { createSafeResourceIdSchema } from './video-studio-identifiers'
 import { VideoStudioEngineSchema } from './video-studio-project'
 
-export const AssetIdSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(128)
-  .refine(
-    (value) => !/[\\/\0]/.test(value) && !value.includes('..') && value !== '.',
-    'Invalid asset id'
-  )
+export const AssetIdSchema = createSafeResourceIdSchema('asset id')
 
 export const AssetTypeSchema = z.enum([
   'object',

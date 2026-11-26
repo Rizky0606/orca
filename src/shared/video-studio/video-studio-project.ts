@@ -1,4 +1,5 @@
 import * as z from 'zod'
+import { createSafeResourceIdSchema } from './video-studio-identifiers'
 
 export const VideoStudioProjectId = z.string().refine((value) => value.trim().length > 0)
 
@@ -35,7 +36,7 @@ export const VideoStudioProjectFields = z.object({
   workflowStage: VideoStudioWorkflowStageSchema,
   engine: VideoStudioEngineSchema.default('hyperframes'),
   fps: z.number().int().min(12).max(120).default(30),
-  styleProfileId: z.string().trim().min(1).optional()
+  styleProfileId: createSafeResourceIdSchema('style profile id').optional()
 })
 
 export const VideoStudioProjectSchema = VideoStudioProjectFields.extend({

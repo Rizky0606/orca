@@ -169,12 +169,21 @@ export const VideoStudioRenderJobSnapshotSchema = z.object({
 })
 export type VideoStudioRenderJobSnapshot = z.infer<typeof VideoStudioRenderJobSnapshotSchema>
 
-export const VideoStudioStartRenderParams = z.strictObject({
-  projectId: VideoStudioProjectId,
-  quality: VideoStudioRenderQualitySchema.default('looks'),
-  startSeconds: z.number().nonnegative().optional(),
-  endSeconds: z.number().positive().optional()
-})
+export const VideoStudioStartRenderParams = z
+  .strictObject({
+    projectId: VideoStudioProjectId,
+    quality: VideoStudioRenderQualitySchema.default('looks'),
+    startSeconds: z.number().nonnegative().optional(),
+    endSeconds: z.number().positive().optional()
+  })
+  .refine(
+    (v) =>
+      v.startSeconds === undefined || v.endSeconds === undefined || v.endSeconds > v.startSeconds,
+    {
+      message: 'endSeconds must be greater than startSeconds',
+      path: ['endSeconds']
+    }
+  )
 export const VideoStudioStartRenderResult = z.object({
   job: VideoStudioRenderJobSnapshotSchema
 })
@@ -190,13 +199,40 @@ export const VideoStudioSubscribeJobsParams = z.strictObject({
   projectId: VideoStudioProjectId.optional()
 })
 
+export const VideoStudioProjectFilesChangedPayloadSchema = z.object({
+  projectId: VideoStudioProjectId,
+  changedPaths: z.array(z.string().min(1)),
+  revisions: z.record(z.string(), z.string()),
+  externalEdit: z.boolean(),
+  timestamp: z.number()
+})
+export type VideoStudioProjectFilesChangedPayload = z.infer<
+  typeof VideoStudioProjectFilesChangedPayloadSchema
+>
+
+export const VideoStudioProjectFilesChangedEventSchema =
+  VideoStudioProjectFilesChangedPayloadSchema.extend({
+    type: z.literal('projectFilesChanged')
+  })
+export type VideoStudioProjectFilesChangedEvent = z.infer<
+  typeof VideoStudioProjectFilesChangedEventSchema
+>
+
 export const VideoStudioJobsEventSchema = z.object({
+  type: z.literal('jobs').optional(),
   revision: z.number().int().nonnegative(),
   engines: z.array(VideoStudioEngineStatusSchema).optional(),
   jobs: z.array(VideoStudioRenderJobSnapshotSchema),
-  previews: z.record(z.string(), VideoStudioPreviewStateSchema).default({})
+  previews: z.record(z.string(), VideoStudioPreviewStateSchema).default({}),
+  projectFilesChanged: VideoStudioProjectFilesChangedPayloadSchema.optional()
 })
 export type VideoStudioJobsEvent = z.infer<typeof VideoStudioJobsEventSchema>
+
+export const VideoStudioSubscribeJobsEventSchema = z.union([
+  VideoStudioJobsEventSchema,
+  VideoStudioProjectFilesChangedEventSchema
+])
+export type VideoStudioSubscribeJobsEvent = z.infer<typeof VideoStudioSubscribeJobsEventSchema>
 
 // ─── Bounded MP4 Chunk Streaming ──────────────────────────────────────────────
 

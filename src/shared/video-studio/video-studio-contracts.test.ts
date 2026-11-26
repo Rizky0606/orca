@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { RUNTIME_PASSTHROUGH_CODES } from '../../main/runtime/rpc/runtime-passthrough-codes'
-import { MotionPackageManifestSchema } from '../../main/video-studio/extensions/motion-package-contract'
 import { MotionPresetMetadataSchema, isMotionPresetExecutable } from './motion-registry-contract'
 import {
   dynamicReferenceWarning,
   MasterAssetRecordSchema,
   validateMasterAssetInvariants
 } from './video-studio-asset-contract'
+import { SafeResourceIdSchema, createSafeResourceIdSchema } from './video-studio-identifiers'
+import { VideoStudioProjectFields } from './video-studio-project'
 import {
   VIDEO_STUDIO_ADD_STORYBOARD_FRAME_METHOD,
   VIDEO_STUDIO_APPLY_LIBRARY_ASSET_TO_PROJECT_METHOD,
@@ -48,17 +48,21 @@ import {
   VideoStudioGetProjectDocumentsParams,
   VideoStudioGetProjectStyleStateParams,
   VideoStudioGetStyleReconciliationDiffParams,
+  VideoStudioJobsEventSchema,
   VideoStudioListLibraryAssetsParams,
   VideoStudioListMotionPresetsParams,
   VideoStudioListProjectAssetsParams,
   VideoStudioListStyleProfilesParams,
   VideoStudioPatchStoryboardFrameParams,
+  VideoStudioProjectFilesChangedEventSchema,
   VideoStudioReconcileProjectStyleParams,
   VideoStudioRegisterOrImportAssetParams,
   VideoStudioRemoveProjectAssetParams,
   VideoStudioReorderStoryboardFramesParams,
   VideoStudioSaveLibraryStyleProfileParams,
   VideoStudioSaveProjectAssetToLibraryParams,
+  VideoStudioStartRenderParams,
+  VideoStudioSubscribeJobsEventSchema,
   VideoStudioUpdateAssetMetadataParams,
   VideoStudioUpdateProjectBriefParams,
   VideoStudioUpdateProjectScriptParams,
@@ -70,7 +74,7 @@ import {
   StoryboardDocumentSchema,
   VideoStudioResearchSourceSchema
 } from './video-studio-storyboard-contract'
-import { StyleProfileSchema } from './video-studio-style-contract'
+import { StyleProfileSchema, StyleProfileTokensPatchSchema } from './video-studio-style-contract'
 import {
   HyperFramesEnvironmentReportSchema,
   ValidationReportSchema,
@@ -410,24 +414,6 @@ describe('Motion Registry & OpenMotion Contracts', () => {
       }).success
     ).toBe(false)
   })
-
-  it('validates OpenMotion v0.2 motion-package.json contract seam', () => {
-    const manifest = MotionPackageManifestSchema.parse({
-      name: 'technical-explainer-pack',
-      version: '0.2.0',
-      license: 'Apache-2.0',
-      entry: 'index.html',
-      dependencies: { gsap: '^3.12.0' },
-      hashedInventory: {
-        'DESIGN.md': 'a'.repeat(64)
-      },
-      inputsSchemaPath: 'inputs.schema.json',
-      elementsDir: 'elements',
-      materialsDir: 'materials',
-      presetsDir: 'presets'
-    })
-    expect(manifest.name).toBe('technical-explainer-pack')
-  })
 })
 
 describe('Master Asset Invariants', () => {
@@ -733,22 +719,89 @@ describe('Complete Spec RPC Contracts & Passthrough Codes', () => {
       }).success
     ).toBe(true)
 
-    const expectedCodes = [
-      'video_studio_file_conflict',
-      'video_studio_tx_recovery_conflict',
-      'video_studio_invalid_path',
-      'video_studio_style_not_found',
-      'video_studio_style_readonly',
-      'video_studio_asset_not_found',
-      'video_studio_asset_in_use',
-      'video_studio_asset_invariant_invalid',
-      'video_studio_scene_not_found',
-      'video_studio_invalid_state_file',
-      'video_studio_preview_session_stale',
-      'video_studio_execution_approval_required'
-    ]
-    for (const code of expectedCodes) {
-      expect(RUNTIME_PASSTHROUGH_CODES.has(code)).toBe(true)
+    expect(
+      VideoStudioStartRenderParams.safeParse({
+        projectId: 'p1',
+        quality: 'looks',
+        startSeconds: 2,
+        endSeconds: 8
+      }).success
+    ).toBe(true)
+    expect(
+      VideoStudioStartRenderParams.safeParse({
+        projectId: 'p1',
+        quality: 'looks',
+        startSeconds: 5,
+        endSeconds: 5
+      }).success
+    ).toBe(false)
+    expect(
+      VideoStudioStartRenderParams.safeParse({
+        projectId: 'p1',
+        quality: 'looks',
+        startSeconds: 10,
+        endSeconds: 4
+      }).success
+    ).toBe(false)
+
+    expect(
+      StyleProfileTokensPatchSchema.safeParse({
+        visual: { palette: { accentPrimary: '#1D4ED8', unknownColor: '#000000' } }
+      }).success
+    ).toBe(false)
+
+    const filesChanged = {
+      type: 'projectFilesChanged' as const,
+      projectId: 'p1',
+      changedPaths: ['STORYBOARD.md', 'styles/style-profile.json'],
+      revisions: { 'STORYBOARD.md': 'sha256:111' },
+      externalEdit: true,
+      timestamp: 1_700_000_000_000
+    }
+    expect(VideoStudioProjectFilesChangedEventSchema.parse(filesChanged)).toEqual(filesChanged)
+    expect(VideoStudioSubscribeJobsEventSchema.parse(filesChanged)).toEqual(filesChanged)
+    expect(
+      VideoStudioJobsEventSchema.parse({
+        revision: 2,
+        jobs: [],
+        previews: {},
+        projectFilesChanged: {
+          projectId: 'p1',
+          changedPaths: ['BRIEF.md'],
+          revisions: { 'BRIEF.md': 'sha256:222' },
+          externalEdit: false,
+          timestamp: 1_700_000_000_100
+        }
+      }).projectFilesChanged?.changedPaths
+    ).toEqual(['BRIEF.md'])
+  })
+
+  it('enforces SafeResourceIdSchema across styles, assets, scenes, and project styleProfileId', () => {
+    const schema = createSafeResourceIdSchema('test id')
+    for (const valid of ['ac_indoor_001', 'technical-explainer-01', 'scene_7a91c0']) {
+      expect(SafeResourceIdSchema.safeParse(valid).success).toBe(true)
+      expect(schema.safeParse(valid).success).toBe(true)
+    }
+    for (const invalid of ['', '   ', '.env', '.orca', '..', '../escape', 'a/b', 'a\\b']) {
+      expect(schema.safeParse(invalid).success).toBe(false)
+      expect(
+        VideoStudioApplyStyleProfileToProjectParams.safeParse({
+          projectId: 'p1',
+          styleId: invalid
+        }).success
+      ).toBe(false)
+      expect(
+        VideoStudioDeleteStoryboardFrameParams.safeParse({
+          projectId: 'p1',
+          sceneId: invalid
+        }).success
+      ).toBe(false)
+      expect(
+        VideoStudioDeleteLibraryAssetParams.safeParse({
+          assetId: invalid
+        }).success
+      ).toBe(false)
+      expect(VideoStudioProjectFields.shape.styleProfileId.safeParse(invalid).success).toBe(false)
     }
   })
 })

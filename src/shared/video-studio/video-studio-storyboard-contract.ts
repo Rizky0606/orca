@@ -1,15 +1,8 @@
 import * as z from 'zod'
+import { createSafeResourceIdSchema } from './video-studio-identifiers'
 import { VideoStudioEngineSchema } from './video-studio-project'
 
-export const SceneIdSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(128)
-  .refine(
-    (value) => !/[\\/\0]/.test(value) && !value.includes('..') && value !== '.',
-    'Invalid scene id'
-  )
+export const SceneIdSchema = createSafeResourceIdSchema('scene id')
 
 export const SceneStatusSchema = z.enum(['outline', 'built', 'animated'])
 export type SceneStatus = z.infer<typeof SceneStatusSchema>

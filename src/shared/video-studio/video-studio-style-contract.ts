@@ -1,14 +1,7 @@
 import * as z from 'zod'
+import { createSafeResourceIdSchema } from './video-studio-identifiers'
 
-export const StyleIdSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(128)
-  .refine(
-    (value) => !/[\\/\0]/.test(value) && !value.includes('..') && value !== '.',
-    'Invalid style id'
-  )
+export const StyleIdSchema = createSafeResourceIdSchema('style id')
 
 export const StyleProfileTierSchema = z.enum(['built-in', 'library', 'snapshot'])
 export type StyleProfileTier = z.infer<typeof StyleProfileTierSchema>
@@ -124,7 +117,7 @@ export const StyleProfileTokensPatchSchema = z.strictObject({
   visual: StyleVisualSchema.omit({ palette: true })
     .partial()
     .extend({
-      palette: StyleVisualPaletteSchema.partial().optional()
+      palette: StyleVisualPaletteSchema.partial().strict().optional()
     })
     .strict()
     .optional(),
