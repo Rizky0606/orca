@@ -7,6 +7,31 @@ import {
   VideoStudioRenderQualitySchema,
   VideoStudioRenderRecordSchema
 } from './video-studio-project'
+import { StyleIdSchema } from './video-studio-style-contract'
+import {
+  VideoStudioCheckFindingSchema,
+  VideoStudioCheckResultSchema,
+  VideoStudioEngineStatusSchema,
+  VideoStudioMissingToolSchema,
+  type VideoStudioCheckFinding,
+  type VideoStudioCheckResult,
+  type VideoStudioEngineStatus,
+  type VideoStudioMissingTool
+} from './video-studio-validation-contract'
+
+export * from './video-studio-asset-rpc-contract'
+export * from './video-studio-document-rpc-contract'
+export * from './video-studio-style-rpc-contract'
+export {
+  VideoStudioCheckFindingSchema,
+  VideoStudioCheckResultSchema,
+  VideoStudioEngineStatusSchema,
+  VideoStudioMissingToolSchema,
+  type VideoStudioCheckFinding,
+  type VideoStudioCheckResult,
+  type VideoStudioEngineStatus,
+  type VideoStudioMissingTool
+}
 
 // ─── Method name constants ────────────────────────────────────────────────────
 
@@ -51,20 +76,6 @@ export const VideoStudioDeleteProjectResult = VideoStudioListProjectsResult
 
 // ─── Engine Probe ─────────────────────────────────────────────────────────────
 
-export const VideoStudioMissingToolSchema = z.enum(['node22', 'hyperframes', 'ffmpeg'])
-export type VideoStudioMissingTool = z.infer<typeof VideoStudioMissingToolSchema>
-
-export const VideoStudioEngineStatusSchema = z.object({
-  engine: VideoStudioEngineSchema,
-  available: z.boolean(),
-  status: z.enum(['ready', 'missing-tools', 'planned', 'error']),
-  missingTools: z.array(VideoStudioMissingToolSchema).default([]),
-  doctorOk: z.boolean().default(false),
-  version: z.string().optional(),
-  summary: z.string()
-})
-export type VideoStudioEngineStatus = z.infer<typeof VideoStudioEngineStatusSchema>
-
 export const VideoStudioProbeEnginesParams = z.strictObject({})
 export const VideoStudioProbeEnginesResult = z.object({
   engines: z.array(VideoStudioEngineStatusSchema)
@@ -88,7 +99,8 @@ export const VideoStudioGetCompositionStateResult = VideoStudioCompositionStateS
 
 export const VideoStudioScaffoldCompositionParams = z.strictObject({
   projectId: VideoStudioProjectId,
-  overwrite: z.boolean().optional()
+  overwrite: z.boolean().optional(),
+  styleProfileId: StyleIdSchema.optional()
 })
 export const VideoStudioScaffoldCompositionResult = VideoStudioCompositionStateSchema
 
@@ -101,24 +113,6 @@ export const VideoStudioOpenCompositionWorkspaceResult = z.object({
 })
 
 // ─── Composition Check ────────────────────────────────────────────────────────
-
-export const VideoStudioCheckFindingSchema = z.object({
-  severity: z.enum(['error', 'warning', 'info']),
-  code: z.string().optional(),
-  message: z.string(),
-  file: z.string().optional()
-})
-export type VideoStudioCheckFinding = z.infer<typeof VideoStudioCheckFindingSchema>
-
-export const VideoStudioCheckResultSchema = z.object({
-  passed: z.boolean(),
-  errors: z.array(VideoStudioCheckFindingSchema),
-  warnings: z.array(VideoStudioCheckFindingSchema),
-  summary: z.string(),
-  checkedAt: z.number(),
-  durationMs: z.number().optional()
-})
-export type VideoStudioCheckResult = z.infer<typeof VideoStudioCheckResultSchema>
 
 export const VideoStudioCheckCompositionParams = z.strictObject({
   projectId: VideoStudioProjectId
@@ -135,7 +129,8 @@ export const VideoStudioPreviewStateSchema = z.object({
 export type VideoStudioPreviewState = z.infer<typeof VideoStudioPreviewStateSchema>
 
 export const VideoStudioStartPreviewParams = z.strictObject({
-  projectId: VideoStudioProjectId
+  projectId: VideoStudioProjectId,
+  forceNew: z.boolean().optional()
 })
 export const VideoStudioStartPreviewResult = VideoStudioPreviewStateSchema
 
@@ -176,7 +171,9 @@ export type VideoStudioRenderJobSnapshot = z.infer<typeof VideoStudioRenderJobSn
 
 export const VideoStudioStartRenderParams = z.strictObject({
   projectId: VideoStudioProjectId,
-  quality: VideoStudioRenderQualitySchema.default('looks')
+  quality: VideoStudioRenderQualitySchema.default('looks'),
+  startSeconds: z.number().nonnegative().optional(),
+  endSeconds: z.number().positive().optional()
 })
 export const VideoStudioStartRenderResult = z.object({
   job: VideoStudioRenderJobSnapshotSchema

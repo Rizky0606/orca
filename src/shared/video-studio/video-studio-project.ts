@@ -24,14 +24,18 @@ export const VideoStudioRenderRecordSchema = z.object({
 })
 export type VideoStudioRenderRecord = z.infer<typeof VideoStudioRenderRecordSchema>
 
+export const VideoStudioWorkflowStageSchema = z.enum(['research', 'script', 'style', 'production'])
+export type VideoStudioWorkflowStage = z.infer<typeof VideoStudioWorkflowStageSchema>
+
 export const VideoStudioProjectFields = z.object({
   title: z.string().trim().min(1),
   prompt: z.string(),
   aspectRatio: z.enum(['16:9', '9:16', '1:1']),
   durationSeconds: z.number().int().min(5).max(3600),
-  workflowStage: z.enum(['research', 'script', 'production']),
+  workflowStage: VideoStudioWorkflowStageSchema,
   engine: VideoStudioEngineSchema.default('hyperframes'),
-  fps: z.number().int().min(12).max(120).default(30)
+  fps: z.number().int().min(12).max(120).default(30),
+  styleProfileId: z.string().trim().min(1).optional()
 })
 
 export const VideoStudioProjectSchema = VideoStudioProjectFields.extend({

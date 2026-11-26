@@ -62,6 +62,17 @@ describe('Video Studio project codec', () => {
     expect(
       normalizeVideoStudioProject({ ...project, aspectRatio: '1:1', workflowStage: 'script' })
     ).toEqual({ ...project, aspectRatio: '1:1', workflowStage: 'script' })
+    expect(
+      normalizeVideoStudioProject({
+        ...project,
+        workflowStage: 'style',
+        styleProfileId: 'technical-explainer-01'
+      })
+    ).toEqual({
+      ...project,
+      workflowStage: 'style',
+      styleProfileId: 'technical-explainer-01'
+    })
   })
 
   it('defaults engine, fps, and renders for legacy Stage 1 project records', () => {
