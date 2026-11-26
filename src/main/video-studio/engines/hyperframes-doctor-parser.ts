@@ -3,6 +3,14 @@ import type { HyperFramesVersionCompatibility } from './video-render-engine'
 
 export const HYPERFRAMES_PINNED_VERSION = '0.9.94'
 
+export const TopLevelErrorSchema = z
+  .object({
+    code: z.string().optional(),
+    message: z.string().optional(),
+    hint: z.string().optional()
+  })
+  .passthrough()
+
 export type HyperFramesDoctorCheck = {
   name: string
   ok: boolean

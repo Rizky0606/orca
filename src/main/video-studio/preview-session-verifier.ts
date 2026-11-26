@@ -1,5 +1,6 @@
 import { basename, resolve } from 'node:path'
 import { z } from 'zod'
+import { isEligibleLocalCertificateHost } from '../../shared/browser/navigation/browser-url'
 import {
   resolveRealpathDefault,
   tokenizeCommandLine,
@@ -19,7 +20,10 @@ export const PreviewSessionRecordSchema = z.object({
   creationTimeMs: z.number().positive(),
   executablePath: z.string().min(1),
   port: z.number().int().min(1).max(65535),
-  host: z.enum(['127.0.0.1', 'localhost']),
+  host: z
+    .string()
+    .min(1)
+    .refine((value) => isEligibleLocalCertificateHost(value), 'Must be a loopback host'),
   url: z.string().min(1),
   projectName: z.string().min(1),
   startedAt: z.number().nonnegative()

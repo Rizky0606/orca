@@ -346,6 +346,55 @@ describe('HyperFramesEngineAdapter', () => {
     expect(stopMock).toHaveBeenCalledTimes(1)
   })
 
+  it('does not resolve preview prematurely on ready:false or bare diagnostic text', async () => {
+    let emitLine!: (line: string) => void
+    let emitExit!: (code: number | null) => void
+    const deps = makeDeps({
+      spawnPreviewStream: vi.fn((spec) => {
+        emitLine = spec.onOutputLine
+        emitExit = spec.onExit
+        return {
+          pid: 11008,
+          stop: vi.fn().mockResolvedValue(undefined),
+          exited: new Promise<number | null>(() => {})
+        }
+      })
+    })
+
+    let settled = false
+    const pending = adapter.startPreview('/proj', deps, vi.fn()).then((res) => {
+      settled = true
+      return res
+    })
+
+    await vi.waitFor(() => expect(emitLine).toBeDefined())
+    emitLine('Studio preview failed to bind')
+    emitLine(
+      JSON.stringify({
+        schemaVersion: 1,
+        operation: 'start',
+        ok: true,
+        result: {
+          state: 'starting',
+          mode: 'foreground',
+          projectName: 'p',
+          projectDir: '/proj',
+          host: '127.0.0.1',
+          port: 43123,
+          pid: 11008,
+          studioUrl: 'http://127.0.0.1:43123/#project/p',
+          ready: false
+        }
+      })
+    )
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    emitExit(1)
+    await expect(pending).rejects.toThrow('video_studio_preview_exited:1')
+  })
+
   it('renders MP4 with @hf-progress, optional partial start/end, abort cleanup, and ffprobe metadata', async () => {
     const removeFile = vi.fn().mockResolvedValue(undefined)
     const ac = new AbortController()

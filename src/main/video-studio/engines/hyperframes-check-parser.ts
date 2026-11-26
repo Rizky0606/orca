@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { VideoStudioEngine } from '../../../shared/video-studio/video-studio-project'
 import type { VideoStudioCheckResult } from '../../../shared/video-studio/video-studio-rpc-contract'
 import { collectCheckSectionFindings, isPlainRecord } from './hyperframes-check-sections'
-import { parseRawJsonValue } from './hyperframes-doctor-parser'
+import { TopLevelErrorSchema, parseRawJsonValue } from './hyperframes-doctor-parser'
 import type {
   ValidationFinding,
   ValidationStatus,
@@ -31,14 +31,6 @@ const STATIC_SKIPPED_CHECKS = [
   'craft',
   'audio'
 ] as const
-
-const TopLevelErrorSchema = z
-  .object({
-    code: z.string().optional(),
-    message: z.string().optional(),
-    hint: z.string().optional()
-  })
-  .passthrough()
 
 const SnapshotsMetaSchema = z
   .object({

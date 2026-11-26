@@ -4,7 +4,13 @@ import {
   normalizeExternalBrowserUrl
 } from '../../../shared/browser/navigation/browser-url'
 import {
+  parseHyperFramesCheckJson,
+  parseHyperFramesCheckResult,
+  type ParseHyperFramesCheckOptions
+} from './hyperframes-check-parser'
+import {
   HYPERFRAMES_PINNED_VERSION,
+  TopLevelErrorSchema,
   checkHyperFramesVersionCompatibility,
   parseHyperFramesDoctorJson,
   parseHyperFramesVersionOutput,
@@ -13,11 +19,6 @@ import {
   type HyperFramesDoctorCheck,
   type ParsedHyperFramesDoctor
 } from './hyperframes-doctor-parser'
-import {
-  parseHyperFramesCheckJson,
-  parseHyperFramesCheckResult,
-  type ParseHyperFramesCheckOptions
-} from './hyperframes-check-parser'
 import type { VideoRenderProgressUpdate } from './video-render-engine'
 
 export {
@@ -42,7 +43,7 @@ export type ParsedHyperFramesPreviewEvent =
       serverUrl?: string
       studioUrl?: string
       port: number
-      host: '127.0.0.1' | 'localhost'
+      host: string
       pid?: number
       projectName?: string
       projectDir?: string
@@ -52,13 +53,6 @@ export type ParsedHyperFramesPreviewEvent =
       errorCode: string
       message: string
     }
-
-const TopLevelErrorSchema = z
-  .object({
-    code: z.string().optional(),
-    message: z.string().optional()
-  })
-  .passthrough()
 
 const PreviewLifecyclePayloadSchema = z
   .object({
@@ -105,7 +99,7 @@ const RenderProgressPayloadSchema = z
 
 export function validateLoopbackPreviewUrl(rawUrl: string): {
   url: string
-  host: '127.0.0.1' | 'localhost'
+  host: string
   port: number
 } | null {
   const normalized = normalizeExternalBrowserUrl(rawUrl)
@@ -128,7 +122,7 @@ export function validateLoopbackPreviewUrl(rawUrl: string): {
     }
     return {
       url: parsed.toString(),
-      host: parsed.hostname.toLowerCase() === 'localhost' ? 'localhost' : '127.0.0.1',
+      host: parsed.hostname.toLowerCase(),
       port
     }
   } catch {
@@ -200,7 +194,7 @@ export function parseHyperFramesPreviewJson(
     }
   }
 
-  const urlMatch = /(https?:\/\/(?:127\.0\.0\.1|localhost):\d+(?:\/\S*)?)/i.exec(line)
+  const urlMatch = /(https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):\d+(?:\/\S*)?)/i.exec(line)
   if (urlMatch) {
     const validated = validateLoopbackPreviewUrl(urlMatch[1])
     if (validated) {
@@ -218,16 +212,7 @@ export function parseHyperFramesPreviewJson(
 
 export function parsePreviewUrl(line: string, fallbackPort: number): string | null {
   const parsed = parseHyperFramesPreviewJson(line, fallbackPort)
-  if (parsed?.ok) {
-    return parsed.url
-  }
-  if (parsed && !parsed.ok) {
-    return null
-  }
-  if (/ready|listening|studio/i.test(line)) {
-    return validateLoopbackPreviewUrl(`http://127.0.0.1:${fallbackPort}/#project/`)?.url ?? null
-  }
-  return null
+  return parsed?.ok && parsed.ready ? parsed.url : null
 }
 
 export function parseRenderProgressLine(line: string): VideoRenderProgressUpdate | null {

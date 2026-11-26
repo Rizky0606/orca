@@ -1,4 +1,4 @@
-import { parseHyperFramesPreviewJson, parsePreviewUrl } from './hyperframes-cli-parsers'
+import { parseHyperFramesPreviewJson } from './hyperframes-cli-parsers'
 import type { HyperFramesInvocation } from './hyperframes-environment-probe'
 import type {
   VideoEngineProcessDeps,
@@ -57,7 +57,10 @@ export async function launchHyperFramesPreviewProcess(params: {
           return
         }
         const parsed = parseHyperFramesPreviewJson(line, port)
-        if (parsed && !parsed.ok) {
+        if (!parsed) {
+          return
+        }
+        if (!parsed.ok) {
           settled = true
           clearTimeout(cleanupTimer)
           options.signal?.removeEventListener('abort', onAbort)
@@ -65,31 +68,19 @@ export async function launchHyperFramesPreviewProcess(params: {
           reject(new Error(parsed.errorCode))
           return
         }
-        if (parsed?.ok && parsed.ready) {
-          settled = true
-          clearTimeout(cleanupTimer)
-          options.signal?.removeEventListener('abort', onAbort)
-          resolve({
-            state: { active: true, url: parsed.url, port: parsed.port },
-            pid: parsed.pid ?? processHandle.pid,
-            projectName: parsed.projectName,
-            executablePath: invocation.program,
-            stop: () => processHandle.stop()
-          })
+        if (!parsed.ready) {
           return
         }
-        const fallbackUrl = parsePreviewUrl(line, port)
-        if (fallbackUrl) {
-          settled = true
-          clearTimeout(cleanupTimer)
-          options.signal?.removeEventListener('abort', onAbort)
-          resolve({
-            state: { active: true, url: fallbackUrl, port },
-            pid: processHandle.pid,
-            executablePath: invocation.program,
-            stop: () => processHandle.stop()
-          })
-        }
+        settled = true
+        clearTimeout(cleanupTimer)
+        options.signal?.removeEventListener('abort', onAbort)
+        resolve({
+          state: { active: true, url: parsed.url, port: parsed.port },
+          pid: parsed.pid ?? processHandle.pid,
+          projectName: parsed.projectName,
+          executablePath: invocation.program,
+          stop: () => processHandle.stop()
+        })
       },
       onExit: (code) => {
         if (!settled) {

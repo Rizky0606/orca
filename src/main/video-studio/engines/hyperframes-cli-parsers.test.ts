@@ -8,7 +8,9 @@ import {
   parseHyperFramesDoctorJson,
   parseHyperFramesPreviewJson,
   parseHyperFramesVersionOutput,
-  parseRenderProgressLine
+  parsePreviewUrl,
+  parseRenderProgressLine,
+  validateLoopbackPreviewUrl
 } from './hyperframes-cli-parsers'
 
 const FIXTURES_DIR = join(__dirname, '__fixtures__')
@@ -275,6 +277,27 @@ describe('HyperFrames 0.9.94 CLI Parsers', () => {
       3002
     )
     expect(evilUrl).toMatchObject({ ok: false, errorCode: 'invalid_preview_url' })
+
+    expect(
+      parsePreviewUrl(
+        JSON.stringify({
+          schemaVersion: 1,
+          operation: 'start',
+          ok: true,
+          result: {
+            state: 'starting',
+            studioUrl: 'http://127.0.0.1:3002/#project/p',
+            ready: false
+          }
+        }),
+        3002
+      )
+    ).toBeNull()
+    expect(parsePreviewUrl('Studio preview failed to bind', 3002)).toBeNull()
+    expect(validateLoopbackPreviewUrl('http://[::1]:3002/#project/p')).toMatchObject({
+      host: '[::1]',
+      port: 3002
+    })
   })
 
   it('parses @hf-progress lines from synthetic render-progress.txt and probe output cleanly', () => {

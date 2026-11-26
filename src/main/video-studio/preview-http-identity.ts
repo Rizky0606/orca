@@ -37,7 +37,10 @@ export function probeLoopbackHttpIdentity(
   ) {
     return Promise.resolve(null)
   }
-  const connectHost = host.toLowerCase() === 'localhost' ? 'localhost' : '127.0.0.1'
+  const connectHost = host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
   return new Promise((resolvePromise) => {
     const request = http.get(
       {

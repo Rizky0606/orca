@@ -1,9 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
-import { z } from 'zod'
+import { isEligibleLocalCertificateHost } from '../../shared/browser/navigation/browser-url'
 import type { VideoStudioPreviewState } from '../../shared/video-studio/video-studio-rpc-contract'
-import { AtomicSnapshotWriter } from '../persistence/atomic-snapshot-writer'
 import { createHyperFramesEngineAdapter } from './engines/hyperframes-engine-adapter'
 import type {
   VideoEngineAdapter,
@@ -18,6 +15,7 @@ import {
   type ObservedPreviewProcess,
   type PreviewOsControl
 } from './preview-os-control'
+import { PreviewSessionStore } from './preview-session-store'
 import {
   PreviewSessionRecordSchema,
   verifyStoredPreviewSession,
@@ -38,13 +36,17 @@ export {
   type PreviewVerificationFailureReason
 }
 
-const PreviewSessionsStoreSchema = z.object({
-  schemaVersion: z.literal(1),
-  sessions: z.record(z.string(), PreviewSessionRecordSchema)
-})
-
 export type VideoStudioPreviewManagerOptions = {
   osControl?: PreviewOsControl
+}
+
+export type StartPreviewParams = {
+  projectId: string
+  projectDir: string
+  adapter?: VideoEngineAdapter
+  deps: VideoEngineProcessDeps
+  onExit?: () => void
+  signal?: AbortSignal
 }
 
 type ActivePreviewEntry = {
@@ -52,80 +54,51 @@ type ActivePreviewEntry = {
   projectDir: string
   sessionId: string
   handle: VideoStudioPreviewHandle
+  rawStop: () => Promise<void>
 }
 
 /** Manages host-verified HyperFrames preview sessions using 6-factor OS/port/HTTP identity checks and atomic host storage. */
 export class VideoStudioPreviewManager {
   private readonly osControl: PreviewOsControl
-  private readonly writer: AtomicSnapshotWriter
+  private readonly store: PreviewSessionStore
   private readonly activeHandles = new Map<string, ActivePreviewEntry>()
-  private storeQueue: Promise<unknown> = Promise.resolve()
+  private readonly projectLanes = new Map<string, Promise<unknown>>()
+  private disposed = false
 
   constructor(
     private readonly profileDir: string,
     options: VideoStudioPreviewManagerOptions = {}
   ) {
     this.osControl = options.osControl ?? createDefaultPreviewOsControl()
-    this.writer = new AtomicSnapshotWriter(
-      () => VideoStudioPreviewManager.getSessionsFilePath(this.profileDir),
-      { fileMode: 0o600, directoryMode: 0o700, skipUnchanged: true }
-    )
+    this.store = new PreviewSessionStore(this.profileDir)
   }
 
   static getSessionsFilePath(profileDir: string): string {
-    return join(resolve(profileDir), 'video-studio', 'security', 'preview-sessions.json')
+    return PreviewSessionStore.getSessionsFilePath(profileDir)
   }
 
   private resolvePath(targetPath: string): Promise<string> {
     return (this.osControl.resolveRealpath ?? resolveRealpathDefault)(targetPath)
   }
 
-  private enqueueStoreOp<T>(fn: () => Promise<T>): Promise<T> {
-    const next = this.storeQueue.then(fn, fn)
-    this.storeQueue = next.then(
+  private enqueueProjectOp<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
+    const previous = this.projectLanes.get(projectId) ?? Promise.resolve()
+    const run = previous.then(fn, fn)
+    const tail = run.then(
       () => undefined,
       () => undefined
     )
-    return next
-  }
-
-  private async readStoredSessionsRaw(): Promise<Record<string, PreviewSessionRecord>> {
-    const raw = await readFile(
-      VideoStudioPreviewManager.getSessionsFilePath(this.profileDir),
-      'utf8'
-    ).catch(() => null)
-    if (!raw) {
-      return {}
-    }
-    try {
-      const parsed = PreviewSessionsStoreSchema.safeParse(JSON.parse(raw))
-      return parsed.success ? { ...parsed.data.sessions } : {}
-    } catch {
-      return {}
-    }
-  }
-
-  async listStoredSessions(): Promise<Record<string, PreviewSessionRecord>> {
-    return this.enqueueStoreOp(() => this.readStoredSessionsRaw())
-  }
-
-  private async upsertStoredSession(record: PreviewSessionRecord): Promise<void> {
-    await this.enqueueStoreOp(async () => {
-      const sessions = await this.readStoredSessionsRaw()
-      sessions[record.projectId] = record
-      await this.writer.write(() => JSON.stringify({ schemaVersion: 1, sessions }, null, 2))
-    })
-  }
-
-  private async removeStoredSession(projectId: string): Promise<void> {
-    await this.enqueueStoreOp(async () => {
-      const sessions = await this.readStoredSessionsRaw()
-      if (!Object.hasOwn(sessions, projectId)) {
-        return
+    this.projectLanes.set(projectId, tail)
+    void tail.then(() => {
+      if (this.projectLanes.get(projectId) === tail) {
+        this.projectLanes.delete(projectId)
       }
-      delete sessions[projectId]
-      await this.writer.write(() => JSON.stringify({ schemaVersion: 1, sessions }, null, 2))
     })
+    return run
+  }
+
+  listStoredSessions(): Promise<Record<string, PreviewSessionRecord>> {
+    return this.store.list()
   }
 
   getPreviewState(projectId: string): VideoStudioPreviewState {
@@ -137,7 +110,7 @@ export class VideoStudioPreviewManager {
     projectDir: string,
     options: { expectedSessionId?: string } = {}
   ): Promise<PreviewSessionVerificationResult> {
-    const sessions = await this.listStoredSessions()
+    const sessions = await this.store.list()
     return verifyStoredPreviewSession({
       record: sessions[projectId],
       projectDir,
@@ -146,39 +119,59 @@ export class VideoStudioPreviewManager {
     })
   }
 
-  async startPreview(params: {
+  private buildManagedHandle(params: {
     projectId: string
     projectDir: string
-    adapter?: VideoEngineAdapter
-    deps: VideoEngineProcessDeps
-    onExit?: () => void
-    signal?: AbortSignal
-  }): Promise<VideoStudioPreviewHandle> {
-    const adapter = params.adapter ?? createHyperFramesEngineAdapter()
+    sessionId: string
+    rawHandle: VideoStudioPreviewHandle
+  }): VideoStudioPreviewHandle {
+    const { projectId, projectDir, sessionId, rawHandle } = params
+    return {
+      ...rawHandle,
+      sessionId,
+      stop: async () => {
+        await this.stopPreview(projectId, projectDir, { expectedSessionId: sessionId })
+      }
+    }
+  }
+
+  startPreview(params: StartPreviewParams): Promise<VideoStudioPreviewHandle> {
+    return this.enqueueProjectOp(params.projectId, () => this.startPreviewSerialized(params))
+  }
+
+  private async startPreviewSerialized(
+    params: StartPreviewParams
+  ): Promise<VideoStudioPreviewHandle> {
+    if (this.disposed) {
+      throw new Error('video_studio_preview_disposed')
+    }
+    const existingActive = this.activeHandles.get(params.projectId)
     const verification = await this.verifySession(params.projectId, params.projectDir)
 
     if (verification.status === 'healthy') {
-      const existing = this.activeHandles.get(params.projectId)
-      if (existing) {
-        return existing.handle
+      if (existingActive && existingActive.sessionId === verification.record.sessionId) {
+        return existingActive.handle
       }
-      const reusedHandle: VideoStudioPreviewHandle = {
-        state: { active: true, url: verification.record.url, port: verification.record.port },
-        pid: verification.record.pid,
-        projectName: verification.record.projectName,
-        executablePath: verification.record.executablePath,
+      const reusedHandle = this.buildManagedHandle({
+        projectId: params.projectId,
+        projectDir: params.projectDir,
         sessionId: verification.record.sessionId,
-        stop: async () => {
-          await this.stopPreview(params.projectId, params.projectDir, {
-            expectedSessionId: verification.record.sessionId
-          })
+        rawHandle: {
+          state: { active: true, url: verification.record.url, port: verification.record.port },
+          pid: verification.record.pid,
+          projectName: verification.record.projectName,
+          executablePath: verification.record.executablePath,
+          stop: async () => {}
         }
-      }
+      })
       this.activeHandles.set(params.projectId, {
         projectId: params.projectId,
         projectDir: params.projectDir,
         sessionId: verification.record.sessionId,
-        handle: reusedHandle
+        handle: reusedHandle,
+        rawStop: async () => {
+          await this.osControl.terminateProcessTree(verification.record.pid).catch(() => false)
+        }
       })
       return reusedHandle
     }
@@ -186,40 +179,100 @@ export class VideoStudioPreviewManager {
     let forceNew = false
     if (verification.status === 'unhealthy' && verification.belongsToProject) {
       await this.osControl.terminateProcessTree(verification.record.pid).catch(() => false)
-      await this.removeStoredSession(params.projectId)
+      await this.store.remove(params.projectId)
       this.activeHandles.delete(params.projectId)
       forceNew = true
     } else if (verification.status === 'stale') {
-      await this.removeStoredSession(params.projectId)
+      await this.store.remove(params.projectId)
       this.activeHandles.delete(params.projectId)
     }
 
+    const adapter = params.adapter ?? createHyperFramesEngineAdapter()
     const projectDirRealpath = await this.resolvePath(params.projectDir)
     const sessionId = randomUUID()
+    let exitedEarly = false
+    let exitNotified = false
+
+    const notifyExitOnce = () => {
+      if (!exitNotified) {
+        exitNotified = true
+        params.onExit?.()
+      }
+    }
+
     const rawHandle = await adapter.startPreview(
       projectDirRealpath,
       params.deps,
       () => {
+        exitedEarly = true
         const current = this.activeHandles.get(params.projectId)
         if (current?.sessionId === sessionId) {
           this.activeHandles.delete(params.projectId)
-          void this.removeStoredSession(params.projectId)
-          params.onExit?.()
+          void this.store.remove(params.projectId)
         }
+        notifyExitOnce()
       },
       { forceNew, signal: params.signal }
     )
 
+    if (exitedEarly || this.disposed) {
+      await rawHandle.stop().catch(() => {})
+      await this.store.remove(params.projectId)
+      throw new Error(
+        this.disposed ? 'video_studio_preview_disposed' : 'video_studio_preview_exited'
+      )
+    }
+
+    const managedHandle = this.buildManagedHandle({
+      projectId: params.projectId,
+      projectDir: params.projectDir,
+      sessionId,
+      rawHandle
+    })
+
+    // Register handle before async OS inspection / persistence so early child exit cleans up deterministically.
+    this.activeHandles.set(params.projectId, {
+      projectId: params.projectId,
+      projectDir: params.projectDir,
+      sessionId,
+      handle: managedHandle,
+      rawStop: () => rawHandle.stop()
+    })
+
     const pid = rawHandle.pid ?? 0
     const observed = pid > 0 ? await this.osControl.inspectProcess(pid) : null
+    if (
+      exitedEarly ||
+      this.disposed ||
+      this.activeHandles.get(params.projectId)?.sessionId !== sessionId
+    ) {
+      if (this.activeHandles.get(params.projectId)?.sessionId === sessionId) {
+        this.activeHandles.delete(params.projectId)
+      }
+      if (this.disposed) {
+        await rawHandle.stop().catch(() => {})
+      }
+      await this.store.remove(params.projectId)
+      throw new Error(
+        this.disposed ? 'video_studio_preview_disposed' : 'video_studio_preview_exited'
+      )
+    }
+
     const executablePath = observed?.executablePath ?? rawHandle.executablePath ?? ''
-    const creationTimeMs = observed?.creationTimeMs ?? Date.now()
+    const creationTimeMs = observed?.creationTimeMs ?? null
     const port = rawHandle.state.port ?? 3002
     const url = rawHandle.state.url ?? `http://127.0.0.1:${port}/#project/${params.projectId}`
-    const host = new URL(url).hostname.toLowerCase() === 'localhost' ? 'localhost' : '127.0.0.1'
+    const rawHost = new URL(url).hostname.toLowerCase()
+    const host = isEligibleLocalCertificateHost(rawHost) ? rawHost : '127.0.0.1'
 
-    if (pid > 0 && executablePath) {
-      await this.upsertStoredSession({
+    if (
+      pid > 0 &&
+      executablePath &&
+      typeof creationTimeMs === 'number' &&
+      Number.isFinite(creationTimeMs) &&
+      creationTimeMs > 0
+    ) {
+      await this.store.upsert({
         sessionId,
         projectId: params.projectId,
         projectDirRealpath,
@@ -232,53 +285,39 @@ export class VideoStudioPreviewManager {
         projectName: rawHandle.projectName ?? params.projectId,
         startedAt: Date.now()
       })
-    }
-
-    const managedHandle: VideoStudioPreviewHandle = {
-      ...rawHandle,
-      sessionId,
-      stop: async () => {
-        const stored = await this.listStoredSessions()
-        if (stored[params.projectId]) {
-          await this.stopPreview(params.projectId, params.projectDir, {
-            expectedSessionId: sessionId
-          })
-        } else {
-          this.activeHandles.delete(params.projectId)
-          await rawHandle.stop().catch(() => {})
-        }
+      if (exitedEarly || this.activeHandles.get(params.projectId)?.sessionId !== sessionId) {
+        await this.store.remove(params.projectId)
+        throw new Error('video_studio_preview_exited')
       }
     }
 
-    this.activeHandles.set(params.projectId, {
-      projectId: params.projectId,
-      projectDir: params.projectDir,
-      sessionId,
-      handle: managedHandle
-    })
     return managedHandle
   }
 
-  async stopPreview(
+  stopPreview(
     projectId: string,
     projectDir: string,
     options: { expectedSessionId?: string } = {}
   ): Promise<VideoStudioPreviewState> {
-    const verification = await this.verifySession(projectId, projectDir, options)
-    if (verification.status === 'healthy' || verification.status === 'unhealthy') {
-      await this.osControl.terminateProcessTree(verification.record.pid).catch(() => false)
-    }
+    return this.enqueueProjectOp(projectId, async () => {
+      const verification = await this.verifySession(projectId, projectDir, options)
+      if (verification.status === 'healthy' || verification.status === 'unhealthy') {
+        await this.osControl.terminateProcessTree(verification.record.pid).catch(() => false)
+      }
 
-    const active = this.activeHandles.get(projectId)
-    if (active && verification.status === 'none') {
-      await active.handle.stop().catch(() => {})
-    }
-    this.activeHandles.delete(projectId)
-    await this.removeStoredSession(projectId)
-    return { active: false }
+      const active = this.activeHandles.get(projectId)
+      if (active && verification.status === 'none') {
+        await active.rawStop().catch(() => {})
+      }
+      this.activeHandles.delete(projectId)
+      await this.store.remove(projectId)
+      return { active: false }
+    })
   }
 
   async dispose(): Promise<void> {
+    this.disposed = true
+    await Promise.all(this.projectLanes.values())
     const entries = [...this.activeHandles.values()]
     await Promise.all(
       entries.map((entry) =>
@@ -287,6 +326,6 @@ export class VideoStudioPreviewManager {
         }).catch(() => {})
       )
     )
-    this.writer.close()
+    this.store.close()
   }
 }

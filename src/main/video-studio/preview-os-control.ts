@@ -12,8 +12,10 @@ import {
   readLinuxProcessStartedAtMs
 } from '../daemon/endpoint/identity/daemon-process-inspection'
 import {
+  isWindowsProcessStartTimeAvailable,
   readWindowsProcessCreationTime,
-  readWindowsProcessTableFresh
+  readWindowsProcessTableFresh,
+  type WindowsProcessRow
 } from '../windows/windows-process-table'
 import { probeLoopbackHttpIdentity, type PreviewHttpIdentity } from './preview-http-identity'
 import { findHostLoopbackPortOwner, type LoopbackPortOwner } from './preview-port-ownership'
@@ -104,10 +106,16 @@ function parseWindowsCimDateMs(raw: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-async function queryWindowsSingleProcessCim(pid: number): Promise<ObservedPreviewProcess | null> {
-  const script =
+export function buildWindowsSingleProcessCimScript(pid: number): string {
+  return (
+    '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ' +
     `Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=${pid}" | ` +
     'Select-Object CreationDate,ExecutablePath,CommandLine | ConvertTo-Json -Compress'
+  )
+}
+
+async function queryWindowsSingleProcessCim(pid: number): Promise<ObservedPreviewProcess | null> {
+  const script = buildWindowsSingleProcessCimScript(pid)
   const res = await runProcess({
     program: windowsPowerShellPath(),
     args: ['-NoProfile', '-NonInteractive', '-Command', script],
@@ -138,13 +146,24 @@ async function queryWindowsSingleProcessCim(pid: number): Promise<ObservedPrevie
   }
 }
 
-async function inspectWindowsProcess(pid: number): Promise<ObservedPreviewProcess | null> {
-  const rows = await readWindowsProcessTableFresh().catch(() => null)
+export async function inspectWindowsProcessWith(
+  pid: number,
+  deps: {
+    isStartTimeAvailable: () => boolean
+    readProcessTableFresh: () => Promise<WindowsProcessRow[]>
+    readProcessCreationTime: (targetPid: number) => number | null
+    querySingleProcessCim: (targetPid: number) => Promise<ObservedPreviewProcess | null>
+  }
+): Promise<ObservedPreviewProcess | null> {
+  if (!deps.isStartTimeAvailable()) {
+    return deps.querySingleProcessCim(pid)
+  }
+  const rows = await deps.readProcessTableFresh().catch(() => null)
   const row = rows?.find((candidate) => candidate.pid === pid)
   if (rows && !row) {
     return null
   }
-  const nativeCreation = row?.creationTimeMs ?? readWindowsProcessCreationTime(pid)
+  const nativeCreation = row?.creationTimeMs ?? deps.readProcessCreationTime(pid)
   if (row && typeof nativeCreation === 'number') {
     const rawExe = extractExecutableFromCommandLine(row.command)
     return {
@@ -154,7 +173,16 @@ async function inspectWindowsProcess(pid: number): Promise<ObservedPreviewProces
       commandLine: row.command
     }
   }
-  return queryWindowsSingleProcessCim(pid)
+  return deps.querySingleProcessCim(pid)
+}
+
+async function inspectWindowsProcess(pid: number): Promise<ObservedPreviewProcess | null> {
+  return inspectWindowsProcessWith(pid, {
+    isStartTimeAvailable: isWindowsProcessStartTimeAvailable,
+    readProcessTableFresh: readWindowsProcessTableFresh,
+    readProcessCreationTime: readWindowsProcessCreationTime,
+    querySingleProcessCim: queryWindowsSingleProcessCim
+  })
 }
 
 async function inspectLinuxProcess(pid: number): Promise<ObservedPreviewProcess | null> {

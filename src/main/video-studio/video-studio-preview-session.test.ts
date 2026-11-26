@@ -7,6 +7,7 @@ import type {
   VideoRenderEngineAdapter,
   VideoStudioPreviewHandle
 } from './engines/video-render-engine'
+import { buildWindowsSingleProcessCimScript, inspectWindowsProcessWith } from './preview-os-control'
 import {
   VideoStudioPreviewManager,
   type PreviewOsControl,
@@ -457,5 +458,172 @@ describe('VideoStudioPreviewManager (6-factor identity verification)', () => {
       sessions: Record<string, PreviewSessionRecord>
     }
     expect(persisted.sessions['proj-1']).toBeUndefined()
+  })
+
+  it('serializes concurrent startPreview calls for the same project so only one server spawns', async () => {
+    let releaseFirstStart!: () => void
+    const firstStartGate = new Promise<void>((resolve) => {
+      releaseFirstStart = resolve
+    })
+    let spawnCount = 0
+    const adapter: VideoRenderEngineAdapter = {
+      ...makeAdapter(),
+      startPreview: vi.fn(async () => {
+        spawnCount += 1
+        if (spawnCount === 1) {
+          await firstStartGate
+        }
+        return {
+          state: { active: true, url: 'http://127.0.0.1:43001/#project/proj-1', port: 43001 },
+          pid: 51001,
+          projectName: 'proj-1',
+          executablePath: NODE_EXE,
+          stop: vi.fn().mockResolvedValue(undefined)
+        }
+      })
+    }
+
+    const osControl: PreviewOsControl = {
+      inspectProcess: vi.fn(async (pid) => ({
+        pid,
+        creationTimeMs: 1_700_000_050_000,
+        executablePath: NODE_EXE,
+        commandLine: `"${NODE_EXE}" "hyperframes.mjs" preview "${projectDirRealpath}"`,
+        cwd: projectDirRealpath
+      })),
+      findLoopbackPortOwner: vi.fn(async (port) => ({ host: '127.0.0.1', port, pid: 51001 })),
+      probeHttpIdentity: vi.fn(async () => ({
+        isHyperframes: true,
+        pid: 51001,
+        projectName: 'proj-1',
+        projectDir: projectDirRealpath,
+        version: '0.9.94'
+      })),
+      terminateProcessTree: vi.fn().mockResolvedValue(true)
+    }
+
+    const manager = new VideoStudioPreviewManager(profileDir, { osControl })
+    const deps = makeDummyDeps()
+
+    const p1 = manager.startPreview({ projectId: 'proj-1', projectDir, adapter, deps })
+    const p2 = manager.startPreview({ projectId: 'proj-1', projectDir, adapter, deps })
+    releaseFirstStart()
+
+    const [h1, h2] = await Promise.all([p1, p2])
+    expect(adapter.startPreview).toHaveBeenCalledTimes(1)
+    expect(h1.sessionId).toBe(h2.sessionId)
+    expect(h1.state).toEqual(h2.state)
+  })
+
+  it('rejects and avoids persisting when child exits during inspectProcess await', async () => {
+    let resolveInspect!: (val: null) => void
+    const inspectGate = new Promise<null>((resolve) => {
+      resolveInspect = resolve
+    })
+    let triggerExit!: () => void
+
+    const adapter: VideoRenderEngineAdapter = {
+      ...makeAdapter(),
+      startPreview: vi.fn(async (_dir, _deps, onExit) => {
+        triggerExit = onExit
+        return {
+          state: { active: true, url: 'http://127.0.0.1:43001/#project/proj-1', port: 43001 },
+          pid: 51001,
+          projectName: 'proj-1',
+          executablePath: NODE_EXE,
+          stop: vi.fn().mockResolvedValue(undefined)
+        }
+      })
+    }
+
+    const osControl: PreviewOsControl = {
+      inspectProcess: vi.fn(() => inspectGate),
+      findLoopbackPortOwner: vi.fn().mockResolvedValue(null),
+      probeHttpIdentity: vi.fn().mockResolvedValue(null),
+      terminateProcessTree: vi.fn().mockResolvedValue(true)
+    }
+
+    const onExit = vi.fn()
+    const manager = new VideoStudioPreviewManager(profileDir, { osControl })
+    const startPromise = manager.startPreview({
+      projectId: 'proj-1',
+      projectDir,
+      adapter,
+      deps: makeDummyDeps(),
+      onExit
+    })
+
+    await vi.waitFor(() => expect(triggerExit).toBeDefined())
+    triggerExit()
+    resolveInspect(null)
+
+    await expect(startPromise).rejects.toThrow('video_studio_preview_exited')
+    expect(onExit).toHaveBeenCalledTimes(1)
+    expect(manager.getPreviewState('proj-1')).toEqual({ active: false })
+    expect(await manager.listStoredSessions()).toEqual({})
+  })
+
+  it('never fabricates Date.now() for creationTimeMs when inspectProcess returns null creationTimeMs', async () => {
+    const rawStop = vi.fn().mockResolvedValue(undefined)
+    const adapter: VideoRenderEngineAdapter = {
+      ...makeAdapter(),
+      startPreview: vi.fn(async () => ({
+        state: { active: true, url: 'http://127.0.0.1:43001/#project/proj-1', port: 43001 },
+        pid: 51001,
+        projectName: 'proj-1',
+        executablePath: NODE_EXE,
+        stop: rawStop
+      }))
+    }
+    const osControl: PreviewOsControl = {
+      inspectProcess: vi.fn(async (pid) => ({
+        pid,
+        creationTimeMs: null,
+        executablePath: NODE_EXE,
+        commandLine: `"${NODE_EXE}" "hyperframes.mjs" preview "${projectDirRealpath}"`,
+        cwd: projectDirRealpath
+      })),
+      findLoopbackPortOwner: vi.fn().mockResolvedValue(null),
+      probeHttpIdentity: vi.fn().mockResolvedValue(null),
+      terminateProcessTree: vi.fn().mockResolvedValue(true)
+    }
+
+    const manager = new VideoStudioPreviewManager(profileDir, { osControl })
+    const handle = await manager.startPreview({
+      projectId: 'proj-1',
+      projectDir,
+      adapter,
+      deps: makeDummyDeps()
+    })
+    expect(handle.state.active).toBe(true)
+    expect(await manager.listStoredSessions()).toEqual({})
+
+    await handle.stop()
+    expect(rawStop).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips full-table CIM scan and sets UTF-8 encoding in single-PID Windows CIM query when native start time is unavailable', async () => {
+    const readTableFresh = vi.fn()
+    const querySinglePid = vi.fn().mockResolvedValue({
+      pid: 44100,
+      creationTimeMs: 1_700_000_000_000,
+      executablePath: NODE_EXE,
+      commandLine: `"${NODE_EXE}" preview`
+    })
+
+    const observed = await inspectWindowsProcessWith(44100, {
+      isStartTimeAvailable: () => false,
+      readProcessTableFresh: readTableFresh,
+      readProcessCreationTime: vi.fn(),
+      querySingleProcessCim: querySinglePid
+    })
+
+    expect(readTableFresh).not.toHaveBeenCalled()
+    expect(querySinglePid).toHaveBeenCalledWith(44100)
+    expect(observed?.creationTimeMs).toBe(1_700_000_000_000)
+
+    const script = buildWindowsSingleProcessCimScript(44100)
+    expect(script).toContain('[Console]::OutputEncoding = [System.Text.Encoding]::UTF8;')
+    expect(script).toContain('ProcessId=44100')
   })
 })
