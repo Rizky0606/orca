@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -255,6 +255,16 @@ describe('Dual-Scope Host Style Library, Snapshot Isolation & Markdown Reconcili
       expectedRevision: savedV3.revision
     })
     expect((await store.getProjectStyleState(projB)).profile?.id).toBe('brand-tech-01')
+
+    // Corrupt JSON in Host Style Library directory should skip cleanly without throwing SyntaxError
+    const corruptDir = join(profileDir, 'video-studio', 'styles', 'corrupt-style')
+    await mkdir(corruptDir, { recursive: true })
+    await writeFile(join(corruptDir, 'library-meta.json'), '{corrupt', 'utf8')
+    await writeFile(join(corruptDir, 'style-profile.json'), '{corrupt', 'utf8')
+    expect((await store.listStyleProfiles()).profiles.map((p) => p.id)).toEqual([
+      'technical-explainer-01',
+      'clean-editorial-01'
+    ])
   })
 
   it('syncs project tokens cleanly while preserving manual prose, detects external frame.md/MOTION.md drift, and reconciles both directions', async () => {

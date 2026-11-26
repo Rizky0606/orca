@@ -41,6 +41,14 @@ async function readOptionalText(absPath: string): Promise<string | null> {
   return readFile(absPath, 'utf8').catch(() => null)
 }
 
+function safeJsonParse(raw: string): unknown {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
 export async function readLibraryStyleBundle(
   stylesDir: string,
   styleId: string
@@ -62,7 +70,7 @@ export async function readLibraryStyleBundle(
   let sourceDir = styleDir
   const metaRaw = await readOptionalText(join(styleDir, 'library-meta.json'))
   if (metaRaw) {
-    const parsedMeta = LibraryMetaSchema.safeParse(JSON.parse(metaRaw))
+    const parsedMeta = LibraryMetaSchema.safeParse(safeJsonParse(metaRaw))
     if (parsedMeta.success) {
       latestVersion = parsedMeta.data.latestVersion
       const versionDir = await resolveContainedPath(styleDir, `v${latestVersion}`).catch(() => null)
@@ -76,7 +84,9 @@ export async function readLibraryStyleBundle(
   if (!profileDisk.exists || !profileDisk.bytes || !profileDisk.sha256) {
     return null
   }
-  const parsedProfile = StyleProfileSchema.safeParse(JSON.parse(profileDisk.bytes.toString('utf8')))
+  const parsedProfile = StyleProfileSchema.safeParse(
+    safeJsonParse(profileDisk.bytes.toString('utf8'))
+  )
   if (!parsedProfile.success) {
     return null
   }
@@ -145,7 +155,7 @@ export async function saveLibraryStyleBundle(
   const nextVersion = existing ? existing.latestVersion + 1 : Math.max(1, validated.version)
   const existingMetaRaw = await readOptionalText(join(styleDir, 'library-meta.json'))
   const existingMeta = existingMetaRaw
-    ? LibraryMetaSchema.safeParse(JSON.parse(existingMetaRaw))
+    ? LibraryMetaSchema.safeParse(safeJsonParse(existingMetaRaw))
     : null
   const versions = existingMeta?.success
     ? [...new Set([...existingMeta.data.versions, nextVersion])].sort((a, b) => a - b)

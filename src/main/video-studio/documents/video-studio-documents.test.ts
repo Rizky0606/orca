@@ -14,7 +14,10 @@ import { resolveVideoStudioProjectDir } from '../video-studio-composition-paths'
 import { buildDefaultStyleProfile } from '../video-studio-default-styles'
 import { buildDocumentSeeds } from '../video-studio-document-seeds'
 import { scaffoldHyperFramesComposition } from '../video-studio-hyperframes-template'
-import { computeCompositionDrift } from './video-studio-composition-drift'
+import {
+  computeCompositionDrift,
+  parseCompositionDurationFromHtml
+} from './video-studio-composition-drift'
 import { formatStoryboardMarkdown, parseStoryboardMarkdown } from './video-studio-markdown-sync'
 import { VideoStudioProjectDocumentsStore } from './video-studio-project-documents'
 
@@ -224,6 +227,52 @@ describe('STORYBOARD.md Frame round-trip, ProjectDocumentsStore & Composition Dr
     const parsedSeed = parseStoryboardMarkdown(seeds['STORYBOARD.md'])
     expect(parsedSeed.frames[0].assets).toEqual([])
     expect(formatStoryboardMarkdown(parsedSeed)).toContain('- assets:')
+
+    // Per-frame lockedSections round-trip & prose bullet isolation after blank line
+    const withLocked = await docStore.addStoryboardFrame({
+      projectId: mockProject.id,
+      frame: {
+        title: 'Locked Beat Frame',
+        status: 'built',
+        duration: '5s',
+        engine: 'hyperframes',
+        src: 'compositions/03-locked.html',
+        assets: [],
+        motionPresets: [],
+        notes: 'Key visual cues:\n\n- cue_one: keep fan steady',
+        lockedSections: ['timing-lock', 'brand-callout'],
+        extra: {}
+      },
+      expectedRevision: patched.revision
+    })
+    expect(withLocked.frame.lockedSections).toEqual(['timing-lock', 'brand-callout'])
+    const patchedLocked = await docStore.patchStoryboardFrame({
+      projectId: mockProject.id,
+      sceneId: withLocked.frame.sceneId,
+      patch: { title: 'Locked Beat Frame Updated' },
+      expectedRevision: withLocked.revision
+    })
+    expect(patchedLocked.frame.lockedSections).toEqual(['timing-lock', 'brand-callout'])
+    const reparsedLocked = parseStoryboardMarkdown(
+      await readFile(join(projectDir, 'STORYBOARD.md'), 'utf8')
+    )
+    const lockedFrame = reparsedLocked.frames.find((f) => f.sceneId === withLocked.frame.sceneId)!
+    expect(lockedFrame.lockedSections).toEqual(['timing-lock', 'brand-callout'])
+    expect(lockedFrame.extra).toEqual({})
+    expect(lockedFrame.notes).toContain('- cue_one: keep fan steady')
+
+    const blankAfterMeta = parseStoryboardMarkdown(
+      [
+        '## Frame 1 — Notes Bullets',
+        '',
+        '- scene_id: scene_notes_01',
+        '- status: outline',
+        '',
+        '- note_key: keep in notes'
+      ].join('\n')
+    )
+    expect(blankAfterMeta.frames[0].extra).toEqual({})
+    expect(blankAfterMeta.frames[0].notes).toBe('- note_key: keep in notes')
   })
 
   it('enforces expectedRevision and video_studio_scene_not_found across brief, script, research sources, and storyboard mutations', async () => {
@@ -442,6 +491,96 @@ describe('STORYBOARD.md Frame round-trip, ProjectDocumentsStore & Composition Dr
           sceneId: 'scene_01',
           presetId: 'camera.smooth_zoom',
           presetStatus: 'knowledge-only'
+        })
+      ])
+    )
+  })
+
+  it('resolves asset-registry.json defaultState and both project-relative and assets-relative paths without double-prefixing or matching hyphenated attributes', async () => {
+    await scaffoldHyperFramesComposition(projectDir, mockProject)
+    await mkdir(join(projectDir, 'assets', 'objects', 'ac_indoor_001'), { recursive: true })
+    await writeFile(
+      join(projectDir, 'assets', 'objects', 'ac_indoor_001', 'closed.svg'),
+      '<svg/>',
+      'utf8'
+    )
+    await writeFile(
+      join(projectDir, 'assets', 'objects', 'ac_indoor_001', 'cutaway.svg'),
+      '<svg/>',
+      'utf8'
+    )
+    await writeFile(
+      join(projectDir, 'assets', 'asset-registry.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        assets: [
+          {
+            id: 'ac_indoor_001',
+            defaultState: 'closed',
+            states: {
+              missing_first: { file: 'objects/ac_indoor_001/does-not-exist.svg' },
+              closed: { file: 'assets/objects/ac_indoor_001/closed.svg' },
+              cutaway: { file: 'objects/ac_indoor_001/cutaway.svg' }
+            }
+          }
+        ]
+      }),
+      'utf8'
+    )
+
+    expect(
+      parseCompositionDurationFromHtml('<div foo-data-duration="99" data-duration="30"></div>')
+    ).toBe(30)
+    expect(parseCompositionDurationFromHtml('<div foo-data-duration="99"></div>')).toBeNull()
+
+    await writeFile(
+      join(projectDir, 'compositions', '01-opening.html'),
+      `<template id="tpl-01-opening"><div data-composition-id="01-opening" foo-data-duration="99" data-duration="30"></div></template>`,
+      'utf8'
+    )
+    await writeFile(
+      join(projectDir, 'STORYBOARD.md'),
+      [
+        '---',
+        'format: 1920x1080',
+        'duration: 30s',
+        '---',
+        '',
+        '## Frame 1 — Opening',
+        '',
+        '- scene_id: scene_opening_01',
+        '- status: built',
+        '- duration: 30s',
+        '- engine: hyperframes',
+        '- src: compositions/01-opening.html',
+        '- assets: ac_indoor_001, ac_indoor_001:cutaway',
+        '- motion_presets:',
+        ''
+      ].join('\n'),
+      'utf8'
+    )
+
+    const validDrift = await computeCompositionDrift(projectDir)
+    expect(validDrift.inSync).toBe(true)
+    expect(validDrift.hasWarnings).toBe(false)
+    expect(validDrift.actualTotalDurationSeconds).toBe(30)
+
+    await writeFile(
+      join(projectDir, 'STORYBOARD.md'),
+      (await readFile(join(projectDir, 'STORYBOARD.md'), 'utf8')).replace(
+        'ac_indoor_001:cutaway',
+        'ac_indoor_001:missing_first'
+      ),
+      'utf8'
+    )
+    const missingDrift = await computeCompositionDrift(projectDir)
+    expect(missingDrift.inSync).toBe(false)
+    expect(missingDrift.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'missing-asset-file',
+          severity: 'warning',
+          assetRef: 'ac_indoor_001:missing_first'
         })
       ])
     )

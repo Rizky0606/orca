@@ -7,7 +7,12 @@ export type MountedCompositionTag = {
   durationSeconds: number | null
 }
 
-export type AssetRegistryLookup = Map<string, Map<string, string>>
+export type AssetRegistryEntry = {
+  defaultState: string | null
+  states: Map<string, string>
+}
+
+export type AssetRegistryLookup = Map<string, AssetRegistryEntry>
 
 const DURATION_RE = /^(\d+(?:\.\d+)?)\s*(ms|s|m)?$/i
 
@@ -38,7 +43,7 @@ function stripHtmlComments(html: string): string {
 }
 
 function extractHtmlAttribute(tag: string, attrName: string): string | null {
-  const re = new RegExp(`\\b${attrName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i')
+  const re = new RegExp(`(?:^|\\s)${attrName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i')
   const match = re.exec(tag)
   return match ? (match[1] ?? match[2] ?? match[3] ?? '').trim() : null
 }
@@ -53,7 +58,7 @@ export function normalizeRelativeCompositionPath(raw: string): string | null {
 
 export function parseMountedCompositionsFromIndexHtml(indexHtml: string): MountedCompositionTag[] {
   const cleaned = stripHtmlComments(indexHtml)
-  const tags = cleaned.match(/<[a-zA-Z0-9-]+\b[^>]*\bdata-composition-src\s*=[^>]*>/gi) ?? []
+  const tags = cleaned.match(/<[a-zA-Z0-9-]+\b[^>]*\sdata-composition-src\s*=[^>]*>/gi) ?? []
   const mounted: MountedCompositionTag[] = []
   for (const tag of tags) {
     const rawSrc = extractHtmlAttribute(tag, 'data-composition-src')
@@ -72,7 +77,7 @@ export function parseMountedCompositionsFromIndexHtml(indexHtml: string): Mounte
 
 export function parseCompositionDurationFromHtml(html: string): number | null {
   const cleaned = stripHtmlComments(html)
-  const tags = cleaned.match(/<[a-zA-Z0-9-]+\b[^>]*\bdata-duration\s*=[^>]*>/gi) ?? []
+  const tags = cleaned.match(/<[a-zA-Z0-9-]+\b[^>]*\sdata-duration\s*=[^>]*>/gi) ?? []
   for (const tag of tags) {
     const rawDur = extractHtmlAttribute(tag, 'data-duration')
     const parsed = rawDur ? parseDurationSeconds(rawDur) : null
@@ -112,7 +117,11 @@ export async function readAssetRegistryLookup(
     if (typeof entry !== 'object' || entry === null) {
       continue
     }
-    const rec = entry as { id?: unknown; states?: Record<string, { file?: unknown }> }
+    const rec = entry as {
+      id?: unknown
+      defaultState?: unknown
+      states?: Record<string, { file?: unknown }>
+    }
     if (typeof rec.id !== 'string' || !rec.states || typeof rec.states !== 'object') {
       continue
     }
@@ -122,7 +131,10 @@ export async function readAssetRegistryLookup(
         statesMap.set(stateName, stateVal.file)
       }
     }
-    map.set(rec.id, statesMap)
+    map.set(rec.id, {
+      defaultState: typeof rec.defaultState === 'string' ? rec.defaultState : null,
+      states: statesMap
+    })
   }
   return map
 }
@@ -152,11 +164,20 @@ export async function isReferencedAssetAvailable(
     return true
   }
   const [assetId, stateName] = assetRef.split(':')
-  const states = assetRegistry.get(assetId)
-  const stateFile = stateName ? states?.get(stateName) : states?.values().next().value
-  return Boolean(
-    states && stateFile && (await checkContainedFileExists(projectDir, `assets/${stateFile}`))
-  )
+  const entry = assetRegistry.get(assetId)
+  if (!entry) {
+    return false
+  }
+  const targetState = stateName ?? entry.defaultState
+  const stateFile = targetState ? entry.states.get(targetState) : entry.states.values().next().value
+  const normalizedStatePath = stateFile ? normalizeRelativeCompositionPath(stateFile) : null
+  if (!normalizedStatePath) {
+    return false
+  }
+  const projectRelative = normalizedStatePath.startsWith('assets/')
+    ? normalizedStatePath
+    : `assets/${normalizedStatePath}`
+  return checkContainedFileExists(projectDir, projectRelative)
 }
 
 export async function readCompositionFileDurations(

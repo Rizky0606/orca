@@ -137,8 +137,11 @@ export class VideoStudioStyleStore {
       return { profile: null, revision: null, markdownDrift: false, driftedFiles: [] }
     }
     const profile = StyleProfileSchema.parse(JSON.parse(profileDisk.bytes.toString('utf8')))
-    const diff = await this.getStyleReconciliationDiff(projectId)
-    const driftedFiles = [...new Set(diff.diffs.map((entry) => entry.file))]
+    const diffs = computeStyleReconciliationDiff(
+      profile,
+      await readProjectStyleMarkdown(projectDir)
+    )
+    const driftedFiles = [...new Set(diffs.map((entry) => entry.file))]
     return {
       profile,
       revision: profileDisk.sha256,

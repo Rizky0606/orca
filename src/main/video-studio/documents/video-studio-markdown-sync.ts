@@ -124,17 +124,22 @@ function parseFrameBlock(
   const bullets = new Map<string, string>()
   const extra: Record<string, unknown> = {}
   let proseStartIndex = 0
+  let seenBullet = false
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i]
     if (!line.trim()) {
       proseStartIndex = i + 1
+      if (seenBullet) {
+        break
+      }
       continue
     }
     const bulletMatch = BULLET_LINE_RE.exec(line)
     if (!bulletMatch) {
       break
     }
+    seenBullet = true
     bullets.set(bulletMatch[1], bulletMatch[2])
     proseStartIndex = i + 1
   }

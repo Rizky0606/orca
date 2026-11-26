@@ -72,6 +72,9 @@ export function formatStoryboardMarkdown(
     if (frame.voiceover !== undefined) {
       lines.push(`- voiceover: ${JSON.stringify(frame.voiceover)}`)
     }
+    if (frame.lockedSections.length > 0) {
+      lines.push(`- locked_sections: ${frame.lockedSections.join(', ')}`)
+    }
     for (const [key, value] of Object.entries(frame.extra)) {
       lines.push(`- ${key}: ${formatExtraScalar(value)}`)
     }
