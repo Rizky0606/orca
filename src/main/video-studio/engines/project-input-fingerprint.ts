@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto'
 import { readdir, readFile } from 'node:fs/promises'
 import { extname, join, relative, sep } from 'node:path'
+import {
+  canonicalRealpath,
+  isWithinCanonicalRoot,
+  resolveContainedPath,
+  VIDEO_STUDIO_INVALID_PATH_ERROR
+} from '../video-studio-path-containment'
 import { HYPERFRAMES_PINNED_VERSION } from './hyperframes-cli-parsers'
 
 const FINGERPRINT_SKIP_DIRS = new Set(['.git', 'node_modules', '.orca', '.hyperframes', 'renders'])
@@ -13,30 +19,61 @@ const CONFIG_RELATIVE_PATHS = [
   'assets/asset-registry.json'
 ] as const
 
+export type ProjectInputFingerprintOptions = {
+  engineConfig?: unknown
+  runtimeIdentity?: string
+}
+
+function stableJsonSerialize(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value)
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableJsonSerialize(item)).join(',')}]`
+  }
+  const record = value as Record<string, unknown>
+  const keys = Object.keys(record).sort()
+  const parts = keys
+    .filter((key) => record[key] !== undefined)
+    .map((key) => `${JSON.stringify(key)}:${stableJsonSerialize(record[key])}`)
+  return `{${parts.join(',')}}`
+}
+
 async function collectFingerprintFiles(
-  rootDir: string,
+  rootReal: string,
   currentDir: string,
   out: string[]
 ): Promise<void> {
   const entries = await readdir(currentDir, { withFileTypes: true }).catch(() => [])
   for (const entry of entries) {
+    const full = join(currentDir, entry.name)
+    if (entry.isSymbolicLink()) {
+      const targetReal = await canonicalRealpath(full).catch(() => null)
+      if (!targetReal || !isWithinCanonicalRoot(rootReal, targetReal, false)) {
+        throw new Error(VIDEO_STUDIO_INVALID_PATH_ERROR)
+      }
+      continue
+    }
     if (entry.isDirectory()) {
       if (!FINGERPRINT_SKIP_DIRS.has(entry.name)) {
-        await collectFingerprintFiles(rootDir, join(currentDir, entry.name), out)
+        await collectFingerprintFiles(rootReal, full, out)
       }
       continue
     }
     if (!entry.isFile()) {
       continue
     }
-    const rel = relative(rootDir, join(currentDir, entry.name)).split(sep).join('/')
+    const rel = relative(rootReal, full).split(sep).join('/')
     if (EXECUTABLE_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
       out.push(rel)
     }
   }
 }
 
-export async function computeProjectInputFingerprint(projectDir: string): Promise<{
+export async function computeProjectInputFingerprint(
+  projectDir: string,
+  options: ProjectInputFingerprintOptions = {}
+): Promise<{
   inputFingerprint: string
   revisions: {
     compositionSha256: string
@@ -44,9 +81,10 @@ export async function computeProjectInputFingerprint(projectDir: string): Promis
     assetsSha256?: string
   }
 }> {
+  const rootReal = await canonicalRealpath(projectDir).catch(() => projectDir)
   const fileSet = new Set<string>()
   const collected: string[] = []
-  await collectFingerprintFiles(projectDir, projectDir, collected)
+  await collectFingerprintFiles(rootReal, rootReal, collected)
   for (const rel of collected) {
     fileSet.add(rel)
   }
@@ -54,16 +92,20 @@ export async function computeProjectInputFingerprint(projectDir: string): Promis
     fileSet.add(cfg)
   }
 
+  const runtimeIdentity = options.runtimeIdentity ?? `hyperframes@${HYPERFRAMES_PINNED_VERSION}`
   const sortedPaths = [...fileSet].sort()
   const masterHash = createHash('sha256')
-  masterHash.update(`runtime:hyperframes@${HYPERFRAMES_PINNED_VERSION}\0`)
+  masterHash.update(`runtime:${runtimeIdentity}\0`)
+  if (options.engineConfig !== undefined) {
+    masterHash.update(`engineConfig:${stableJsonSerialize(options.engineConfig)}\0`)
+  }
 
   const compositionHash = createHash('sha256')
   let styleSha256: string | undefined
   let assetsSha256: string | undefined
 
   for (const rel of sortedPaths) {
-    const abs = join(projectDir, ...rel.split('/'))
+    const abs = await resolveContainedPath(rootReal, rel)
     const bytes = await readFile(abs).catch(() => null)
     if (bytes === null) {
       continue

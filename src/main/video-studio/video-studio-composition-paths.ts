@@ -40,6 +40,27 @@ export function resolveVideoStudioProjectsRoot(profileDir: string): string {
 }
 
 /**
+ * Returns the host-managed security directory strictly outside project directories.
+ */
+export function resolveHostVideoSecurityDir(profileDir: string): string {
+  return join(resolve(profileDir), 'video-studio', 'security')
+}
+
+/**
+ * Returns the host-managed shared StyleProfile library directory.
+ */
+export function resolveHostVideoStylesDir(profileDir: string): string {
+  return join(resolve(profileDir), 'video-studio', 'styles')
+}
+
+/**
+ * Returns the host-managed shared Asset library directory.
+ */
+export function resolveHostVideoAssetsDir(profileDir: string): string {
+  return join(resolve(profileDir), 'video-studio', 'assets')
+}
+
+/**
  * Validates `projectId` against path traversal and resolves its per-project
  * directory under `<profileDir>/video-studio/projects/<projectId>`.
  */

@@ -4,9 +4,13 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   inspectVideoStudioCompositionState,
+  resolveHostVideoAssetsDir,
+  resolveHostVideoSecurityDir,
+  resolveHostVideoStylesDir,
   resolveVideoStudioProjectDir,
   resolveVideoStudioRenderOutputFile
 } from './video-studio-composition-paths'
+import { resolveContainedPath } from './video-studio-path-containment'
 import { scaffoldHyperFramesComposition } from './video-studio-hyperframes-template'
 
 const mockProject = {
@@ -50,6 +54,44 @@ describe('video studio composition paths containment', () => {
       )
     }
     expect(resolveVideoStudioRenderOutputFile(projectDir, 'render-1.mp4')).toContain('render-1.mp4')
+  })
+
+  it('resolves host security, styles, and assets directories under profileDir/video-studio', () => {
+    expect(resolveHostVideoSecurityDir(userDataPath)).toBe(
+      join(userDataPath, 'video-studio', 'security')
+    )
+    expect(resolveHostVideoStylesDir(userDataPath)).toBe(
+      join(userDataPath, 'video-studio', 'styles')
+    )
+    expect(resolveHostVideoAssetsDir(userDataPath)).toBe(
+      join(userDataPath, 'video-studio', 'assets')
+    )
+  })
+
+  it('rejects traversal, NUL, drive/UNC prefixes, and mixed separators in resolveContainedPath', async () => {
+    const projectDir = resolveVideoStudioProjectDir(userDataPath, mockProject.id)
+    await mkdir(projectDir, { recursive: true })
+
+    for (const bad of [
+      '',
+      '../escape.html',
+      'compositions/../../escape.html',
+      'compositions/bad\0.html',
+      'C:\\Windows\\System32\\cmd.exe',
+      'C:relative.txt',
+      '\\\\server\\share\\file.txt',
+      '//server/share/file.txt',
+      '/etc/passwd',
+      'compositions\\..\\escape.html',
+      'compositions/sub\\file.html'
+    ]) {
+      await expect(resolveContainedPath(projectDir, bad)).rejects.toThrow(
+        'video_studio_invalid_path'
+      )
+    }
+
+    const valid = await resolveContainedPath(projectDir, 'compositions/01-opening.html')
+    expect(valid).toContain('01-opening.html')
   })
 })
 
