@@ -109,25 +109,35 @@ export const VideoStudioApproveProjectExecutionResult = z.object({
 
 // ─── Storyboard Frame Schemas ─────────────────────────────────────────────────
 
-export const StoryboardFrameInputSchema = z.strictObject({
-  sceneId: SceneIdSchema.optional(),
+const StoryboardFrameFieldsSchema = z.strictObject({
+  sceneId: SceneIdSchema,
   title: z.string().trim().min(1),
-  status: SceneStatusSchema.default('outline'),
+  status: SceneStatusSchema,
   duration: SceneDurationSchema,
   transitionIn: z.string().trim().min(1).optional(),
-  engine: VideoStudioEngineSchema.default('hyperframes'),
+  engine: VideoStudioEngineSchema,
   src: z.string().trim().min(1).optional(),
-  assets: z.array(z.string().trim().min(1)).default([]),
-  motionPresets: z.array(z.string().trim().min(1)).default([]),
+  assets: z.array(z.string().trim().min(1)),
+  motionPresets: z.array(z.string().trim().min(1)),
   camera: z.string().trim().min(1).optional(),
   narrativeRole: z.string().trim().min(1).optional(),
   voiceover: z.string().optional(),
   notes: z.string().optional(),
-  lockedSections: z.array(z.string().trim().min(1)).default([]),
-  extra: z.record(z.string(), z.unknown()).default({})
+  lockedSections: z.array(z.string().trim().min(1)),
+  extra: z.record(z.string(), z.unknown())
 })
 
-export const StoryboardFramePatchSchema = StoryboardFrameInputSchema.omit({ sceneId: true })
+export const StoryboardFrameInputSchema = StoryboardFrameFieldsSchema.extend({
+  sceneId: SceneIdSchema.optional(),
+  status: SceneStatusSchema.default('outline'),
+  engine: VideoStudioEngineSchema.default('hyperframes'),
+  assets: z.array(z.string().trim().min(1)).default([]),
+  motionPresets: z.array(z.string().trim().min(1)).default([]),
+  lockedSections: z.array(z.string().trim().min(1)).default([]),
+  extra: z.record(z.string(), z.unknown()).default({})
+}).strict()
+
+export const StoryboardFramePatchSchema = StoryboardFrameFieldsSchema.omit({ sceneId: true })
   .partial()
   .strict()
 

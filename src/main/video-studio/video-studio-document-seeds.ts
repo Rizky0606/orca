@@ -4,6 +4,7 @@ import {
   type VideoStudioProject
 } from '../../shared/video-studio/video-studio-project'
 import type { StyleProfile } from '../../shared/video-studio/video-studio-style-contract'
+import { assertSafeStyleProfileTokens } from './style/style-token-validation'
 
 /** Escapes HTML special characters in user-derived strings embedded in HTML or Markdown seeds. */
 export function escapeHtml(text: string): string {
@@ -30,6 +31,7 @@ export function buildDocumentSeeds(
   project: VideoStudioProject,
   styleProfile: StyleProfile
 ): Record<string, string> {
+  assertSafeStyleProfileTokens(styleProfile)
   const { width, height } = videoStudioDimensionsForAspectRatio(project.aspectRatio)
   const safeTitle = safeInlineText(project.title)
   const safePrompt = escapeHtml(project.prompt.trim() || 'Describe the core narrative and visuals.')

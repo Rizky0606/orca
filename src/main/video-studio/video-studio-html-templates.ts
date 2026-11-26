@@ -3,6 +3,7 @@ import {
   type VideoStudioProject
 } from '../../shared/video-studio/video-studio-project'
 import type { StyleProfile } from '../../shared/video-studio/video-studio-style-contract'
+import { assertSafeStyleProfileTokens } from './style/style-token-validation'
 import { escapeHtml } from './video-studio-document-seeds'
 
 export const MAIN_COMPOSITION_ID = 'video-studio-main'
@@ -20,6 +21,7 @@ function buildGoogleFontsUrl(styleProfile: StyleProfile): string {
 
 /** Builds the root `index.html` orchestrator mounting `compositions/01-opening.html`. */
 export function buildIndexHtml(project: VideoStudioProject, styleProfile: StyleProfile): string {
+  assertSafeStyleProfileTokens(styleProfile)
   const { width, height } = videoStudioDimensionsForAspectRatio(project.aspectRatio)
   const safeTitle = escapeHtml(project.title)
   const safePrompt = escapeHtml(
@@ -114,6 +116,7 @@ export function buildOpeningCompositionHtml(
   project: VideoStudioProject,
   styleProfile: StyleProfile
 ): string {
+  assertSafeStyleProfileTokens(styleProfile)
   const { width, height } = videoStudioDimensionsForAspectRatio(project.aspectRatio)
   const safeTitle = escapeHtml(project.title)
   const safePrompt = escapeHtml(
