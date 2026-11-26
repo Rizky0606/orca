@@ -15,6 +15,7 @@ import {
 import {
   MAX_IMPORT_STATE_BYTES,
   normalizeAssetSubPath,
+  toComparableRelativePath,
   toCanonicalProjectAssetPath
 } from './video-studio-asset-invariants'
 import { VideoStudioAssetStore } from './video-studio-asset-store'
@@ -640,5 +641,114 @@ describe('Dependency Scanner & Dynamic JS Reference Delete Guard', () => {
     expect(forcedUnlink.deletedFiles).toEqual(['assets/objects/ac_indoor_001/operating.svg'])
     await expect(stat(operatingAbs)).rejects.toThrow()
     expect((await stat(sharedAbs)).isFile()).toBe(true)
+  })
+
+  it('guards case-insensitive ASSET-REGISTRY.JSON and Shared.json/shared.json collisions, survives malformed STORYBOARD.md, reports multiple JS warnings, and flags duplicate registry IDs', async () => {
+    const store = new VideoStudioAssetStore(profileDir)
+
+    expect(() => normalizeAssetSubPath('ASSET-REGISTRY.JSON')).toThrow('video_studio_invalid_path')
+    expect(() => normalizeAssetSubPath('assets/Asset-Registry.json')).toThrow(
+      'video_studio_invalid_path'
+    )
+    expect(() => normalizeAssetSubPath('ASSETS')).toThrow('video_studio_invalid_path')
+    expect(toComparableRelativePath('assets/objects/Shared.json', 'win32')).toBe(
+      'assets/objects/shared.json'
+    )
+    expect(toComparableRelativePath('assets/objects/Shared.json', 'darwin')).toBe(
+      'assets/objects/shared.json'
+    )
+    expect(toComparableRelativePath('assets/objects/Shared.json', 'linux')).toBe(
+      'assets/objects/Shared.json'
+    )
+
+    // Case-variant shared dependency: Shared.json vs shared.json must NOT unlink on Windows/macOS
+    await writeFile(join(projectDir, 'assets', 'objects', 'Shared.json'), LABELS_JSON, 'utf8')
+    const sharedAbs = join(projectDir, 'assets', 'objects', 'Shared.json')
+    const a1 = await store.registerOrImportAsset({
+      scope: 'project',
+      projectId: mockProject.id,
+      asset: {
+        id: 'unit_a',
+        name: 'Unit A',
+        type: 'object',
+        format: 'svg',
+        tags: [],
+        defaultState: 'idle',
+        dependencies: ['assets/objects/Shared.json'],
+        stateFiles: { idle: { contentBase64: b64(CLOSED_SVG) } }
+      }
+    })
+    const a2 = await store.registerOrImportAsset({
+      scope: 'project',
+      projectId: mockProject.id,
+      expectedRevision: a1.revision,
+      asset: {
+        id: 'unit_b',
+        name: 'Unit B',
+        type: 'object',
+        format: 'svg',
+        tags: [],
+        defaultState: 'idle',
+        dependencies: [
+          process.platform === 'win32' || process.platform === 'darwin'
+            ? 'assets/objects/shared.json'
+            : 'assets/objects/Shared.json'
+        ],
+        stateFiles: { idle: { contentBase64: b64(CUTAWAY_SVG) } }
+      }
+    })
+
+    // Multiple dynamic concat/eval patterns in one script must ALL be reported
+    await writeFile(
+      join(projectDir, 'compositions', 'multi.js'),
+      [
+        `const p1 = 'assets/objects/' + id + '/closed.svg';`,
+        `const p2 = 'assets/characters/' + id + '/walk.svg';`,
+        `eval('loadA()');`,
+        `new Function('return 1')();`
+      ].join('\n'),
+      'utf8'
+    )
+
+    // Broken YAML frontmatter in STORYBOARD.md with fallback reference to unit_a
+    await writeFile(
+      join(projectDir, 'STORYBOARD.md'),
+      ['---', 'title: [unterminated', '---', '- assets: unit_a:idle', ''].join('\n'),
+      'utf8'
+    )
+    await expect(
+      store.removeProjectAsset({
+        projectId: mockProject.id,
+        assetId: 'unit_a',
+        force: false,
+        forceDeleteFiles: false,
+        expectedRevision: a2.revision
+      })
+    ).rejects.toThrow('video_studio_asset_in_use')
+
+    const removedA = await store.removeProjectAsset({
+      projectId: mockProject.id,
+      assetId: 'unit_a',
+      force: true,
+      forceDeleteFiles: true,
+      expectedRevision: a2.revision
+    })
+    expect(removedA.removed).toBe(true)
+    expect(removedA.deletedFiles).toEqual(['assets/objects/unit_a/idle.svg'])
+    expect((await stat(sharedAbs)).isFile()).toBe(true)
+    expect(
+      removedA.warnings.filter((w) => w.file === 'compositions/multi.js').length
+    ).toBeGreaterThanOrEqual(4)
+
+    // External duplicate IDs in assets/asset-registry.json surface in invariantErrors
+    const regPath = join(projectDir, 'assets', 'asset-registry.json')
+    const currentReg = JSON.parse(await readFile(regPath, 'utf8')) as {
+      schemaVersion: number
+      assets: unknown[]
+    }
+    currentReg.assets.push(currentReg.assets[0])
+    await writeFile(regPath, JSON.stringify(currentReg, null, 2), 'utf8')
+    const listedDup = await store.listProjectAssets({ projectId: mockProject.id })
+    expect(listedDup.invariantErrors.unit_b?.join(' ')).toMatch(/duplicate/i)
   })
 })

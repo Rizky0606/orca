@@ -21,6 +21,7 @@ import {
 import {
   assertAssetInvariantsAndFiles,
   resolveAssetRootFilePath,
+  safeJsonParse,
   VIDEO_STUDIO_ASSET_NOT_FOUND_ERROR,
   VIDEO_STUDIO_INVALID_STATE_FILE_ERROR
 } from './video-studio-asset-invariants'
@@ -45,14 +46,6 @@ export type LibraryAssetBundle = {
 }
 
 const VERSION_DIR_RE = /^v([1-9]\d*)$/
-
-function safeJsonParse(raw: string): unknown {
-  try {
-    return JSON.parse(raw)
-  } catch {
-    return null
-  }
-}
 
 async function readLibraryIndex(hostAssetsDir: string): Promise<HostAssetLibraryIndex | null> {
   const indexAbs = await resolveContainedPath(hostAssetsDir, 'library.json').catch(() => null)
@@ -97,10 +90,11 @@ async function collectDiskVersions(assetDir: string): Promise<number[]> {
   return versions.sort((a, b) => a - b)
 }
 
-export async function readLibraryAssetBundle(
+async function readLibraryAssetBundleWithIndex(
   hostAssetsDir: string,
   assetId: string,
-  requestedVersion?: number
+  requestedVersion: number | undefined,
+  index: HostAssetLibraryIndex | null
 ): Promise<LibraryAssetBundle | null> {
   const safeId = AssetIdSchema.safeParse(assetId)
   if (!safeId.success) {
@@ -114,7 +108,6 @@ export async function readLibraryAssetBundle(
   if (diskVersions.length === 0) {
     return null
   }
-  const index = await readLibraryIndex(hostAssetsDir)
   const indexedLatest = index?.assets[safeId.data]?.latestVersion
   const targetVersion =
     requestedVersion ??
@@ -146,6 +139,15 @@ export async function readLibraryAssetBundle(
   }
 }
 
+export async function readLibraryAssetBundle(
+  hostAssetsDir: string,
+  assetId: string,
+  requestedVersion?: number
+): Promise<LibraryAssetBundle | null> {
+  const index = await readLibraryIndex(hostAssetsDir)
+  return readLibraryAssetBundleWithIndex(hostAssetsDir, assetId, requestedVersion, index)
+}
+
 export async function listLibraryAssetRecords(
   hostAssetsDir: string,
   filter?: { type?: AssetType; tag?: string }
@@ -168,7 +170,9 @@ export async function listLibraryAssetRecords(
   }
   const out: MasterAssetRecord[] = []
   for (const id of candidateIds) {
-    const bundle = await readLibraryAssetBundle(rootReal, id).catch(() => null)
+    const bundle = await readLibraryAssetBundleWithIndex(rootReal, id, undefined, index).catch(
+      () => null
+    )
     if (!bundle) {
       continue
     }

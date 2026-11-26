@@ -3,26 +3,36 @@ import * as z from 'zod'
 import {
   MasterAssetRecordSchema,
   validateMasterAssetInvariants,
-  type AssetFormat,
   type AssetStateEntry,
-  type AssetType,
   type MasterAssetRecord
 } from '../../../shared/video-studio/video-studio-asset-contract'
 import { SafeResourceIdSchema } from '../../../shared/video-studio/video-studio-identifiers'
-import {
-  assertSafeRelativePath,
-  resolveContainedPath,
-  VIDEO_STUDIO_INVALID_PATH_ERROR
-} from '../video-studio-path-containment'
+import { VIDEO_STUDIO_INVALID_PATH_ERROR } from '../video-studio-path-containment'
 import { readFileWithSha256 } from '../video-studio-tx-journal'
+import {
+  resolveAssetRootFilePath,
+  toComparableRelativePath,
+  VIDEO_STUDIO_ASSET_INVARIANT_INVALID_ERROR,
+  VIDEO_STUDIO_INVALID_STATE_FILE_ERROR
+} from './asset-path-containment'
 
-export const MAX_IMPORT_STATE_BYTES = 15 * 1024 * 1024
-export const ASSET_REGISTRY_RELATIVE_PATH = 'assets/asset-registry.json'
-
-export const VIDEO_STUDIO_ASSET_NOT_FOUND_ERROR = 'video_studio_asset_not_found'
-export const VIDEO_STUDIO_ASSET_IN_USE_ERROR = 'video_studio_asset_in_use'
-export const VIDEO_STUDIO_ASSET_INVARIANT_INVALID_ERROR = 'video_studio_asset_invariant_invalid'
-export const VIDEO_STUDIO_INVALID_STATE_FILE_ERROR = 'video_studio_invalid_state_file'
+export {
+  ASSET_REGISTRY_RELATIVE_PATH,
+  assertSafeAssetStateKey,
+  collectAssetFilePaths,
+  decodeBoundedBase64,
+  defaultAssetStatePath,
+  MAX_IMPORT_STATE_BYTES,
+  normalizeAssetSubPath,
+  resolveAssetRootFilePath,
+  safeJsonParse,
+  toCanonicalProjectAssetPath,
+  toComparableRelativePath,
+  VIDEO_STUDIO_ASSET_IN_USE_ERROR,
+  VIDEO_STUDIO_ASSET_INVARIANT_INVALID_ERROR,
+  VIDEO_STUDIO_ASSET_NOT_FOUND_ERROR,
+  VIDEO_STUDIO_INVALID_STATE_FILE_ERROR
+} from './asset-path-containment'
 
 export const AssetRegistryDocumentSchema = z.object({
   schemaVersion: z.literal(1),
@@ -47,98 +57,24 @@ export type VerifiedAssetFiles = {
   fileBytesByPath: Map<string, { bytes: Buffer; sha256: string }>
 }
 
-const ASSET_SUBDIR_BY_TYPE: Record<AssetType, string> = {
-  object: 'objects',
-  character: 'characters',
-  environment: 'environments',
-  graphic: 'graphics',
-  model3d: 'models',
-  audio: 'audio',
-  video: 'video',
-  lottie: 'lottie',
-  custom: 'custom'
-}
-
-const BASE64_FORMAT_RE = /^[A-Za-z0-9+/]+={0,2}$/
-
-export function assertSafeAssetStateKey(stateKey: string): string {
-  const parsed = SafeResourceIdSchema.safeParse(stateKey)
-  if (!parsed.success) {
-    throw new Error(VIDEO_STUDIO_ASSET_INVARIANT_INVALID_ERROR, {
-      cause: new Error(`Invalid asset state key "${stateKey}"`)
-    })
+function findStagedFile(
+  stagedBytesByPath: ReadonlyMap<string, { bytes: Buffer; sha256: string }> | undefined,
+  canonicalPath: string
+): { bytes: Buffer; sha256: string } | undefined {
+  if (!stagedBytesByPath) {
+    return undefined
   }
-  return parsed.data
-}
-
-/** Normalizes `assets/...` or subfolder-relative asset paths and blocks registry/hidden escapes. */
-export function normalizeAssetSubPath(rawPath: string): string {
-  const segments = assertSafeRelativePath(rawPath, VIDEO_STUDIO_INVALID_PATH_ERROR)
-  if (segments.some((segment) => segment.startsWith('.'))) {
-    throw new Error(VIDEO_STUDIO_INVALID_PATH_ERROR)
+  const exact = stagedBytesByPath.get(canonicalPath)
+  if (exact) {
+    return exact
   }
-  const normalized = segments.join('/')
-  const subPath = normalized.startsWith('assets/') ? normalized.slice('assets/'.length) : normalized
-  if (!subPath || normalized === 'assets' || subPath === 'asset-registry.json') {
-    throw new Error(VIDEO_STUDIO_INVALID_PATH_ERROR)
-  }
-  return subPath
-}
-
-export function toCanonicalProjectAssetPath(rawPath: string): string {
-  return `assets/${normalizeAssetSubPath(rawPath)}`
-}
-
-export function defaultAssetStatePath(
-  assetId: string,
-  type: AssetType,
-  stateKey: string,
-  format: AssetFormat
-): string {
-  const safeState = assertSafeAssetStateKey(stateKey)
-  const subdir = ASSET_SUBDIR_BY_TYPE[type]
-  const ext = format === 'layered-svg' ? 'svg' : format === 'lottie' ? 'json' : format
-  return `assets/${subdir}/${assetId}/${safeState}.${ext}`
-}
-
-export function decodeBoundedBase64(rawBase64: string): Buffer {
-  const cleaned = rawBase64.replace(/\s+/g, '')
-  if (!cleaned || cleaned.length % 4 !== 0 || !BASE64_FORMAT_RE.test(cleaned)) {
-    throw new Error(VIDEO_STUDIO_INVALID_STATE_FILE_ERROR, {
-      cause: new Error('Invalid base64 asset payload')
-    })
-  }
-  const bytes = Buffer.from(cleaned, 'base64')
-  if (bytes.byteLength === 0 || bytes.byteLength > MAX_IMPORT_STATE_BYTES) {
-    throw new Error(VIDEO_STUDIO_INVALID_STATE_FILE_ERROR, {
-      cause: new Error(`Asset payload exceeds ${MAX_IMPORT_STATE_BYTES} bytes or is empty`)
-    })
-  }
-  return bytes
-}
-
-export async function resolveAssetRootFilePath(
-  rootDir: string,
-  rawPath: string
-): Promise<{ subPath: string; canonicalPath: string; absPath: string }> {
-  const subPath = normalizeAssetSubPath(rawPath)
-  const assetsRoot = await resolveContainedPath(rootDir, 'assets', VIDEO_STUDIO_INVALID_PATH_ERROR)
-  const absPath = await resolveContainedPath(assetsRoot, subPath, VIDEO_STUDIO_INVALID_PATH_ERROR)
-  return { subPath, canonicalPath: `assets/${subPath}`, absPath }
-}
-
-export function collectAssetFilePaths(asset: MasterAssetRecord): string[] {
-  const paths = new Set<string>()
-  for (const state of Object.values(asset.states)) {
-    paths.add(toCanonicalProjectAssetPath(state.file))
-    for (const dep of state.dependencies ?? []) {
-      paths.add(toCanonicalProjectAssetPath(dep))
+  const targetComparable = toComparableRelativePath(canonicalPath)
+  for (const [key, value] of stagedBytesByPath.entries()) {
+    if (toComparableRelativePath(key) === targetComparable) {
+      return value
     }
   }
-  for (const dep of asset.dependencies) {
-    paths.add(toCanonicalProjectAssetPath(dep))
-  }
-  return [...paths]
+  return undefined
 }
 
 async function resolveAndReadVerifiedFile(
@@ -162,7 +98,7 @@ async function resolveAndReadVerifiedFile(
       }
     }
   }
-  const staged = stagedBytesByPath?.get(resolved.canonicalPath)
+  const staged = findStagedFile(stagedBytesByPath, resolved.canonicalPath)
   if (staged) {
     return { ok: true, canonicalPath: resolved.canonicalPath, ...staged }
   }
@@ -196,6 +132,29 @@ async function resolveAndReadVerifiedFile(
     bytes: disk.bytes,
     sha256: disk.sha256
   }
+}
+
+async function verifyDependencyPaths(params: {
+  rootDir: string
+  dependencies: readonly string[]
+  stagedBytesByPath?: ReadonlyMap<string, { bytes: Buffer; sha256: string }>
+  issues: AssetIntegrityIssue[]
+  fileBytesByPath: Map<string, { bytes: Buffer; sha256: string }>
+}): Promise<string[]> {
+  const normalized: string[] = []
+  for (const dep of params.dependencies) {
+    const depRes = await resolveAndReadVerifiedFile(params.rootDir, dep, params.stagedBytesByPath)
+    if (!depRes.ok) {
+      params.issues.push(depRes.issue)
+    } else {
+      normalized.push(depRes.canonicalPath)
+      params.fileBytesByPath.set(depRes.canonicalPath, {
+        bytes: depRes.bytes,
+        sha256: depRes.sha256
+      })
+    }
+  }
+  return normalized
 }
 
 export async function verifyAssetInvariantsAndFiles(
@@ -248,35 +207,32 @@ export async function verifyAssetInvariantsAndFiles(
       }
     }
 
-    const normalizedStateDeps: string[] = []
-    for (const dep of stateEntry.dependencies ?? []) {
-      const depRes = await resolveAndReadVerifiedFile(rootDir, dep, stagedBytesByPath)
-      if (!depRes.ok) {
-        issues.push(depRes.issue)
-      } else {
-        normalizedStateDeps.push(depRes.canonicalPath)
-        fileBytesByPath.set(depRes.canonicalPath, { bytes: depRes.bytes, sha256: depRes.sha256 })
-      }
-    }
+    const normalizedStateDeps =
+      stateEntry.dependencies !== undefined
+        ? await verifyDependencyPaths({
+            rootDir,
+            dependencies: stateEntry.dependencies,
+            stagedBytesByPath,
+            issues,
+            fileBytesByPath
+          })
+        : undefined
 
     normalizedStates[stateKey] = {
       ...stateEntry,
       file: normalizedFile,
       ...(resolvedSha ? { sha256: resolvedSha } : {}),
-      ...(stateEntry.dependencies !== undefined ? { dependencies: normalizedStateDeps } : {})
+      ...(normalizedStateDeps !== undefined ? { dependencies: normalizedStateDeps } : {})
     }
   }
 
-  const normalizedDeps: string[] = []
-  for (const dep of asset.dependencies) {
-    const depRes = await resolveAndReadVerifiedFile(rootDir, dep, stagedBytesByPath)
-    if (!depRes.ok) {
-      issues.push(depRes.issue)
-    } else {
-      normalizedDeps.push(depRes.canonicalPath)
-      fileBytesByPath.set(depRes.canonicalPath, { bytes: depRes.bytes, sha256: depRes.sha256 })
-    }
-  }
+  const normalizedDeps = await verifyDependencyPaths({
+    rootDir,
+    dependencies: asset.dependencies,
+    stagedBytesByPath,
+    issues,
+    fileBytesByPath
+  })
 
   const normalizedAsset: MasterAssetRecord = {
     ...asset,

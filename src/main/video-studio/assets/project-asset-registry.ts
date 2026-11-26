@@ -16,18 +16,12 @@ import {
   AssetRegistryDocumentSchema,
   collectAssetFilePaths,
   resolveAssetRootFilePath,
+  safeJsonParse,
+  toComparableRelativePath,
   verifyAssetInvariantsAndFiles,
   VIDEO_STUDIO_ASSET_INVARIANT_INVALID_ERROR,
   type AssetRegistryDocument
 } from './video-studio-asset-invariants'
-
-function safeJsonParse(raw: string): unknown {
-  try {
-    return JSON.parse(raw)
-  } catch {
-    return null
-  }
-}
 
 export function assertExpectedRevision(actualSha: string | null, expectedRevision?: string): void {
   if (expectedRevision !== undefined && actualSha !== expectedRevision) {
@@ -60,6 +54,7 @@ export async function inspectProjectAssetRegistry(
   }
   const assets: MasterAssetRecord[] = []
   const invariantErrors: Record<string, string[]> = {}
+  const seenIds = new Set<string>()
   const rawAssets = (raw as { assets: unknown[] }).assets
   for (let i = 0; i < rawAssets.length; i += 1) {
     const entry = rawAssets[i]
@@ -76,10 +71,16 @@ export async function inspectProjectAssetRegistry(
     }
     const check = await verifyAssetInvariantsAndFiles(projectDir, parsedRecord.data)
     assets.push(check.normalizedAsset)
-    if (!check.ok) {
-      invariantErrors[parsedRecord.data.id] = check.issues.map(
-        (issue) => `[${issue.kind}] ${issue.message}`
-      )
+    const errors = check.ok ? [] : check.issues.map((issue) => `[${issue.kind}] ${issue.message}`)
+    if (seenIds.has(parsedRecord.data.id)) {
+      errors.push(`[invalid-invariant] Duplicate asset id "${parsedRecord.data.id}" in registry`)
+    }
+    seenIds.add(parsedRecord.data.id)
+    if (errors.length > 0) {
+      invariantErrors[parsedRecord.data.id] = [
+        ...(invariantErrors[parsedRecord.data.id] ?? []),
+        ...errors
+      ]
     }
   }
   return { assets, warnings, invariantErrors, revision: disk.sha256 }
@@ -103,6 +104,12 @@ export async function readProjectRegistryForMutation(
       cause: new Error('Malformed assets/asset-registry.json')
     })
   }
+  const uniqueIds = new Set(parsedDoc.data.assets.map((asset) => asset.id))
+  if (uniqueIds.size !== parsedDoc.data.assets.length) {
+    throw new Error(VIDEO_STUDIO_ASSET_INVARIANT_INVALID_ERROR, {
+      cause: new Error('Duplicate asset id in assets/asset-registry.json')
+    })
+  }
   return { sha256: disk.sha256, doc: parsedDoc.data }
 }
 
@@ -114,13 +121,13 @@ export async function collectExclusiveDeleteOps(
   const stillUsed = new Set<string>()
   for (const asset of remaining) {
     for (const path of collectAssetFilePaths(asset)) {
-      stillUsed.add(path)
+      stillUsed.add(toComparableRelativePath(path))
     }
   }
   const deletedFiles: string[] = []
   const deleteOps: TransactionFileOperation[] = []
   for (const canonicalPath of collectAssetFilePaths(target)) {
-    if (stillUsed.has(canonicalPath)) {
+    if (stillUsed.has(toComparableRelativePath(canonicalPath))) {
       continue
     }
     const resolved = await resolveAssetRootFilePath(projectDir, canonicalPath).catch(() => null)
