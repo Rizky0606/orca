@@ -3,7 +3,10 @@ import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { computeProjectInputFingerprint } from './engines/project-input-fingerprint'
+import {
+  computeProjectInputFingerprint,
+  stableJsonSerialize
+} from './engines/project-input-fingerprint'
 import { resolveVideoStudioProjectDir } from './video-studio-composition-paths'
 import { resolveContainedPath } from './video-studio-path-containment'
 import {
@@ -357,6 +360,47 @@ describe('VideoStudioTransactionCoordinator and recovery', () => {
     )
     expect(conflict.reason).toBe('external_modification')
   })
+
+  it('always acquires deterministic fallback project lock when projectId is omitted so concurrent transactions serialize cleanly', async () => {
+    await writeFile(join(projectDir, 'a.txt'), 'init-a', 'utf8')
+    await writeFile(join(projectDir, 'b.txt'), 'init-b', 'utf8')
+    const locks = new VideoStudioLockCoordinator()
+    const tx = new VideoStudioTransactionCoordinator(locks)
+    const timeline: string[] = []
+
+    const p1 = tx.runProjectTransaction({
+      projectDir,
+      operations: [{ relativePath: 'a.txt', content: 'next-a', expectedSha256: sha256('init-a') }],
+      onPhase: async (phase) => {
+        if (phase === 'preparing') {
+          expect(locks.getHeldLocks()).toHaveLength(1)
+          expect(locks.getHeldLocks()[0]).toMatch(/^project:dir-[a-f0-9]{32}$/)
+          timeline.push('tx1:start')
+          await new Promise((r) => setTimeout(r, 20))
+        } else if (phase === 'committed') {
+          timeline.push('tx1:end')
+        }
+      }
+    })
+
+    const p2 = tx.runProjectTransaction({
+      projectDir,
+      operations: [{ relativePath: 'b.txt', content: 'next-b', expectedSha256: sha256('init-b') }],
+      onPhase: async (phase) => {
+        if (phase === 'preparing') {
+          expect(locks.getHeldLocks()).toHaveLength(1)
+          timeline.push('tx2:start')
+        } else if (phase === 'committed') {
+          timeline.push('tx2:end')
+        }
+      }
+    })
+
+    await Promise.all([p1, p2])
+    expect(timeline).toEqual(['tx1:start', 'tx1:end', 'tx2:start', 'tx2:end'])
+    expect(await readFile(join(projectDir, 'a.txt'), 'utf8')).toBe('next-a')
+    expect(await readFile(join(projectDir, 'b.txt'), 'utf8')).toBe('next-b')
+  })
 })
 
 describe('VideoStudioLockCoordinator canonical lock order', () => {
@@ -479,6 +523,7 @@ describe('Host-Managed Trust Store & TOCTOU verification', () => {
     ).rejects.toThrow('video_studio_execution_approval_required')
 
     // Mutating runtimeIdentity or engineConfig invalidates
+    expect(stableJsonSerialize([1, undefined])).toBe('[1,null]')
     await expect(
       trustStore.assertApprovedForExecution({
         projectId: 'proj-1',

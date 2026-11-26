@@ -3,7 +3,7 @@ import { mkdir, readFile, rm } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
 import { renameDurable } from '../filesystem/durable-file-write'
 import { VideoStudioLockCoordinator } from './video-studio-locks'
-import { resolveContainedPath } from './video-studio-path-containment'
+import { resolveCanonicalRoot, resolveContainedPath } from './video-studio-path-containment'
 import {
   readFileWithSha256,
   sha256Bytes,
@@ -186,16 +186,22 @@ async function verifyStagedAndBackupFilesOnDisk(
   return true
 }
 
+async function deriveFallbackProjectLockId(projectDir: string): Promise<string> {
+  const canonicalRoot = await resolveCanonicalRoot(projectDir)
+  const normalized = process.platform === 'win32' ? canonicalRoot.toLowerCase() : canonicalRoot
+  return `dir-${sha256Bytes(normalized).slice(0, 32)}`
+}
+
 /** Coordinates hash-verified, lock-ordered multi-file transactions under `<projectDir>/.orca/`. */
 export class VideoStudioTransactionCoordinator {
   constructor(private readonly lockCoordinator = new VideoStudioLockCoordinator()) {}
 
-  runProjectTransaction(params: ProjectTransactionParams): Promise<ProjectTransactionResult> {
-    const { projectId } = params
-    if (projectId && !this.lockCoordinator.isLockHeld(`project:${projectId}`)) {
-      return this.lockCoordinator.withProjectLock(projectId, () => this.executeTransaction(params))
+  async runProjectTransaction(params: ProjectTransactionParams): Promise<ProjectTransactionResult> {
+    const lockId = params.projectId ?? (await deriveFallbackProjectLockId(params.projectDir))
+    if (this.lockCoordinator.isLockHeld(`project:${lockId}`)) {
+      return this.executeTransaction(params)
     }
-    return this.executeTransaction(params)
+    return this.lockCoordinator.withProjectLock(lockId, () => this.executeTransaction(params))
   }
 
   private async executeTransaction(

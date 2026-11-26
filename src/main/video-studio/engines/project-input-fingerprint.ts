@@ -24,17 +24,28 @@ export type ProjectInputFingerprintOptions = {
   runtimeIdentity?: string
 }
 
-function stableJsonSerialize(value: unknown): string {
+export function stableJsonSerialize(value: unknown): string {
   if (value === null || typeof value !== 'object') {
-    return JSON.stringify(value)
+    return JSON.stringify(value) ?? 'null'
   }
   if (Array.isArray(value)) {
-    return `[${value.map((item) => stableJsonSerialize(item)).join(',')}]`
+    return `[${value
+      .map((item) =>
+        item === undefined || typeof item === 'function' || typeof item === 'symbol'
+          ? 'null'
+          : stableJsonSerialize(item)
+      )
+      .join(',')}]`
   }
   const record = value as Record<string, unknown>
   const keys = Object.keys(record).sort()
   const parts = keys
-    .filter((key) => record[key] !== undefined)
+    .filter(
+      (key) =>
+        record[key] !== undefined &&
+        typeof record[key] !== 'function' &&
+        typeof record[key] !== 'symbol'
+    )
     .map((key) => `${JSON.stringify(key)}:${stableJsonSerialize(record[key])}`)
   return `{${parts.join(',')}}`
 }
