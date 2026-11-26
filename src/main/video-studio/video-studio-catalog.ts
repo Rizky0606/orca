@@ -141,7 +141,7 @@ class VideoStudioCatalog {
     })
     try {
       const projectDir = resolveVideoStudioProjectDir(this.profileDir, id)
-      await rm(projectDir, { recursive: true, force: true })
+      await rm(projectDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })
     } catch {
       // Best-effort cleanup after atomic catalog deletion
     }
