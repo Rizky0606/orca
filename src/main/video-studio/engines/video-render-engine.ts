@@ -5,6 +5,7 @@ import type {
   VideoStudioRenderRecord
 } from '../../../shared/video-studio/video-studio-project'
 import type {
+  VideoStudioCheckFinding,
   VideoStudioCheckResult,
   VideoStudioCompositionState,
   VideoStudioEngineStatus,
@@ -20,6 +21,7 @@ export type VideoProcessResult = {
 }
 
 export type VideoPreviewProcessHandle = {
+  pid?: number
   stop: () => Promise<void>
   exited: Promise<number | null>
 }
@@ -59,6 +61,8 @@ export type VideoRenderRequest = {
   fileName: string
   quality: VideoStudioRenderQuality
   project: VideoStudioProject
+  startSeconds?: number
+  endSeconds?: number
 }
 
 export type VideoRenderProgressUpdate = {
@@ -70,11 +74,109 @@ export type VideoRenderProgressUpdate = {
 export type VideoStudioPreviewHandle = {
   state: VideoStudioPreviewState
   stop: () => Promise<void>
+  pid?: number
+  projectName?: string
+  executablePath?: string
+  sessionId?: string
 }
 
-export type VideoRenderEngineAdapter = {
+export type EngineCapabilities = {
+  supportsPartialRender: boolean
+  supportsPreviewServer: boolean
+  supportsStructuredCheck: boolean
+  supportsFrameSeeking: boolean
+  supportsTransparentOutput: boolean
+  supportsImageSequence: boolean
+  supportsParametricComposition: boolean
+  supportsAudio: boolean
+  supportedFormats: readonly string[]
+  supportedAssetTypes: readonly string[]
+}
+
+export type ValidationStatus = 'passed' | 'failed' | 'partial' | 'error' | 'unsupported'
+
+export type ValidationFinding = VideoStudioCheckFinding & {
+  section?: string
+  time?: number
+  selector?: string
+  sourceFile?: string
+  fixHint?: string
+  suggestedColor?: string
+}
+
+export type ValidationSectionStatus = {
+  status: ValidationStatus
+  errorCount: number
+  warningCount: number
+  infoCount?: number
+}
+
+export type ValidationReport = {
+  status: ValidationStatus
+  engine: VideoStudioEngine
+  engineVersion?: string
+  inputFingerprint: string
+  revisions?: {
+    compositionSha256: string
+    styleSha256?: string
+    assetsSha256?: string
+  }
+  stale?: boolean
+  findings: ValidationFinding[]
+  skippedChecks: string[]
+  sectionStatuses: Record<string, ValidationSectionStatus>
+  productionGate: {
+    allowed: boolean
+    blockingReasons: string[]
+  }
+  summary: string
+  checkedAt: number
+  durationMs?: number
+  browserSkipped?: boolean
+  snapshots?: {
+    enabled: boolean
+    files: string[]
+    findingFiles: string[]
+  }
+}
+
+export type VideoEngineCheckResult = VideoStudioCheckResult & ValidationReport
+
+export type HyperFramesVersionCompatibility = 'exact' | 'unverified' | 'missing'
+
+export type HyperFramesEnvironmentReport = VideoStudioEngineStatus & {
+  pinnedVersion?: string
+  detectedVersion?: string
+  versionCompatibility?: HyperFramesVersionCompatibility
+  executablePath?: string
+  resolutionSource?: 'managed' | 'local-bin' | 'path' | 'npx' | 'missing'
+  missingDetails?: string[]
+}
+
+export type VideoCheckOptions = {
+  signal?: AbortSignal
+  browser?: boolean
+}
+
+export type VideoPreviewStartOptions = {
+  signal?: AbortSignal
+  forceNew?: boolean
+  port?: number
+}
+
+export type VideoProbeOptions = {
+  projectDir?: string
+  managedPaths?: readonly string[]
+}
+
+export type VideoEngineAdapter = {
   readonly id: VideoStudioEngine
-  probeEnvironment: (deps: VideoEngineProcessDeps) => Promise<VideoStudioEngineStatus>
+  readonly targetVersion?: string
+  capabilities?: () => EngineCapabilities
+  probeEnvironment: (
+    deps: VideoEngineProcessDeps,
+    options?: VideoProbeOptions
+  ) => Promise<HyperFramesEnvironmentReport>
   scaffoldProject: (
     projectDir: string,
     project: VideoStudioProject,
@@ -83,13 +185,13 @@ export type VideoRenderEngineAdapter = {
   checkProject: (
     projectDir: string,
     deps: VideoEngineProcessDeps,
-    signal?: AbortSignal
-  ) => Promise<VideoStudioCheckResult>
+    signalOrOptions?: AbortSignal | VideoCheckOptions
+  ) => Promise<VideoEngineCheckResult>
   startPreview: (
     projectDir: string,
     deps: VideoEngineProcessDeps,
     onExit: () => void,
-    signal?: AbortSignal
+    signalOrOptions?: AbortSignal | VideoPreviewStartOptions
   ) => Promise<VideoStudioPreviewHandle>
   renderProject: (
     projectDir: string,
@@ -99,3 +201,5 @@ export type VideoRenderEngineAdapter = {
     signal?: AbortSignal
   ) => Promise<VideoStudioRenderRecord>
 }
+
+export type VideoRenderEngineAdapter = VideoEngineAdapter

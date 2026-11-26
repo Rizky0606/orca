@@ -20,17 +20,10 @@ import {
   parseWindowsDriveMountPoints,
   withoutWindowsDriveMountDirs
 } from '../../wsl/filesystem/wsl-guest-windows-drive-path'
+import { buildSanitizedVideoEngineEnv } from './video-engine-env-allowlist'
 import type { VideoEngineProcessDeps, VideoProcessResult } from './video-render-engine'
 
-function copyDefinedProcessEnv(): Record<string, string> {
-  const env: Record<string, string> = {}
-  for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined) {
-      env[key] = value
-    }
-  }
-  return env
-}
+export { buildSanitizedVideoEngineEnv }
 
 async function resolveExecutable(program: string, env: NodeJS.ProcessEnv): Promise<string> {
   if (process.platform === 'win32') {
@@ -78,7 +71,7 @@ async function stopChildTree(child: ReturnType<typeof spawnProcess>): Promise<vo
 
 export function createHostVideoEngineDeps(): VideoEngineProcessDeps {
   let cachedWslMounts: readonly string[] | null = null
-  let latestEnv: NodeJS.ProcessEnv | null = null
+  let latestEnv: Record<string, string> | null = null
 
   const readWslMountsAsync = async (): Promise<readonly string[]> => {
     if (cachedWslMounts !== null) {
@@ -106,8 +99,8 @@ export function createHostVideoEngineDeps(): VideoEngineProcessDeps {
     return cachedWslMounts
   }
 
-  const getAsyncEnv = async (): Promise<NodeJS.ProcessEnv> => {
-    const env = copyDefinedProcessEnv()
+  const getAsyncEnv = async (): Promise<Record<string, string>> => {
+    const env = buildSanitizedVideoEngineEnv(process.env)
     if (process.platform === 'win32') {
       await mergePersistedWindowsPathAsync(env)
     } else {
@@ -230,11 +223,12 @@ export function createHostVideoEngineDeps(): VideoEngineProcessDeps {
       })
     },
     spawnPreviewStream: (spec) => {
+      const env = latestEnv ?? buildSanitizedVideoEngineEnv(process.env)
       const child = spawnProcess({
         program: spec.program,
         args: spec.args,
         cwd: spec.cwd,
-        env: latestEnv ?? process.env,
+        env,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: process.platform !== 'win32'
       })
@@ -263,6 +257,7 @@ export function createHostVideoEngineDeps(): VideoEngineProcessDeps {
         })
       })
       return {
+        pid: child.pid,
         stop: () => stopChildTree(child),
         exited
       }
