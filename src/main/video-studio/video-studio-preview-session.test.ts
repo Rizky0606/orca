@@ -602,6 +602,61 @@ describe('VideoStudioPreviewManager (6-factor identity verification)', () => {
     expect(rawStop).toHaveBeenCalledTimes(1)
   })
 
+  it('stops prior unpersisted handle on subsequent startPreview when creationTimeMs is null and honors expectedSessionId on stopPreview', async () => {
+    const rawStop1 = vi.fn().mockResolvedValue(undefined)
+    const rawStop2 = vi.fn().mockResolvedValue(undefined)
+    let launchCount = 0
+    const adapter: VideoRenderEngineAdapter = {
+      ...makeAdapter(),
+      startPreview: vi.fn(async () => {
+        launchCount += 1
+        return {
+          state: {
+            active: true,
+            url: `http://127.0.0.1:${43000 + launchCount}/#project/proj-1`,
+            port: 43000 + launchCount
+          },
+          pid: 51000 + launchCount,
+          projectName: 'proj-1',
+          executablePath: NODE_EXE,
+          stop: launchCount === 1 ? rawStop1 : rawStop2
+        }
+      })
+    }
+    const osControl: PreviewOsControl = {
+      inspectProcess: vi.fn(async (pid) => ({
+        pid,
+        creationTimeMs: null,
+        executablePath: NODE_EXE,
+        commandLine: `"${NODE_EXE}" "hyperframes.mjs" preview "${projectDirRealpath}"`,
+        cwd: projectDirRealpath
+      })),
+      findLoopbackPortOwner: vi.fn().mockResolvedValue(null),
+      probeHttpIdentity: vi.fn().mockResolvedValue(null),
+      terminateProcessTree: vi.fn().mockResolvedValue(true)
+    }
+
+    const manager = new VideoStudioPreviewManager(profileDir, { osControl })
+    const deps = makeDummyDeps()
+
+    const h1 = await manager.startPreview({ projectId: 'proj-1', projectDir, adapter, deps })
+    const h2 = await manager.startPreview({ projectId: 'proj-1', projectDir, adapter, deps })
+
+    expect(rawStop1).toHaveBeenCalledTimes(1)
+    expect(rawStop2).not.toHaveBeenCalled()
+    expect(h2.sessionId).not.toBe(h1.sessionId)
+    expect(manager.getPreviewState('proj-1')).toEqual(h2.state)
+
+    // Mismatched expectedSessionId must not tear down the newer unpersisted handle
+    await manager.stopPreview('proj-1', projectDir, { expectedSessionId: h1.sessionId })
+    expect(rawStop2).not.toHaveBeenCalled()
+    expect(manager.getPreviewState('proj-1')).toEqual(h2.state)
+
+    await manager.stopPreview('proj-1', projectDir, { expectedSessionId: h2.sessionId })
+    expect(rawStop2).toHaveBeenCalledTimes(1)
+    expect(manager.getPreviewState('proj-1')).toEqual({ active: false })
+  })
+
   it('skips full-table CIM scan and sets UTF-8 encoding in single-PID Windows CIM query when native start time is unavailable', async () => {
     const readTableFresh = vi.fn()
     const querySinglePid = vi.fn().mockResolvedValue({

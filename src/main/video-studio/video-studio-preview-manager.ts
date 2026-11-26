@@ -180,10 +180,12 @@ export class VideoStudioPreviewManager {
     if (verification.status === 'unhealthy' && verification.belongsToProject) {
       await this.osControl.terminateProcessTree(verification.record.pid).catch(() => false)
       await this.store.remove(params.projectId)
-      this.activeHandles.delete(params.projectId)
       forceNew = true
     } else if (verification.status === 'stale') {
       await this.store.remove(params.projectId)
+    }
+    if (existingActive) {
+      await existingActive.rawStop().catch(() => {})
       this.activeHandles.delete(params.projectId)
     }
 
@@ -215,13 +217,26 @@ export class VideoStudioPreviewManager {
       { forceNew, signal: params.signal }
     )
 
-    if (exitedEarly || this.disposed) {
-      await rawHandle.stop().catch(() => {})
+    let registered = false
+    const assertStillActive = async (): Promise<void> => {
+      const current = this.activeHandles.get(params.projectId)
+      const owned = registered ? current?.sessionId === sessionId : true
+      if (!exitedEarly && !this.disposed && owned) {
+        return
+      }
+      if (registered && current?.sessionId === sessionId) {
+        this.activeHandles.delete(params.projectId)
+      }
+      if (!exitedEarly || this.disposed) {
+        await rawHandle.stop().catch(() => {})
+      }
       await this.store.remove(params.projectId)
       throw new Error(
         this.disposed ? 'video_studio_preview_disposed' : 'video_studio_preview_exited'
       )
     }
+
+    await assertStillActive()
 
     const managedHandle = this.buildManagedHandle({
       projectId: params.projectId,
@@ -238,25 +253,11 @@ export class VideoStudioPreviewManager {
       handle: managedHandle,
       rawStop: () => rawHandle.stop()
     })
+    registered = true
 
     const pid = rawHandle.pid ?? 0
     const observed = pid > 0 ? await this.osControl.inspectProcess(pid) : null
-    if (
-      exitedEarly ||
-      this.disposed ||
-      this.activeHandles.get(params.projectId)?.sessionId !== sessionId
-    ) {
-      if (this.activeHandles.get(params.projectId)?.sessionId === sessionId) {
-        this.activeHandles.delete(params.projectId)
-      }
-      if (this.disposed) {
-        await rawHandle.stop().catch(() => {})
-      }
-      await this.store.remove(params.projectId)
-      throw new Error(
-        this.disposed ? 'video_studio_preview_disposed' : 'video_studio_preview_exited'
-      )
-    }
+    await assertStillActive()
 
     const executablePath = observed?.executablePath ?? rawHandle.executablePath ?? ''
     const creationTimeMs = observed?.creationTimeMs ?? null
@@ -285,10 +286,7 @@ export class VideoStudioPreviewManager {
         projectName: rawHandle.projectName ?? params.projectId,
         startedAt: Date.now()
       })
-      if (exitedEarly || this.activeHandles.get(params.projectId)?.sessionId !== sessionId) {
-        await this.store.remove(params.projectId)
-        throw new Error('video_studio_preview_exited')
-      }
+      await assertStillActive()
     }
 
     return managedHandle
@@ -306,10 +304,14 @@ export class VideoStudioPreviewManager {
       }
 
       const active = this.activeHandles.get(projectId)
-      if (active && verification.status === 'none') {
+      const sessionMatches =
+        !options.expectedSessionId || active?.sessionId === options.expectedSessionId
+      if (active && verification.status === 'none' && sessionMatches) {
         await active.rawStop().catch(() => {})
+        this.activeHandles.delete(projectId)
+      } else if (verification.status !== 'none') {
+        this.activeHandles.delete(projectId)
       }
-      this.activeHandles.delete(projectId)
       await this.store.remove(projectId)
       return { active: false }
     })
