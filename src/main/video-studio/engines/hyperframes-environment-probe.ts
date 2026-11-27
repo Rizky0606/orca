@@ -211,6 +211,14 @@ export async function probeHyperFramesEnvironment(
       versionCompatibility === 'unverified' && detectedVersion
         ? ` (CLI ${detectedVersion} is unverified; pinned to ${HYPERFRAMES_PINNED_VERSION})`
         : ''
+    const hasFfmpegIssue = detailList.some((item) => /\bff(mpeg|probe)\b/i.test(item))
+    const installHint = hasFfmpegIssue
+      ? process.platform === 'win32'
+        ? ' (Install via `winget install --id Gyan.FFmpeg -e`, place in C:\\ffmpeg\\bin, or set FFMPEG_PATH / HYPERFRAMES_FFMPEG_PATH.)'
+        : process.platform === 'darwin'
+          ? ' (Install via `brew install ffmpeg` or set FFMPEG_PATH / HYPERFRAMES_FFMPEG_PATH.)'
+          : ' (Install ffmpeg on PATH or set FFMPEG_PATH / HYPERFRAMES_FFMPEG_PATH.)'
+      : ''
     return {
       engine: 'hyperframes',
       available: false,
@@ -224,7 +232,7 @@ export async function probeHyperFramesEnvironment(
       executablePath: hfInvocation.program,
       resolutionSource: hfInvocation.source,
       summary: detailList.length
-        ? `Missing tools: ${detailList.join(', ')}. Install prerequisites and click Recheck.${versionNote}`
+        ? `Missing tools: ${detailList.join(', ')}. Install prerequisites and click Recheck.${versionNote}${installHint}`
         : `HyperFrames doctor reported incomplete environment setup. Click Recheck after fixing prerequisites.${versionNote}`
     }
   }
