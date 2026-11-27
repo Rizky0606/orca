@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import * as z from 'zod'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   resolveHostVideoAssetsDir,
@@ -742,10 +743,9 @@ describe('Dependency Scanner & Dynamic JS Reference Delete Guard', () => {
 
     // External duplicate IDs in assets/asset-registry.json surface in invariantErrors
     const regPath = join(projectDir, 'assets', 'asset-registry.json')
-    const currentReg = JSON.parse(await readFile(regPath, 'utf8')) as {
-      schemaVersion: number
-      assets: unknown[]
-    }
+    const currentReg = z
+      .object({ schemaVersion: z.number(), assets: z.array(z.unknown()) })
+      .parse(JSON.parse(await readFile(regPath, 'utf8')))
     currentReg.assets.push(currentReg.assets[0])
     await writeFile(regPath, JSON.stringify(currentReg, null, 2), 'utf8')
     const listedDup = await store.listProjectAssets({ projectId: mockProject.id })

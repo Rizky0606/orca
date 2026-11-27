@@ -711,13 +711,15 @@ it('enforces Trust Store approval, rejects stale fingerprints & TOCTOU, streams 
       expectedRevision: docsNow.revisions['SCRIPT.md']
     })
   ).resolves.toMatchObject({ ok: true })
+  // ast-grep-ignore: test-no-real-time-wait -- intentional negative settle window confirming TX suppression does not emit after debounceMs
   await new Promise((r) => setTimeout(r, 100))
   expect(
     streamed.filter(
       (evt) =>
         typeof evt === 'object' &&
         evt !== null &&
-        (evt as { type?: string }).type === 'projectFilesChanged'
+        'type' in evt &&
+        evt.type === 'projectFilesChanged'
     )
   ).toHaveLength(0)
 

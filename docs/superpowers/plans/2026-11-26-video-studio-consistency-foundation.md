@@ -15,6 +15,7 @@
 ---
 
 ## Global Constraints & Execution Rules
+
 - **Windows PowerShell 5.1:** Chain dependent shell commands using `; if ($LASTEXITCODE -eq 0) { ... }` (never `&&`).
 - **Vitest Invocation on Windows without MSVC C++ Build Tools:** `pnpm test` triggers `ensure-native-runtime.mjs --runtime=node`; iterate cleanly via `pnpm exec vitest run --config config/vitest.config.ts <paths> --maxWorkers=2`, run `pnpm tc:node` / `pnpm tc:web` / `pnpm run verify:rpc-params-catalog` / `pnpm run build:mobile-web` / `pnpm check:react-compiler-compat-ratchet`, and run `pnpm check:changed --base=main` as the final repository gate.
 - **Zod Mobile Tree-Shaking:** Every file under `src/shared/` MUST use `import * as z from 'zod'` cleanly.
@@ -48,6 +49,7 @@ Task 1 (Baseline Verification & Authentic HyperFrames 0.9.94 Capture + Scaffold 
 **Dependencies:** None (must execute before any production code edit).
 
 **Files:**
+
 - Create (Real CLI Captures): `src/main/video-studio/engines/__fixtures__/captured/hyperframes-version.txt`
 - Create (Real CLI Captures): `src/main/video-studio/engines/__fixtures__/captured/doctor-actual.json`
 - Create (Real CLI Captures): `src/main/video-studio/engines/__fixtures__/captured/init-check-no-browser.json`
@@ -61,6 +63,7 @@ Task 1 (Baseline Verification & Authentic HyperFrames 0.9.94 Capture + Scaffold 
 - Create (Explicitly Synthetic Edge Cases): `src/main/video-studio/engines/__fixtures__/synthetic/render-progress.txt`
 
 **Acceptance Criteria:**
+
 1. Worktree state is clean before Task 1 code starts; baseline Vitest (existing Video Studio suite), `tc:node`, `tc:web`, and `oxlint` pass before any code edit.
 2. Live outputs from installed `hyperframes 0.9.94` (`doctor --json`, `init`, `check --json --no-browser`, `check --json`, `preview --foreground --json --no-open`, `render`) are executed against a temporary directory and stored verbatim under `captured/`, strictly separated from `synthetic/` edge-case fixtures.
 3. Exact differences or confirmations vs Approved Spec (scaffold files `meta.json`, `hyperframes.json`, `package.json`, root `<template>`/`data-composition-src`, `window.__timelines` / `hyperframes` registration, `preview` JSON shape) are documented in `upstream-scaffold-report.md`.
@@ -70,6 +73,7 @@ Task 1 (Baseline Verification & Authentic HyperFrames 0.9.94 Capture + Scaffold 
 - [ ] **Step 1: Verify clean worktree baseline, Vitest baseline, Typechecks, and `oxlint` BEFORE touching code**
 
 Run in `C:\Coding\Project\orca\.worktrees\orca-ai-studio`:
+
 ```powershell
 Set-Location "C:\Coding\Project\orca\.worktrees\orca-ai-studio"
 git status --short
@@ -78,11 +82,13 @@ if ($LASTEXITCODE -eq 0) { pnpm tc:node }
 if ($LASTEXITCODE -eq 0) { pnpm tc:web }
 if ($LASTEXITCODE -eq 0) { pnpm exec oxlint src/main/video-studio src/shared/video-studio src/renderer/src/components/video-studio src/renderer/src/runtime/video-studio }
 ```
+
 Expected: All baseline checks exit `0`.
 
 - [ ] **Step 2: Capture authentic `hyperframes 0.9.94` CLI outputs and inspect scaffold structure against a disposable temp folder**
 
 Run in PowerShell:
+
 ```powershell
 $capDir = "C:\Coding\Project\orca\.worktrees\orca-ai-studio\src\main\video-studio\engines\__fixtures__\captured"
 $synDir = "C:\Coding\Project\orca\.worktrees\orca-ai-studio\src\main\video-studio\engines\__fixtures__\synthetic"
@@ -113,6 +119,7 @@ cmd /c "hyperframes render `"$tmp`" -o `"$tmp\out.mp4`" --quiet 2>&1" | Out-File
 # Record verbatim tree + key scaffold file shapes (meta.json, hyperframes.json, package.json, index.html, compositions/*) into upstream-scaffold-report.md
 Remove-Item -Recurse -Force $tmp
 ```
+
 Verify every captured file contains real output from `hyperframes 0.9.94` before proceeding (no BOM issues; normalize UTF-8 without BOM cleanly if needed).
 
 - [ ] **Step 3: Write clearly labeled synthetic edge-case fixtures under `synthetic/`**
@@ -132,6 +139,7 @@ git add "src/main/video-studio/engines/__fixtures__"; if ($LASTEXITCODE -eq 0) {
 **Dependencies:** Task 1 (verified CLI payloads).
 
 **Files:**
+
 - Modify: `src/main/video-studio/engines/video-render-engine.ts`
 - Modify: `src/main/video-studio/engines/hyperframes-cli-parsers.ts`
 - Modify: `src/main/video-studio/engines/hyperframes-environment-probe.ts`
@@ -145,6 +153,7 @@ git add "src/main/video-studio/engines/__fixtures__"; if ($LASTEXITCODE -eq 0) {
 - Create: `src/main/video-studio/video-studio-preview-session.test.ts`
 
 **Acceptance Criteria:**
+
 1. `HYPERFRAMES_PINNED_VERSION = '0.9.94'` enforces **exact string semver equality** (`detectedVersion === '0.9.94'`); deterministic runtime resolution checks Orca-managed/pinned executable before PATH (`versionCompatibility: 'exact' | 'unverified' | 'missing'`).
 2. `parseHyperFramesDoctorJson` handles actual `captured/doctor-actual.json` (`checks[]` + `_meta.version`) plus `synthetic/doctor-ready.json`.
 3. `parseHyperFramesCheckJson` handles `captured/init-check-no-browser.json`, `captured/init-check-browser.json`, and `synthetic/check-*.json`, dynamically discovering sections (`lint`, `runtime`, `layout`, `motion`, `contrast`, `craft`, `audio`, `hdr`, plus unknown sections with `findings[]`), evaluating strict precedence `unsupported > error > failed > partial > passed`, keeping `status` independent of `productionGate`, and attaching full `inputFingerprint`.
@@ -173,6 +182,7 @@ git add "src/main/video-studio/engines/__fixtures__"; if ($LASTEXITCODE -eq 0) {
 Set-Location "C:\Coding\Project\orca\.worktrees\orca-ai-studio"
 pnpm exec vitest run --config config/vitest.config.ts src/main/video-studio/engines/hyperframes-cli-parsers.test.ts src/main/video-studio/engines/host-video-engine-deps.test.ts src/main/video-studio/engines/hyperframes-engine-adapter.test.ts src/main/video-studio/video-studio-preview-session.test.ts --maxWorkers=2
 ```
+
 Expected: FAIL.
 
 - [ ] **Step 3: Implement `hyperframes-cli-parsers.ts`, `hyperframes-environment-probe.ts`, `hyperframes-engine-adapter.ts`, `host-video-engine-deps.ts`, `remotion-engine-adapter.ts`, `video-render-engine.ts`, and `video-studio-preview-manager.ts`**
@@ -185,6 +195,7 @@ Ensure `VideoStudioPreviewManager` stores authoritative state inside `<profileDi
 Set-Location "C:\Coding\Project\orca\.worktrees\orca-ai-studio"
 pnpm exec vitest run --config config/vitest.config.ts src/main/video-studio/engines/hyperframes-cli-parsers.test.ts src/main/video-studio/engines/host-video-engine-deps.test.ts src/main/video-studio/engines/hyperframes-engine-adapter.test.ts src/main/video-studio/video-studio-preview-session.test.ts --maxWorkers=2; if ($LASTEXITCODE -eq 0) { pnpm tc:node }
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit Task 2**
@@ -200,6 +211,7 @@ git add src/main/video-studio/engines/ src/main/video-studio/video-studio-previe
 **Dependencies:** Task 2.
 
 **Files:**
+
 - Modify: `src/shared/video-studio/video-studio-project.ts` (expand `workflowStage` enum to `['research', 'script', 'style', 'production']` while keeping defaults/backwards compatibility)
 - Create: `src/shared/video-studio/video-studio-validation-contract.ts`
 - Modify: `src/main/video-studio/engines/video-render-engine.ts` (re-export `ValidationStatus` / `ValidationReport` from `src/shared/video-studio/video-studio-validation-contract.ts`)
@@ -216,6 +228,7 @@ git add src/main/video-studio/engines/ src/main/video-studio/video-studio-previe
 **Critical Constraint:** All `src/shared/` modules MUST strictly use `import * as z from 'zod'`.
 
 **Acceptance Criteria:**
+
 1. `StyleProfileSchema` includes all 9 approved blocks verbatim: `visual`, `typography`, `camera`, `motion`, `effects`, `composition`, `subtitle`, `provenance`, `openMotionPackageRef`.
 2. `MotionPresetMetadataSchema` enforces `executionKind: 'executable' | 'knowledge-only' | 'planned'` and prevents reporting `knowledge-only` or `planned` presets as `executable`.
 3. `VideoStudioProjectSchema.workflowStage` supports `'research' | 'script' | 'style' | 'production'`.
@@ -227,6 +240,7 @@ git add src/main/video-studio/engines/ src/main/video-studio/video-studio-previe
 - [ ] **Step 1: Write failing contract tests (`src/shared/video-studio/video-studio-contracts.test.ts`)**
 
 Test:
+
 - Full `StyleProfileSchema` validation with `visual`, `typography`, `camera`, `motion`, `effects`, `composition`, `subtitle`, `provenance`, `openMotionPackageRef`.
 - `MotionPresetMetadataSchema` cleanly distinguishes `executable` vs `knowledge-only` vs `planned`.
 - `validateMasterAssetInvariants` checks `defaultState`, unique IDs, and acyclic `parentComponentId`.
@@ -239,6 +253,7 @@ Test:
 Set-Location "C:\Coding\Project\orca\.worktrees\orca-ai-studio"
 pnpm exec vitest run --config config/vitest.config.ts src/shared/video-studio/video-studio-contracts.test.ts src/shared/video-studio/video-studio-project.test.ts --maxWorkers=2
 ```
+
 Expected: FAIL.
 
 - [ ] **Step 3: Implement all approved shared schemas, OpenMotion contract seam, RPC contracts, and passthrough codes**
@@ -251,6 +266,7 @@ Keep `import * as z from 'zod'` in every `src/shared/` file. Verify no duplicate
 Set-Location "C:\Coding\Project\orca\.worktrees\orca-ai-studio"
 pnpm exec vitest run --config config/vitest.config.ts src/shared/video-studio/video-studio-contracts.test.ts src/shared/video-studio/video-studio-project.test.ts --maxWorkers=2; if ($LASTEXITCODE -eq 0) { pnpm run verify:rpc-params-catalog }; if ($LASTEXITCODE -eq 0) { pnpm tc:node }; if ($LASTEXITCODE -eq 0) { pnpm run build:mobile-web }
 ```
+
 Expected: All pass and mobile Zod tree-shaking passes.
 
 - [ ] **Step 5: Commit Task 3**
@@ -266,6 +282,7 @@ git add src/shared/video-studio/ src/main/video-studio/extensions/ src/main/vide
 **Dependencies:** Task 3.
 
 **Files:**
+
 - Create: `src/main/video-studio/video-studio-path-containment.ts`
 - Create: `src/main/video-studio/video-studio-transactions.ts`
 - Create: `src/main/video-studio/video-studio-trust-store.ts`
@@ -274,6 +291,7 @@ git add src/shared/video-studio/ src/main/video-studio/extensions/ src/main/vide
 - Create: `src/main/video-studio/video-studio-transactions.test.ts`
 
 **Acceptance Criteria:**
+
 1. Path containment rejects traversal (`..`), NUL, UNC/drive prefixes, mixed separators, symlinks, and Windows directory junctions escaping project/style/asset canonical roots.
 2. **Host-Managed Trust Store (`<profileDir>/video-studio/security/trust-store.json`):**
    - Stores authoritative trust decisions strictly OUTSIDE project directories, keyed by `(projectId, projectRootRealpath)`.
@@ -291,6 +309,7 @@ git add src/shared/video-studio/ src/main/video-studio/extensions/ src/main/vide
 - [ ] **Step 1: Write failing containment, host-managed trust store, full fingerprint, and comprehensive TX recovery tests**
 
 Create `src/main/video-studio/video-studio-transactions.test.ts` testing:
+
 1. Symlink & Windows junction containment bypass rejection.
 2. Transaction phases `'preparing' -> 'staged-verified' -> 'committing' -> 'committed'` + `expectedRevision` rejection (`video_studio_file_conflict`).
 3. New-file TX rollback (`existed: false` unlinks partially created file cleanly on failure).
@@ -309,6 +328,7 @@ Create `src/main/video-studio/video-studio-transactions.test.ts` testing:
 Set-Location "C:\Coding\Project\orca\.worktrees\orca-ai-studio"
 pnpm exec vitest run --config config/vitest.config.ts src/main/video-studio/video-studio-transactions.test.ts --maxWorkers=2
 ```
+
 Expected: FAIL.
 
 - [ ] **Step 3: Implement `video-studio-path-containment.ts`, `video-studio-transactions.ts`, `video-studio-trust-store.ts`, and update `video-studio-composition-paths.ts`**
@@ -321,6 +341,7 @@ Include `resolveHostVideoSecurityDir(profileDir)` and `withExecutionVerifiedSnap
 Set-Location "C:\Coding\Project\orca\.worktrees\orca-ai-studio"
 pnpm exec vitest run --config config/vitest.config.ts src/main/video-studio/video-studio-composition-paths.test.ts src/main/video-studio/video-studio-transactions.test.ts --maxWorkers=2; if ($LASTEXITCODE -eq 0) { pnpm tc:node }
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit Task 4**
@@ -336,12 +357,14 @@ git add src/main/video-studio/video-studio-path-containment.ts src/main/video-st
 **Dependencies:** Task 4 (containment & TX journal) & Task 1 (`upstream-scaffold-report.md`).
 
 **Files:**
+
 - Modify: `src/main/video-studio/video-studio-hyperframes-template.ts`
 - Modify: `src/main/video-studio/video-studio-composition-paths.ts`
 - Modify: `src/main/video-studio/video-studio-catalog.ts`
 - Modify: `src/main/video-studio/video-studio-composition-paths.test.ts`
 
 **Acceptance Criteria:**
+
 1. Fresh scaffolding matches Approved Spec Section 6 verbatim AND passes `hyperframes check --json --no-browser` from installed `0.9.94`:
    - `meta.json`, `hyperframes.json` (`paths: { blocks: "compositions", components: "compositions/components", assets: "assets" }`), `package.json`, `.gitignore`, `.orca/schema-version.json` (`schemaVersion: 2`), `BRIEF.md`, `frame.md`, `DESIGN.md`, `MOTION.md`, `STORYBOARD.md` (with `## Frame 1 — Opening`), `SCRIPT.md`, `styles/style-profile.json`, `assets/asset-registry.json`, `assets/{objects,characters,environments,graphics,models,audio,video}/`, `references/sources.json`, `references/research-notes.md`, `index.html` (`<template>` + `data-composition-src`), `compositions/01-opening.html`, `compositions/components/`.
 2. Stage 2 non-destructive upgrade (`overwrite: false`) NEVER deletes `scenes/` and NEVER overwrites custom `index.html`; upgrades `hyperframes.json` only when missing or matching exact legacy Stage 2 5-key object.
@@ -359,6 +382,7 @@ Test fresh scaffold files (`compositions/01-opening.html`, `assets/models/`, `ST
 Set-Location "C:\Coding\Project\orca\.worktrees\orca-ai-studio"
 pnpm exec vitest run --config config/vitest.config.ts src/main/video-studio/video-studio-composition-paths.test.ts --maxWorkers=2
 ```
+
 Expected: FAIL.
 
 - [ ] **Step 3: Implement modular scaffold & non-destructive legacy migration**
@@ -371,6 +395,7 @@ Update `video-studio-hyperframes-template.ts`, `video-studio-composition-paths.t
 Set-Location "C:\Coding\Project\orca\.worktrees\orca-ai-studio"
 pnpm exec vitest run --config config/vitest.config.ts src/main/video-studio/video-studio-composition-paths.test.ts src/main/video-studio/video-studio-catalog.test.ts --maxWorkers=2; if ($LASTEXITCODE -eq 0) { pnpm tc:node }
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit Task 5**
@@ -386,6 +411,7 @@ git add src/main/video-studio/video-studio-hyperframes-template.ts src/main/vide
 **Dependencies:** Task 4 & Task 5.
 
 **Files:**
+
 - Create: `src/main/video-studio/style/builtin-style-presets.ts` (`technical-explainer-01` + `clean-editorial-01` using FULL approved schema!)
 - Create: `src/main/video-studio/style/video-studio-style-store.ts`
 - Create: `src/main/video-studio/motion/builtin-motion-presets.ts`
@@ -394,6 +420,7 @@ git add src/main/video-studio/video-studio-hyperframes-template.ts src/main/vide
 - Create: `src/main/video-studio/documents/video-studio-documents.test.ts`
 
 **Acceptance Criteria:**
+
 1. `technical-explainer-01` faithfully encodes: warm cream/beige (`#F7F3E9` / `#EFE7D6`), charcoal `#1E242B`, blue `#2563EB` / orange `#EA580C` accents, yellow `#FACC15` highlight, `2.5d-semi-realistic`, bold sans-serif (`Space Grotesk` / `Inter` / `JetBrains Mono`), `orthographic` camera (`pan`, `zoom`, `match-cut`), `word-highlight` black-pill subtitles (`#111827`, `#FFFFFF`, `#FACC15`), plus full `effects`, `composition`, `provenance` fields.
 2. `clean-editorial-01` encodes distinct general-purpose visual tokens (`flat-editorial`, `2d-flat`, `anchor-rail` subtitles, warm paper `#FAF9F6`, cobalt `#1D4ED8`).
 3. `STORYBOARD.md` round-trips strictly via HyperFrames-compatible `## Frame N — Title` + snake_case bullets (`scene_id`, `status`, `duration`, `transition_in`, `engine`, `src`, `assets`, `motion_presets`, `camera`, `narrative_role`, `voiceover`), preserving `## Locked`, CRLF/LF, unknown keys, and permanent `scene_id` across frame reorders/renames; internally exposes clean camelCase `SceneSpec` objects.
@@ -412,6 +439,7 @@ Test verbatim HyperFrames `## Frame 1 — Remote Temperature Trigger` fixture pa
 Set-Location "C:\Coding\Project\orca\.worktrees\orca-ai-studio"
 pnpm exec vitest run --config config/vitest.config.ts src/main/video-studio/documents/video-studio-documents.test.ts --maxWorkers=2
 ```
+
 Expected: FAIL.
 
 - [ ] **Step 3: Implement Style Presets, Style Store, Motion Registry, `## Frame N` Markdown Sync, and Composition Drift**
@@ -424,6 +452,7 @@ Use `yaml` (`parse`/`stringify`) for targeted frontmatter sync while preserving 
 Set-Location "C:\Coding\Project\orca\.worktrees\orca-ai-studio"
 pnpm exec vitest run --config config/vitest.config.ts src/main/video-studio/documents/video-studio-documents.test.ts --maxWorkers=2; if ($LASTEXITCODE -eq 0) { pnpm tc:node }
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit Task 6**
@@ -439,11 +468,13 @@ git add src/main/video-studio/style/ src/main/video-studio/motion/ src/main/vide
 **Dependencies:** Task 4 & Task 6 (`parseStoryboardMarkdown`).
 
 **Files:**
+
 - Create: `src/main/video-studio/assets/video-studio-asset-invariants.ts`
 - Create: `src/main/video-studio/assets/video-studio-asset-store.ts`
 - Create: `src/main/video-studio/assets/video-studio-asset-registry.test.ts`
 
 **Acceptance Criteria:**
+
 1. Validates all invariants (`defaultState`, unique `components[].id`, acyclic `parentComponentId`, containment + existence + SHA-256 of state files and `dependencies[]`) on every import, update, library publish, and project apply.
 2. Immutable Host Library versioning (`assets/<assetId>/v1/`, `v2/`, ...), `saveProjectAssetToLibrary` under `HostAssetLibraryLock -> ProjectMutationQueue`, portable copies into projects updating `snapshotRevision`.
 3. Every mutation checks `expectedRevision` (`video_studio_file_conflict` on mismatch).
@@ -461,6 +492,7 @@ Ensure a test case places a template-literal dynamic reference `` `assets/object
 Set-Location "C:\Coding\Project\orca\.worktrees\orca-ai-studio"
 pnpm exec vitest run --config config/vitest.config.ts src/main/video-studio/assets/video-studio-asset-registry.test.ts --maxWorkers=2
 ```
+
 Expected: FAIL.
 
 - [ ] **Step 3: Implement `video-studio-asset-invariants.ts` and `video-studio-asset-store.ts`**
@@ -473,6 +505,7 @@ Keep bounded base64 limits, strict SHA-256 verification, and safe non-destructiv
 Set-Location "C:\Coding\Project\orca\.worktrees\orca-ai-studio"
 pnpm exec vitest run --config config/vitest.config.ts src/main/video-studio/assets/video-studio-asset-registry.test.ts --maxWorkers=2; if ($LASTEXITCODE -eq 0) { pnpm tc:node }
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit Task 7**
@@ -488,6 +521,7 @@ git add src/main/video-studio/assets/; if ($LASTEXITCODE -eq 0) { git commit -m 
 **Dependencies:** Tasks 2, 4, 5, 6, 7.
 
 **Files:**
+
 - Modify: `src/main/video-studio/video-studio-job-manager.ts`
 - Modify: `src/main/video-studio/video-studio-job-runner.ts`
 - Create: `src/main/video-studio/video-studio-file-watcher.ts`
@@ -498,6 +532,7 @@ git add src/main/video-studio/assets/; if ($LASTEXITCODE -eq 0) { git commit -m 
 - Create: `src/main/general-chat/research/general-chat-video-handoff.test.ts`
 
 **Acceptance Criteria:**
+
 1. `VideoStudioJobManager` enforces Host Trust Store (`<profileDir>/video-studio/security/trust-store.json`) with pre-spawn fingerprint re-verification before Chrome `checkProject` (`browser` mode), `startPreview`, AND `renderProject` (`video_studio_execution_approval_required` on unapproved/modified inputs).
 2. `video-studio-methods.ts` implements ALL RPC methods in `video-studio-rpc-contract.ts` using exact Spec names, `expectedRevision` checks, SSH mutation refusal, and zero raw host paths returned in RPC errors/payloads.
 3. `video-studio-file-watcher.ts` suppresses self-writes during TX commits and pushes `projectFilesChanged` events over `videoStudio.subscribeJobs`.
@@ -516,6 +551,7 @@ Cover `updateProjectScript`, `upsertResearchSource`, `deleteResearchSource`, `ap
 Set-Location "C:\Coding\Project\orca\.worktrees\orca-ai-studio"
 pnpm exec vitest run --config config/vitest.config.ts src/main/runtime/rpc/methods/video-studio/video-studio-methods.test.ts src/main/general-chat/research/general-chat-video-handoff.test.ts --maxWorkers=2
 ```
+
 Expected: FAIL.
 
 - [ ] **Step 3: Implement Watcher, JobManager Trust/Preview integration, RPC Handlers, Mobile allowlist & Handoff**
@@ -528,6 +564,7 @@ Wire all methods strictly against Approved Spec signatures and verify `video-stu
 Set-Location "C:\Coding\Project\orca\.worktrees\orca-ai-studio"
 pnpm exec vitest run --config config/vitest.config.ts src/main/video-studio/video-studio-job-manager.test.ts src/main/runtime/rpc/methods/video-studio/video-studio-methods.test.ts src/main/general-chat/research/general-chat-video-handoff.test.ts --maxWorkers=2; if ($LASTEXITCODE -eq 0) { pnpm run verify:rpc-params-catalog }; if ($LASTEXITCODE -eq 0) { pnpm tc:node }
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit Task 8**
@@ -543,6 +580,7 @@ git add src/main/video-studio/video-studio-job-manager.ts src/main/video-studio/
 **Dependencies:** Task 8.
 
 **Files:**
+
 - Modify: `src/renderer/src/runtime/video-studio/video-studio-client.ts`
 - Modify: `src/renderer/src/components/video-studio/VideoStudioWorkflow.tsx` (4 explicit stages: **Research**, **Script**, **Style**, **Production**)
 - Modify: `src/renderer/src/components/video-studio/VideoStudioPage.tsx`
@@ -562,6 +600,7 @@ git add src/main/video-studio/video-studio-job-manager.ts src/main/video-studio/
 - Modify: Localization catalogs updated by `pnpm run sync:localization-catalog` & `pnpm run sync:mobile-localization`
 
 **Acceptance Criteria:**
+
 1. Exact 4 workflow stages (`Research`, `Script`, `Style`, `Production`) navigate cleanly in desktop & narrow layouts (`min-h-11 @lg:min-h-9`) in both light and dark modes, adhering strictly to `docs/STYLEGUIDE.md`, `main.css` tokens, and `components/ui/` primitives.
 2. `Style` panel inspects & edits full approved `StyleProfile` fields (`visual`, `typography`, `camera`, `motion`, `effects`, `composition`, `subtitle`, `openMotionPackageRef`), handles Host Library save/duplicate, displays Markdown Drift Reconciliation banner, and shows Universal Motion Presets explicitly distinguishing `executable`, `knowledge-only`, and `planned`.
 3. `Production` panel surfaces Host-managed Trust approval banner before Chrome actions on untrusted/modified inputs, 5-state `ValidationReport` badge, `stale` warning, `productionGate` reasons, and external coding-agent file conflict reload notice.
@@ -578,6 +617,7 @@ git add src/main/video-studio/video-studio-job-manager.ts src/main/video-studio/
 Set-Location "C:\Coding\Project\orca\.worktrees\orca-ai-studio"
 pnpm run sync:localization-catalog; if ($LASTEXITCODE -eq 0) { pnpm run sync:mobile-localization }; if ($LASTEXITCODE -eq 0) { pnpm tc:web }; if ($LASTEXITCODE -eq 0) { pnpm check:react-compiler-compat-ratchet }; if ($LASTEXITCODE -eq 0) { pnpm run build:mobile-web }; if ($LASTEXITCODE -eq 0) { pnpm fixtures:shot VideoStudioPage }
 ```
+
 Expected: All checks exit 0 and screenshots look balanced in light/dark desktop & narrow viewports.
 
 - [ ] **Step 5: Commit Task 9**
@@ -593,6 +633,7 @@ git add src/renderer/src/runtime/video-studio/ src/renderer/src/components/video
 **Dependencies:** Tasks 1–9.
 
 **Files:**
+
 - Create: `src/main/video-studio/__fixtures__/consistency/fixture-a-ac-explainer/` (short ~2s entry + `8–10s` representative composition `compositions/01-hook.html`, `02-cutaway.html`, `03-operating.html`, `STORYBOARD.md` using `## Frame N — Title`, `assets/objects/ac_indoor_001/{closed,cutaway,operating}.svg` driven directly by `assets/asset-registry.json` + `styles/style-profile.json` CSS tokens)
 - Create: `src/main/video-studio/__fixtures__/consistency/fixture-b-inflation-explainer/` (`technical-explainer-01`, ~2s + `8–10s` compositions with `inflation_chart` SVG/HTML driven dynamically from `styles/style-profile.json` tokens)
 - Create: `src/main/video-studio/__fixtures__/consistency/fixture-c-product-showcase/` (`clean-editorial-01`, ~2s + `8–10s` compositions driven from `styles/style-profile.json` proving distinct visual output)
@@ -601,6 +642,7 @@ git add src/renderer/src/runtime/video-studio/ src/renderer/src/components/video
 - Create: `src/main/video-studio/video-studio-render-smoke.test.ts`
 
 **Acceptance Criteria:**
+
 1. **Two Render Test Tiers (`1080×1920`, `30 FPS`):**
    - **Tier 1 (Short Automated Smoke ~2s):** Verifies `hyperframes check` + `hyperframes render` MP4 output + `ffprobe` (`1080x1920`, `30 fps`, exact duration) across Fixtures A, B, C.
    - **Tier 2 (Representative Multi-Scene Visual Quality ~8–10s):** Verifies multi-scene `## Frame N` transitions (`cut` / slide), asset state transition (`closed` -> `cutaway` -> `operating`), **non-congruent `#fan` rotation angles** (angular rate `217deg/sec` so sample timestamps `0.5s`, `4.2s`, `7.9s` produce provably distinct visual orientations `108.5deg`, `911.4deg mod 360 = 191.4deg`, `1714.3deg mod 360 = 274.3deg`), deterministic seek comparison (rendering/seeking `t=4.2s` directly matches sequential frame pixel buffer), and golden-frame visual comparison.
@@ -627,6 +669,7 @@ pnpm exec vitest run --config config/vitest.config.ts src/shared/video-studio/ s
 Set-Location "C:\Coding\Project\orca\.worktrees\orca-ai-studio"
 pnpm check:changed --base=main
 ```
+
 Expected: Format, lint, typecheck, changed tests, RPC catalog, localization checks, React Compiler ratchet, and mobile web bundle pass with zero errors.
 
 - [ ] **Step 5: Commit Task 10**

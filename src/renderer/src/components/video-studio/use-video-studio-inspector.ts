@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslate } from '@/i18n/use-translate'
 import { subscribeVideoStudioJobsForTarget } from '@/runtime/video-studio/video-studio-client'
 import type { RuntimeClientTarget } from '../../../../shared/remote-runtime/host-catalog/runtime-client-target'
@@ -27,7 +27,6 @@ export function useVideoStudioInspector(params: {
 }): VideoStudioInspectorController {
   const { target, pairingRevision, projectId } = params
   const t = useTranslate()
-  const mounted = useRef(true)
   const [bundle, setBundle] = useState<InspectorBundleSnapshot>(EMPTY_BUNDLE)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -35,23 +34,14 @@ export function useVideoStudioInspector(params: {
   const [reloadTick, setReloadTick] = useState(0)
 
   useEffect(() => {
-    mounted.current = true
-    return () => {
-      mounted.current = false
-    }
-  }, [])
-
-  useEffect(() => {
-    setError(null)
-    setExternalChangedPaths([])
-    let cancelled = false
+    let active = true
     void fetchVideoStudioInspectorBundle(target, pairingRevision, projectId).then((next) => {
-      if (!cancelled) {
+      if (active) {
         setBundle(next)
       }
     })
     return () => {
-      cancelled = true
+      active = false
     }
   }, [target, pairingRevision, projectId, reloadTick])
 
@@ -89,7 +79,7 @@ export function useVideoStudioInspector(params: {
   const reload = () => setReloadTick((n) => n + 1)
   const run = createInspectorRunner({
     t,
-    isMounted: () => mounted.current,
+    isMounted: () => true,
     setBusy: setBusyAction,
     setError,
     reload

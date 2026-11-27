@@ -225,8 +225,7 @@ describe('StyleProfile & Validation Contracts', () => {
     expect(parsed.visual.palette.accentSecondary).toBe('#EA580C')
     expect(parsed.openMotionPackageRef?.packageId).toBe('openmotion/technical-pack')
 
-    const withoutEffects = { ...validStyleProfile }
-    delete (withoutEffects as { effects?: unknown }).effects
+    const { effects: _omittedEffects, ...withoutEffects } = validStyleProfile
     expect(StyleProfileSchema.safeParse(withoutEffects).success).toBe(false)
 
     const badCorner = {

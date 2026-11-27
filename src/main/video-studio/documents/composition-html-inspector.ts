@@ -108,31 +108,41 @@ export async function readAssetRegistryLookup(
   if (
     typeof parsed !== 'object' ||
     parsed === null ||
-    !Array.isArray((parsed as { assets?: unknown }).assets)
+    !('assets' in parsed) ||
+    !Array.isArray(parsed.assets)
   ) {
     return null
   }
+  const rawAssets: unknown[] = parsed.assets
   const map: AssetRegistryLookup = new Map()
-  for (const entry of (parsed as { assets: unknown[] }).assets) {
+  for (const entry of rawAssets) {
     if (typeof entry !== 'object' || entry === null) {
       continue
     }
-    const rec = entry as {
-      id?: unknown
-      defaultState?: unknown
-      states?: Record<string, { file?: unknown }>
-    }
-    if (typeof rec.id !== 'string' || !rec.states || typeof rec.states !== 'object') {
+    const idVal = 'id' in entry ? entry.id : undefined
+    const defaultStateVal = 'defaultState' in entry ? entry.defaultState : undefined
+    const statesVal = 'states' in entry ? entry.states : undefined
+    if (
+      typeof idVal !== 'string' ||
+      typeof statesVal !== 'object' ||
+      statesVal === null ||
+      Array.isArray(statesVal)
+    ) {
       continue
     }
     const statesMap = new Map<string, string>()
-    for (const [stateName, stateVal] of Object.entries(rec.states)) {
-      if (stateVal && typeof stateVal.file === 'string') {
+    for (const [stateName, stateVal] of Object.entries(statesVal)) {
+      if (
+        typeof stateVal === 'object' &&
+        stateVal !== null &&
+        'file' in stateVal &&
+        typeof stateVal.file === 'string'
+      ) {
         statesMap.set(stateName, stateVal.file)
       }
     }
-    map.set(rec.id, {
-      defaultState: typeof rec.defaultState === 'string' ? rec.defaultState : null,
+    map.set(idVal, {
+      defaultState: typeof defaultStateVal === 'string' ? defaultStateVal : null,
       states: statesMap
     })
   }

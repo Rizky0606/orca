@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import * as z from 'zod'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import {
   StoryboardDocumentSchema,
@@ -108,7 +109,7 @@ it('scaffolds modular v2 project with BRIEF, STORYBOARD Frame N, sources.json, r
     durationSeconds: 30,
     engine: 'hyperframes',
     styleProfileId: 'clean-editorial-01'
-  } as Parameters<typeof handoffGeneralChatToVideoStudio>[1])
+  })
 
   const catalog = await openVideoStudioCatalog(profileDir)
   const project = await catalog.get(projectId)
@@ -143,10 +144,9 @@ it('scaffolds modular v2 project with BRIEF, STORYBOARD Frame N, sources.json, r
   expect(storyboard.frames.length).toBeGreaterThanOrEqual(2)
   expect(storyboard.frontmatter.styleProfile).toBe('clean-editorial-01')
 
-  const parsedSources = JSON.parse(sourcesRaw) as {
-    schemaVersion: number
-    sources: unknown[]
-  }
+  const parsedSources = z
+    .object({ schemaVersion: z.number(), sources: z.array(z.unknown()) })
+    .parse(JSON.parse(sourcesRaw))
   expect(parsedSources.schemaVersion).toBe(1)
   expect(parsedSources.sources).toHaveLength(2)
   const validatedSources = parsedSources.sources.map((s) =>
@@ -185,7 +185,7 @@ it('applies custom Host Library styleProfileId and rejects unknown styleProfileI
       durationSeconds: 20,
       engine: 'hyperframes',
       styleProfileId: 'does-not-exist'
-    } as Parameters<typeof handoffGeneralChatToVideoStudio>[1])
+    })
   ).rejects.toThrow('video_studio_style_not_found')
 
   const catalog = await openVideoStudioCatalog(profileDir)
@@ -198,11 +198,11 @@ it('applies custom Host Library styleProfileId and rejects unknown styleProfileI
     durationSeconds: 24,
     engine: 'hyperframes',
     styleProfileId: 'brand-heat-pack'
-  } as Parameters<typeof handoffGeneralChatToVideoStudio>[1])
+  })
 
   const projectDir = resolveVideoStudioProjectDir(profileDir, projectId)
-  const projectStyle = JSON.parse(
-    await readFile(join(projectDir, 'styles', 'style-profile.json'), 'utf8')
-  ) as { id: string; sourceTier?: string }
+  const projectStyle = z
+    .object({ id: z.string(), sourceTier: z.string().optional() })
+    .parse(JSON.parse(await readFile(join(projectDir, 'styles', 'style-profile.json'), 'utf8')))
   expect(projectStyle.id).toBe('brand-heat-pack')
 })

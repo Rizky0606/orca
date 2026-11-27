@@ -1,5 +1,14 @@
 import { join, resolve } from 'node:path'
+import * as z from 'zod'
 import { createHostVideoEngineDeps } from './engines/host-video-engine-deps'
+
+const SnapshotOutputSchema = z.object({
+  frames: z.array(z.object({ path: z.string(), time: z.number() })).optional()
+})
+
+const DoctorChecksSchema = z.object({
+  checks: z.array(z.object({ name: z.string(), ok: z.boolean() })).optional()
+})
 
 export const CONSISTENCY_FIXTURES_ROOT = resolve(import.meta.dirname, '__fixtures__', 'consistency')
 
@@ -46,9 +55,7 @@ export async function captureHyperFramesSnapshots(params: {
     throw new Error(`hyperframes snapshot failed (${res.code}): ${res.stderr || res.stdout}`)
   }
   const match = /^\{\r?\n[\s\S]*\r?\n\}/m.exec(res.stdout)
-  const parsed = JSON.parse(match ? match[0] : res.stdout) as {
-    frames?: { path: string; time: number }[]
-  }
+  const parsed = SnapshotOutputSchema.parse(JSON.parse(match ? match[0] : res.stdout))
   return (parsed.frames ?? []).map((frame) => frame.path)
 }
 
@@ -77,9 +84,7 @@ export async function checkRenderPrerequisites(): Promise<{
     })
     if (doc.code === 0 || doc.stdout.includes('{')) {
       try {
-        const report = JSON.parse(doc.stdout) as {
-          checks?: { name: string; ok: boolean }[]
-        }
+        const report = DoctorChecksSchema.parse(JSON.parse(doc.stdout))
         for (const chk of report.checks ?? []) {
           if (chk.name === 'Chrome' && chk.ok) {
             chromeOk = true

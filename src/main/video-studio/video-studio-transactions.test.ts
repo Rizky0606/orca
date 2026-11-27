@@ -367,6 +367,14 @@ describe('VideoStudioTransactionCoordinator and recovery', () => {
     const locks = new VideoStudioLockCoordinator()
     const tx = new VideoStudioTransactionCoordinator(locks)
     const timeline: string[] = []
+    let notifyTx1Preparing!: () => void
+    const tx1Preparing = new Promise<void>((resolve) => {
+      notifyTx1Preparing = resolve
+    })
+    let releaseTx1!: () => void
+    const tx1Gate = new Promise<void>((resolve) => {
+      releaseTx1 = resolve
+    })
 
     const p1 = tx.runProjectTransaction({
       projectDir,
@@ -376,13 +384,15 @@ describe('VideoStudioTransactionCoordinator and recovery', () => {
           expect(locks.getHeldLocks()).toHaveLength(1)
           expect(locks.getHeldLocks()[0]).toMatch(/^project:dir-[a-f0-9]{32}$/)
           timeline.push('tx1:start')
-          await new Promise((r) => setTimeout(r, 20))
+          notifyTx1Preparing()
+          await tx1Gate
         } else if (phase === 'committed') {
           timeline.push('tx1:end')
         }
       }
     })
 
+    await tx1Preparing
     const p2 = tx.runProjectTransaction({
       projectDir,
       operations: [{ relativePath: 'b.txt', content: 'next-b', expectedSha256: sha256('init-b') }],
@@ -395,6 +405,8 @@ describe('VideoStudioTransactionCoordinator and recovery', () => {
         }
       }
     })
+    await Promise.resolve()
+    releaseTx1()
 
     await Promise.all([p1, p2])
     expect(timeline).toEqual(['tx1:start', 'tx1:end', 'tx2:start', 'tx2:end'])
@@ -411,15 +423,19 @@ describe('VideoStudioLockCoordinator canonical lock order', () => {
     const assetsAcquired = new Promise<void>((resolve) => {
       notifyAssetsAcquired = resolve
     })
+    let releaseProjA!: () => void
+    const projAGate = new Promise<void>((resolve) => {
+      releaseProjA = resolve
+    })
 
     const jobA = locks.withHostStylesLock(async () => {
       events.push('A:styles:enter')
       await locks.withHostAssetsLock(async () => {
         events.push('A:assets:enter')
-        notifyAssetsAcquired()
         await locks.withProjectLock('proj-a', async () => {
           events.push('A:proj-a:enter')
-          await new Promise((r) => setTimeout(r, 15))
+          notifyAssetsAcquired()
+          await projAGate
           events.push('A:proj-a:exit')
         })
         events.push('A:assets:exit')
@@ -435,6 +451,8 @@ describe('VideoStudioLockCoordinator canonical lock order', () => {
       })
       events.push('B:assets:exit')
     })
+    await Promise.resolve()
+    releaseProjA()
 
     await Promise.all([jobA, jobB])
     expect(events.indexOf('A:assets:exit')).toBeLessThan(events.indexOf('B:assets:enter'))

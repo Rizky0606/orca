@@ -41,7 +41,10 @@ function buildManagedCandidatePaths(options: ResolveHyperFramesOptions): string[
   if (explicitBin) {
     candidates.push(explicitBin)
   }
-  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath
+  const resourcesPath =
+    'resourcesPath' in process && typeof process.resourcesPath === 'string'
+      ? process.resourcesPath
+      : undefined
   if (resourcesPath) {
     candidates.push(
       join(resourcesPath, 'video-studio', 'runtime', 'node_modules', '.bin', 'hyperframes')

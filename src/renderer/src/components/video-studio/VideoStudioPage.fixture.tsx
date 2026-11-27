@@ -8,7 +8,7 @@ import {
   FIXTURE_AC_ASSET,
   TECH_EXPLAINER_FIXTURE_STYLE,
   makeFixtureInspector
-} from './video-studio-fixture-data'
+} from './video-studio-data.test-fixture'
 import type { VideoStudioInspectorController } from './video-studio-inspector-types'
 import type { VideoStudioProductionController } from './use-video-studio-production'
 
@@ -287,7 +287,7 @@ export const validationPartial = defineFixture({
             allowed: false,
             blockingReasons: ['Browser check skipped', 'Composition modified since check']
           }
-        } as VideoStudioProductionController['checkResult']
+        }
       })}
     />
   )

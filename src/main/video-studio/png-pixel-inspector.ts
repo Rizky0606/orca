@@ -1,5 +1,8 @@
 import { readFile } from 'node:fs/promises'
-import { inflateSync } from 'node:zlib'
+import { promisify } from 'node:util'
+import { inflate } from 'node:zlib'
+
+const inflateAsync = promisify(inflate)
 
 export type DecodedPng = {
   width: number
@@ -31,7 +34,7 @@ function paethPredictor(a: number, b: number, c: number): number {
   return c
 }
 
-export function decodePngPixels(buffer: Buffer): DecodedPng {
+export async function decodePngPixels(buffer: Buffer): Promise<DecodedPng> {
   if (buffer.length < 33 || !buffer.subarray(0, 8).equals(PNG_SIGNATURE)) {
     throw new Error('Invalid PNG signature')
   }
@@ -69,7 +72,7 @@ export function decodePngPixels(buffer: Buffer): DecodedPng {
   }
   const channels: 3 | 4 = colorType === 6 ? 4 : 3
   const stride = width * channels
-  const inflated = inflateSync(Buffer.concat(idatChunks))
+  const inflated = await inflateAsync(Buffer.concat(idatChunks))
   const pixels = new Uint8Array(width * height * channels)
 
   for (let y = 0; y < height; y++) {

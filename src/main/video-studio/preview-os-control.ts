@@ -1,34 +1,24 @@
 import { readFile, readlink, realpath } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { runProcess } from '@orca/process-host'
-import {
-  windowsPowerShellPath,
-  windowsSystem32Binary
-} from '@orca/process-host/windows-system-binary'
+import { windowsSystem32Binary } from '@orca/process-host/windows-system-binary'
 import { LSOF_NONBLOCKING_ARGS } from '../../shared/process-observation/lsof-nonblocking-args'
 import { psLocaleEnvironment } from '../../shared/process-observation/tables/ps-locale-environment'
 import {
   inspectProcessLiveness,
   readLinuxProcessStartedAtMs
 } from '../daemon/endpoint/identity/daemon-process-inspection'
-import {
-  isWindowsProcessStartTimeAvailable,
-  readWindowsProcessCreationTime,
-  readWindowsProcessTableFresh,
-  type WindowsProcessRow
-} from '../windows/windows-process-table'
+import type { WindowsProcessRow } from '../windows/windows-process-table'
 import { probeLoopbackHttpIdentity, type PreviewHttpIdentity } from './preview-http-identity'
 import { findHostLoopbackPortOwner, type LoopbackPortOwner } from './preview-port-ownership'
+import {
+  buildWindowsSingleProcessCimScript,
+  inspectWindowsProcess,
+  inspectWindowsProcessWith as inspectWindowsProcessCore,
+  type ObservedPreviewProcess
+} from './preview-windows-process'
 
-export type { LoopbackPortOwner }
-
-export type ObservedPreviewProcess = {
-  pid: number
-  creationTimeMs: number | null
-  executablePath: string | null
-  commandLine: string
-  cwd?: string
-}
+export { buildWindowsSingleProcessCimScript, type LoopbackPortOwner, type ObservedPreviewProcess }
 
 export type PreviewOsControl = {
   inspectProcess: (pid: number) => Promise<ObservedPreviewProcess | null>
@@ -91,97 +81,19 @@ export async function resolveRealpathDefault(targetPath: string): Promise<string
   return realpath(targetPath).catch(() => resolve(targetPath))
 }
 
-function parseWindowsCimDateMs(raw: unknown): number | null {
-  if (typeof raw === 'number' && Number.isFinite(raw)) {
-    return raw
-  }
-  if (typeof raw !== 'string') {
-    return null
-  }
-  const wmi = /\/Date\((\d+)\)\//.exec(raw)
-  if (wmi?.[1]) {
-    return Number(wmi[1])
-  }
-  const parsed = Date.parse(raw)
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-export function buildWindowsSingleProcessCimScript(pid: number): string {
-  return (
-    '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ' +
-    `Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=${pid}" | ` +
-    'Select-Object CreationDate,ExecutablePath,CommandLine | ConvertTo-Json -Compress'
-  )
-}
-
-async function queryWindowsSingleProcessCim(pid: number): Promise<ObservedPreviewProcess | null> {
-  const script = buildWindowsSingleProcessCimScript(pid)
-  const res = await runProcess({
-    program: windowsPowerShellPath(),
-    args: ['-NoProfile', '-NonInteractive', '-Command', script],
-    timeoutMs: 3_000
-  }).catch(() => null)
-  if (!res || res.code !== 0 || !res.stdout.trim()) {
-    return null
-  }
-  try {
-    const raw = JSON.parse(res.stdout.trim()) as {
-      CreationDate?: unknown
-      ExecutablePath?: unknown
-      CommandLine?: unknown
-    }
-    const commandLine = typeof raw.CommandLine === 'string' ? raw.CommandLine : ''
-    const rawExe =
-      typeof raw.ExecutablePath === 'string' && raw.ExecutablePath.trim()
-        ? raw.ExecutablePath.trim()
-        : extractExecutableFromCommandLine(commandLine)
-    return {
-      pid,
-      creationTimeMs: parseWindowsCimDateMs(raw.CreationDate),
-      executablePath: rawExe ? await resolveRealpathDefault(rawExe) : null,
-      commandLine
-    }
-  } catch {
-    return null
-  }
-}
-
 export async function inspectWindowsProcessWith(
   pid: number,
   deps: {
-    isStartTimeAvailable: () => boolean
+    isStartTimeAvailable?: () => boolean
     readProcessTableFresh: () => Promise<WindowsProcessRow[]>
-    readProcessCreationTime: (targetPid: number) => number | null
+    readProcessCreationTime?: (targetPid: number) => number | null
     querySingleProcessCim: (targetPid: number) => Promise<ObservedPreviewProcess | null>
   }
 ): Promise<ObservedPreviewProcess | null> {
-  if (!deps.isStartTimeAvailable()) {
-    return deps.querySingleProcessCim(pid)
-  }
-  const rows = await deps.readProcessTableFresh().catch(() => null)
-  const row = rows?.find((candidate) => candidate.pid === pid)
-  if (rows && !row) {
-    return null
-  }
-  const nativeCreation = row?.creationTimeMs ?? deps.readProcessCreationTime(pid)
-  if (row && typeof nativeCreation === 'number') {
-    const rawExe = extractExecutableFromCommandLine(row.command)
-    return {
-      pid,
-      creationTimeMs: nativeCreation,
-      executablePath: rawExe ? await resolveRealpathDefault(rawExe) : null,
-      commandLine: row.command
-    }
-  }
-  return deps.querySingleProcessCim(pid)
-}
-
-async function inspectWindowsProcess(pid: number): Promise<ObservedPreviewProcess | null> {
-  return inspectWindowsProcessWith(pid, {
-    isStartTimeAvailable: isWindowsProcessStartTimeAvailable,
-    readProcessTableFresh: readWindowsProcessTableFresh,
-    readProcessCreationTime: readWindowsProcessCreationTime,
-    querySingleProcessCim: queryWindowsSingleProcessCim
+  return inspectWindowsProcessCore(pid, {
+    ...deps,
+    extractExecutable: extractExecutableFromCommandLine,
+    resolveRealpath: resolveRealpathDefault
   })
 }
 
@@ -301,7 +213,10 @@ export function createDefaultPreviewOsControl(): PreviewOsControl {
         return Promise.resolve(null)
       }
       if (process.platform === 'win32') {
-        return inspectWindowsProcess(pid)
+        return inspectWindowsProcess(pid, {
+          extractExecutable: extractExecutableFromCommandLine,
+          resolveRealpath: resolveRealpathDefault
+        })
       }
       if (process.platform === 'linux') {
         return inspectLinuxProcess(pid)

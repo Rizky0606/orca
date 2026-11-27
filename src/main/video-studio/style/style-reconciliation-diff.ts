@@ -24,27 +24,34 @@ function valuesEqual(a: unknown, b: unknown): boolean {
   return a === b
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 function getByPath(obj: unknown, dotPath: string): unknown {
   let cursor: unknown = obj
   for (const segment of dotPath.split('.')) {
-    if (typeof cursor !== 'object' || cursor === null || !Object.hasOwn(cursor, segment)) {
+    if (!isPlainRecord(cursor) || !Object.hasOwn(cursor, segment)) {
       return undefined
     }
-    cursor = (cursor as Record<string, unknown>)[segment]
+    cursor = cursor[segment]
   }
   return cursor
 }
 
 function setByPath(obj: Record<string, unknown>, dotPath: string, value: unknown): void {
   const segments = dotPath.split('.')
-  let cursor = obj
+  let cursor: Record<string, unknown> = obj
   for (let i = 0; i < segments.length - 1; i += 1) {
     const key = segments[i]
     const next = cursor[key]
-    if (typeof next !== 'object' || next === null || Array.isArray(next)) {
-      cursor[key] = {}
+    if (!isPlainRecord(next)) {
+      const fresh: Record<string, unknown> = {}
+      cursor[key] = fresh
+      cursor = fresh
+    } else {
+      cursor = next
     }
-    cursor = cursor[key] as Record<string, unknown>
   }
   cursor[segments.at(-1)!] = value
 }
@@ -189,7 +196,11 @@ export function applyMarkdownTokensToProfile(
   files: StyleMarkdownInputs,
   sourceFile?: 'frame.md' | 'DESIGN.md' | 'MOTION.md'
 ): StyleProfile {
-  const next = structuredClone(profile) as Record<string, unknown>
+  const cloned: unknown = structuredClone(profile)
+  if (!isPlainRecord(cloned)) {
+    throw new Error('Expected StyleProfile object')
+  }
+  const next: Record<string, unknown> = cloned
   const order: readonly [string, ExtractedToken[]][] = [
     ['DESIGN.md', files.designMarkdown ? parseDesignTokens(files.designMarkdown) : []],
     ['frame.md', files.frameMarkdown ? parseFrameTokens(files.frameMarkdown) : []],

@@ -13,10 +13,12 @@ Captured on Windows (`win32 x64`, Node `v24.18.0`) against installed `hyperframe
 ## 2. `hyperframes init` Scaffold Files (Verbatim Comparison vs Approved Spec)
 
 ### CLI Flags
+
 - `hyperframes init <dir> --non-interactive --format json` **failed (exit `2`)**: `Unknown flag: --format`.
 - Actual non-interactive flags in `0.9.94`: `--non-interactive --skip-skills` (optional `--example <name>`, `--resolution <preset>`, `--tailwind`, `--skill <slug>`).
 
 ### Default Blank Scaffold Tree
+
 ```text
 AGENTS.md
 CLAUDE.md
@@ -25,10 +27,13 @@ index.html
 meta.json
 package.json
 ```
+
 - Note: Blank `hyperframes init` does **not** pre-create `compositions/` or `assets/`; sub-compositions under `compositions/` and `assets/` are created when scenes/examples are added (verified with `hyperframes init --example swiss-grid --non-interactive --skip-skills`, which creates `compositions/intro.html`, `compositions/graphics.html`, `compositions/captions.html`, `assets/swiss-grid.svg`, `hyperframes.lock.json`).
 
 ### `meta.json` (CONFIRMED)
+
 Verbatim from `hyperframes init`:
+
 ```json
 {
   "id": "hf-cap-165139268",
@@ -36,10 +41,13 @@ Verbatim from `hyperframes init`:
   "createdAt": "2026-11-25T23:35:08.080Z"
 }
 ```
+
 Matches Approved Spec `{ id, name, createdAt }`.
 
 ### `hyperframes.json` (CONFIRMED)
+
 Verbatim from `hyperframes init`:
+
 ```json
 {
   "$schema": "https://hyperframes.heygen.com/schema/hyperframes.json",
@@ -54,10 +62,13 @@ Verbatim from `hyperframes init`:
   }
 }
 ```
+
 Matches Approved Spec verbatim (`$schema`, `registry`, `paths.blocks = "compositions"`, `paths.components = "compositions/components"`, `paths.assets = "assets"`, `media.autoProxy = true`).
 
 ### `package.json` (DIFFERENCE NOTED)
+
 Verbatim from `hyperframes init`:
+
 ```json
 {
   "name": "hf-cap-165139268",
@@ -71,9 +82,11 @@ Verbatim from `hyperframes init`:
   }
 }
 ```
+
 **Difference vs Approved Spec:** Upstream `0.9.94` does **not** emit an `"engines": { "hyperframes": "0.9.94" }` field; instead it pins `hyperframes@0.9.94` in `scripts` (`dev`, `check`, `render`, `publish`). Orca's scaffold may include both the pinned scripts and `"engines": { "hyperframes": "0.9.94" }` metadata, while still enforcing runtime binary resolution/pinning in `HyperFramesEngineAdapter` rather than trusting `package.json`.
 
 ### Root `index.html`, `<template>`, `data-composition-src`, and `window.__timelines`
+
 1. **Blank `index.html`:**
    - Loads GSAP CDN (`https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js`).
    - Root element: `<div id="root" data-composition-id="main" data-start="0" data-duration="10" data-width="1920" data-height="1080">`.
@@ -99,7 +112,14 @@ Verbatim from `hyperframes init`:
 
 - `hyperframes check --json --no-browser` **failed with exit `2`** (`captured/init-check-no-browser.json`):
   ```json
-  {"ok":false,"error":{"code":"unknown_flag","message":"Unknown flag: --browser","hint":"Did you mean --browser-gpu? ..."}}
+  {
+    "ok": false,
+    "error": {
+      "code": "unknown_flag",
+      "message": "Unknown flag: --browser",
+      "hint": "Did you mean --browser-gpu? ..."
+    }
+  }
   ```
   `hyperframes check` in `0.9.94` does **not** accept `--no-browser`. Browser-free static linting is exposed via `hyperframes lint --json` (exits `0`, returns `{ ok, errorCount, warningCount, infoCount, findings, filesScanned, unmountedCompositions, _meta }`), while `hyperframes check --json` always attempts browser verification and reports `browserSkipped: boolean` if browser checks are bypassed/unavailable.
 - `hyperframes check --json` (with Chrome available, `captured/init-check-browser.json`, exit `0`):
@@ -111,9 +131,27 @@ Verbatim from `hyperframes init`:
 ## 4. `preview --foreground --json --no-open` (CONFIRMED)
 
 Verbatim stdout first JSON line (`captured/preview-start-actual.json`):
+
 ```json
-{"schemaVersion":1,"operation":"start","ok":true,"result":{"state":"started","mode":"foreground","projectName":"hf-cap-165139268","projectDir":"C:\\Users\\RIZKYF~1\\AppData\\Local\\Temp\\hf-cap-165139268","host":"127.0.0.1","port":3002,"pid":11008,"serverUrl":"http://127.0.0.1:3002","studioUrl":"http://127.0.0.1:3002/#project/hf-cap-165139268","ready":true}}
+{
+  "schemaVersion": 1,
+  "operation": "start",
+  "ok": true,
+  "result": {
+    "state": "started",
+    "mode": "foreground",
+    "projectName": "hf-cap-165139268",
+    "projectDir": "C:\\Users\\RIZKYF~1\\AppData\\Local\\Temp\\hf-cap-165139268",
+    "host": "127.0.0.1",
+    "port": 3002,
+    "pid": 11008,
+    "serverUrl": "http://127.0.0.1:3002",
+    "studioUrl": "http://127.0.0.1:3002/#project/hf-cap-165139268",
+    "ready": true
+  }
+}
 ```
+
 - Matches Approved Spec `LifecyclePayloadSchema` exactly.
 - Note on stopping: `hyperframes preview <dir> --stop` only stops `--background` sessions (`No background preview is running for ...` when started with `--foreground`), so foreground preview processes must be stopped via verified PID/process-tree termination (`VideoStudioPreviewManager`).
 

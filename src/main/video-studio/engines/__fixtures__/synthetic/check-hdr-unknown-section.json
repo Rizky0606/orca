@@ -76,9 +76,7 @@
   },
   "snapshots": {
     "enabled": true,
-    "files": [
-      ".hyperframes/artifacts/snapshots/t-0.500.png"
-    ],
+    "files": [".hyperframes/artifacts/snapshots/t-0.500.png"],
     "times": [0.5],
     "findingFiles": []
   },

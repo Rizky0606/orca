@@ -1,6 +1,7 @@
 import { cp, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import * as z from 'zod'
 import { afterEach, describe, expect, it } from 'vitest'
 import { StoryboardDocumentSchema } from '../../shared/video-studio/video-studio-storyboard-contract'
 import { StyleProfileSchema } from '../../shared/video-studio/video-studio-style-contract'
@@ -70,11 +71,9 @@ describe('Video Studio Consistency Fixtures A/B/C', () => {
       expect(drift.unmountedScenes).toEqual([])
       expect(drift.missingFiles).toEqual([])
 
-      const smokePkg = JSON.parse(
-        await readFile(join(fixtureDir, 'smoke', 'package.json'), 'utf8')
-      ) as {
-        dependencies?: Record<string, string>
-      }
+      const smokePkg = z
+        .object({ dependencies: z.record(z.string(), z.string()).optional() })
+        .parse(JSON.parse(await readFile(join(fixtureDir, 'smoke', 'package.json'), 'utf8')))
       expect(smokePkg.dependencies?.hyperframes).toBe('0.9.94')
       const smokeHtml = await readFile(join(fixtureDir, 'smoke', 'index.html'), 'utf8')
       expect(smokeHtml).toContain('data-width="1080"')
@@ -129,12 +128,14 @@ describe('Video Studio Consistency Fixtures A/B/C', () => {
       tokens: { visual: { palette: { accentPrimary: '#0F766E' } } }
     })
 
-    const untouchedFixtureStyle = JSON.parse(
-      await readFile(
-        join(CONSISTENCY_FIXTURES_ROOT, 'fixture-a-ac-explainer', 'styles', 'style-profile.json'),
-        'utf8'
+    const untouchedFixtureStyle = StyleProfileSchema.parse(
+      JSON.parse(
+        await readFile(
+          join(CONSISTENCY_FIXTURES_ROOT, 'fixture-a-ac-explainer', 'styles', 'style-profile.json'),
+          'utf8'
+        )
       )
-    ) as { visual: { palette: { accentPrimary: string } } }
+    )
     expect(untouchedFixtureStyle.visual.palette.accentPrimary).toBe('#2563EB')
 
     const listed = await styleStore.listStyleProfiles()

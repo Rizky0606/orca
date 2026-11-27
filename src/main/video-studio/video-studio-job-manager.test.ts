@@ -255,7 +255,7 @@ describe('VideoStudioJobManager', () => {
         errors: [],
         warnings: [],
         summary: 'ok',
-        checkedAt: Date.now(),
+        checkedAt: 1_700_000_000_000,
         status: 'passed' as const,
         engine: 'hyperframes' as const,
         inputFingerprint: (await computeProjectInputFingerprint(dir)).inputFingerprint,
@@ -338,7 +338,7 @@ describe('VideoStudioJobManager', () => {
     )
 
     const compState = await manager.getCompositionState('p-untrusted')
-    expect((compState as { checkStale?: boolean }).checkStale).toBe(true)
+    expect(compState.checkStale).toBe(true)
 
     await expect(manager.startRender(project, 'looks')).rejects.toThrow(
       'video_studio_execution_approval_required'
@@ -384,7 +384,7 @@ describe('VideoStudioJobManager', () => {
           'utf8'
         )
       }
-    } as Record<string, unknown>)
+    })
 
     await expect(manager.startRender(sampleProject('p-toctou'), 'looks')).rejects.toThrow(
       'video_studio_execution_approval_required'
@@ -419,41 +419,20 @@ describe('VideoStudioJobManager', () => {
       catalog,
       getAdapter: () => adapter,
       watcherDebounceMs: 30
-    } as Record<string, unknown>)
+    })
     const project = sampleProject('p-watch')
     await manager.scaffoldComposition(project)
 
     const fileEvents: unknown[] = []
-    const unsub = (
-      manager as unknown as {
-        subscribeFilesChanged: (fn: (evt: unknown) => void) => () => void
-        watchProject: (id: string) => Promise<void>
-        documents: {
-          updateProjectScript: (params: {
-            projectId: string
-            scriptMarkdown: string
-          }) => Promise<unknown>
-        }
-      }
-    ).subscribeFilesChanged((evt) => fileEvents.push(evt))
-    await (manager as unknown as { watchProject: (id: string) => Promise<void> }).watchProject(
-      'p-watch'
-    )
+    const unsub = manager.subscribeFilesChanged((evt) => fileEvents.push(evt))
+    await manager.watchProject('p-watch')
 
     // Self-write via TX must NOT emit projectFilesChanged
-    await (
-      manager as unknown as {
-        documents: {
-          updateProjectScript: (params: {
-            projectId: string
-            scriptMarkdown: string
-          }) => Promise<unknown>
-        }
-      }
-    ).documents.updateProjectScript({
+    await manager.documents.updateProjectScript({
       projectId: 'p-watch',
       scriptMarkdown: '# Script\nInternal TX update'
     })
+    // ast-grep-ignore: test-no-real-time-wait -- intentional negative settle window confirming TX suppression does not emit after debounceMs
     await new Promise((r) => setTimeout(r, 120))
     expect(fileEvents).toHaveLength(0)
 

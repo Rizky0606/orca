@@ -14,7 +14,6 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslate } from '@/i18n/use-translate'
 import type { VideoStudioCompositionDriftSummary } from '../../../../shared/video-studio/video-studio-rpc-contract'
-import type { SceneStatus } from '../../../../shared/video-studio/video-studio-storyboard-contract'
 import type { VideoStudioInspectorController } from './video-studio-inspector-types'
 
 export function VideoStudioStoryboardPanel({
@@ -147,7 +146,7 @@ export function VideoStudioStoryboardPanel({
                       disabled={busy}
                       onValueChange={(next) => {
                         if (next === 'outline' || next === 'built' || next === 'animated') {
-                          void inspector.patchFrame(frame.sceneId, { status: next as SceneStatus })
+                          void inspector.patchFrame(frame.sceneId, { status: next })
                         }
                       }}
                     >
@@ -155,9 +154,15 @@ export function VideoStudioStoryboardPanel({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent position="popper">
-                        <SelectItem value="outline">outline</SelectItem>
-                        <SelectItem value="built">built</SelectItem>
-                        <SelectItem value="animated">animated</SelectItem>
+                        <SelectItem value="outline">
+                          {t('videoStudio.sceneStatusOutline', 'outline')}
+                        </SelectItem>
+                        <SelectItem value="built">
+                          {t('videoStudio.sceneStatusBuilt', 'built')}
+                        </SelectItem>
+                        <SelectItem value="animated">
+                          {t('videoStudio.sceneStatusAnimated', 'animated')}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                     <Button
@@ -237,7 +242,7 @@ export function VideoStudioStoryboardPanel({
           />
           <Input
             aria-label={t('videoStudio.newFrameDuration', 'Duration')}
-            placeholder="4s"
+            placeholder={t('videoStudio.newFrameDurationPlaceholder', '4s')}
             className="min-h-11 w-20 shrink-0 @lg:min-h-9"
             value={newDuration}
             disabled={busy}
@@ -271,7 +276,7 @@ export function VideoStudioStoryboardPanel({
         <Textarea
           id={`script-md-${projectId}`}
           rows={5}
-          className="font-mono text-xs"
+          variant="code"
           value={scriptText}
           disabled={busy}
           onChange={(e) => setScriptText(e.currentTarget.value)}

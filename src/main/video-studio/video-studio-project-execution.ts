@@ -1,8 +1,10 @@
 import { mkdir, readdir } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import type { VideoStudioProject } from '../../shared/video-studio/video-studio-project'
-import type { VideoStudioCompositionState } from '../../shared/video-studio/video-studio-rpc-contract'
-import type { VideoStudioPreviewState } from '../../shared/video-studio/video-studio-rpc-contract'
+import type {
+  VideoStudioCompositionState,
+  VideoStudioPreviewState
+} from '../../shared/video-studio/video-studio-rpc-contract'
 import type { VideoEngineCheckResult } from '../../shared/video-studio/video-studio-validation-contract'
 import { computeCompositionDrift } from './documents/video-studio-composition-drift'
 import { computeProjectInputFingerprint } from './engines/project-input-fingerprint'

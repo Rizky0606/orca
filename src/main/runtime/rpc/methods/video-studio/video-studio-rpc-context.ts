@@ -50,7 +50,7 @@ export async function runVideoStudioRpc<T>(
       throw error
     }
     if (error instanceof Error) {
-      if ((error as { code?: unknown }).code === 'invalid_argument') {
+      if ('code' in error && error.code === 'invalid_argument') {
         throw new InvalidArgumentError(stripHostPaths(error.message, directory))
       }
       if (

@@ -50,23 +50,11 @@
         "lastSeen": 0,
         "occurrences": 1,
         "heldMs": 0,
-        "times": [
-          0
-        ]
+        "times": [0]
       }
     ],
     "duration": 10,
-    "samples": [
-      0.556,
-      1.667,
-      2.778,
-      3.889,
-      5,
-      6.111,
-      7.222,
-      8.333,
-      9.444
-    ],
+    "samples": [0.556, 1.667, 2.778, 3.889, 5, 6.111, 7.222, 8.333, 9.444],
     "transitionSamples": [],
     "transitionSamplesDropped": 0,
     "tolerance": 2,
@@ -94,13 +82,7 @@
     "infoCount": 0,
     "findings": [],
     "enabled": true,
-    "samples": [
-      0.556,
-      2.778,
-      5,
-      7.222,
-      9.444
-    ],
+    "samples": [0.556, 2.778, 5, 7.222, 9.444],
     "checked": 5,
     "passed": 5
   },

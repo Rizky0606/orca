@@ -2,12 +2,10 @@ import { AlertTriangle, FileWarning, ShieldAlert, ShieldCheck } from 'lucide-rea
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useTranslate } from '@/i18n/use-translate'
-import type {
-  VideoStudioCheckResult,
-  VideoStudioCompositionState
-} from '../../../../shared/video-studio/video-studio-rpc-contract'
+import type { VideoStudioCompositionState } from '../../../../shared/video-studio/video-studio-rpc-contract'
 import type { ValidationStatus } from '../../../../shared/video-studio/video-studio-validation-contract'
 import type { VideoStudioInspectorController } from './video-studio-inspector-types'
+import type { VideoStudioCheckResultView } from './video-studio-production-actions'
 
 function validationBadgeVariant(
   status: ValidationStatus | undefined
@@ -32,7 +30,7 @@ export function VideoStudioValidationBanner({
   inspector
 }: {
   composition: VideoStudioCompositionState | null
-  checkResult: VideoStudioCheckResult | null
+  checkResult: VideoStudioCheckResultView | null
   externalChangedPaths: readonly string[]
   onReloadExternal: () => void
   inspector?: VideoStudioInspectorController
@@ -48,15 +46,7 @@ export function VideoStudioValidationBanner({
   const needsApproval =
     trustState === 'unapproved' || fingerprintChanged || Boolean(composition?.checkStale)
 
-  const report = checkResult as
-    | (VideoStudioCheckResult & {
-        status?: ValidationStatus
-        stale?: boolean
-        skippedChecks?: string[]
-        productionGate?: { allowed: boolean; blockingReasons: string[] }
-        browserSkipped?: boolean
-      })
-    | null
+  const report = checkResult
   const isStale = Boolean(composition?.checkStale || report?.stale)
 
   return (
@@ -114,7 +104,9 @@ export function VideoStudioValidationBanner({
             </span>
             {liveFingerprint ? (
               <span className="font-mono text-2xs opacity-80">
-                SHA-256: {liveFingerprint.slice(0, 12)}
+                {t('videoStudio.trustFingerprintPrefix', 'SHA-256: {{hash}}', {
+                  hash: liveFingerprint.slice(0, 12)
+                })}
               </span>
             ) : null}
           </div>

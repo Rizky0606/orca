@@ -3,6 +3,7 @@
 **Date:** 2026-11-26  
 **Branch / Worktree:** `feature/orca-ai-studio` (`.worktrees/orca-ai-studio`)  
 **Parent Specs:**
+
 - [General Chat and Video Studio Foundation Design](./2026-11-23-general-chat-video-studio-design.md)
 - [Video Studio HyperFrames Integration and Render Engine Contract](./2026-11-25-video-studio-hyperframes-design.md)
 - [General Chat Web Search, Deep Research & Video Studio Handoff](./2026-11-25-general-chat-web-search-deep-research-design.md)
@@ -50,6 +51,7 @@ This specification defines the **Engine-Agnostic File-First Architecture with Hy
 ```
 
 Core principles:
+
 1. **Application-first:** Orca remains the single host application with its native UI (`docs/STYLEGUIDE.md`, `main.css` tokens, `components/ui/`), Runtime RPC (`RuntimeClientTarget`), and `@orca/process-host`.
 2. **File-first:** Every creative and source artifact lives in inspectable files inside the project directory so both the Structured Inspector UI and Orca coding agents can read and edit the same workspace.
 3. **Engine-agnostic core:** `VideoStudioProject`, Style Profiles, Storyboard, Master Asset Registry, Motion Registry contracts, and Structured Inspector depend on engine-neutral schemas and `VideoEngineAdapter`, never directly on HyperFrames HTML internals.
@@ -60,11 +62,12 @@ Core principles:
 ## 2. Goals and Non-Goals
 
 ### Goals (In Scope)
+
 - Align `HyperFramesEngineAdapter` and CLI parsers with real **HyperFrames `0.9.94`** behavior (`doctor --json`, `check --json`, `preview --foreground --json --no-open`, `@hf-progress` render output, official `hyperframes.json` layout) with exact version pinning and captured CLI fixture contract tests.
 - Evolve `VideoRenderEngineAdapter` into `VideoEngineAdapter` with capability declarations and a 5-state `ValidationReport` (`passed`, `failed`, `partial`, `error`, `unsupported`) cleanly separated from `productionGate`.
 - Transition project scaffolding to modular HyperFrames compositions (`compositions/*.html` + `compositions/components/`) plus Orca's engine-agnostic directory layout (`.orca/`, `styles/`, `assets/{objects,characters,environments,graphics,models,audio,video}/`, `references/`), preserving backward compatibility for Stage 1/2 projects.
 - Implement **Dual-Scope Style Profiles** (`Built-in presets`, `User Host Library`, and immutable/versioned `Project Snapshots`) with canonical ownership in `styles/style-profile.json` and validated synchronization/reconciliation with `frame.md`, `DESIGN.md`, and `MOTION.md`.
-- Implement **Structured Storyboard** (`STORYBOARD.md`) with permanent `scene_id` across reorders/renames, optional engine/motion/asset/camera/narrative metadata, and *planned vs actual* composition drift detection.
+- Implement **Structured Storyboard** (`STORYBOARD.md`) with permanent `scene_id` across reorders/renames, optional engine/motion/asset/camera/narrative metadata, and _planned vs actual_ composition drift detection.
 - Implement **Master Asset Registry** (`assets/asset-registry.json` + Host Asset Library) supporting flexible asset types, arbitrary per-asset state maps, structured animatable `components`, content hashes, dependency tracking, provenance, and licensing metadata.
 - Provide complete typed RPC contracts, a responsive **Structured Inspector** across `Research`, `Script`, and `Production`, and mobile read-only parity.
 - Implement **Preview Session Manager** with verified OS process identity, port ownership, conditional `--force-new`, and orphan cleanup.
@@ -72,6 +75,7 @@ Core principles:
 - Define documented **extension points** and an **Upstream Feature Integration Matrix** for OpenMotion, Remotion, and Universal Motion Registry.
 
 ### Non-Goals (Explicitly Deferred)
+
 - Executing full Remotion bundling/rendering or `@remotion/player` runtime (Phase 06).
 - Automated OpenMotion `Motion Package` archive/ZIP importer or extraction of OpenMotion UI components (Phase 04).
 - Automated multi-agent production loops (`Creative Director` / `Agent Runner` / `Reference Video Analyzer` / auto-QC fix loop) (Phases 04–05).
@@ -83,15 +87,15 @@ Core principles:
 
 ## 3. Module Boundaries
 
-| Layer | Directory / Package | Responsibility | Must NOT Depend On |
-|---|---|---|---|
-| Shared Contracts | `src/shared/video-studio/` | Zod schemas (`import * as z from 'zod'`), types, normalization, migration helpers, diff types | Node `fs`, Electron, React, engine CLIs |
-| Orca Video Core | `src/main/video-studio/` | Catalog, Style Library, Asset Library, Document parsers/patchers, Transaction journal, Conflict detection, Preview Session Manager, Job Manager | Electron UI, React, HyperFrames HTML parsing internals |
-| Engine Adapters | `src/main/video-studio/engines/` | `VideoEngineAdapter` contract, `HyperFramesEngineAdapter` (`0.9.94`), reserved `RemotionEngineAdapter`, host process deps | Renderer state, Electron `BrowserWindow`, direct `child_process` (must use `@orca/process-host`) |
-| General Chat Bridge | `src/main/general-chat/research/` | Seeding `BRIEF.md`, `references/sources.json`, and `references/research-notes.md` on handoff | Video rendering or engine CLI calls |
-| Runtime RPC | `src/main/runtime/rpc/methods/video-studio/` | Zod-validated RPC methods, `RevisionClock` stream events, workspace handoff, mobile allowlisting | Renderer DOM, raw OS paths exposed to client |
-| Renderer Client & UI | `src/renderer/src/runtime/video-studio/`, `src/renderer/src/components/video-studio/` | Typed RPC client, controller hooks (React Compiler clean), Structured Inspector (`Research`/`Script`/`Production`), conflict & validation banners | `node:fs`, `node:path`, raw filesystem paths, `dangerouslySetInnerHTML` |
-| Mobile Browse | `mobile/src/host-screen/` | Read-only host browsing of projects, style summary, storyboard count, renders | Mutating RPCs, SSH execution, desktop-only Zod locales |
+| Layer                | Directory / Package                                                                   | Responsibility                                                                                                                                    | Must NOT Depend On                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Shared Contracts     | `src/shared/video-studio/`                                                            | Zod schemas (`import * as z from 'zod'`), types, normalization, migration helpers, diff types                                                     | Node `fs`, Electron, React, engine CLIs                                                          |
+| Orca Video Core      | `src/main/video-studio/`                                                              | Catalog, Style Library, Asset Library, Document parsers/patchers, Transaction journal, Conflict detection, Preview Session Manager, Job Manager   | Electron UI, React, HyperFrames HTML parsing internals                                           |
+| Engine Adapters      | `src/main/video-studio/engines/`                                                      | `VideoEngineAdapter` contract, `HyperFramesEngineAdapter` (`0.9.94`), reserved `RemotionEngineAdapter`, host process deps                         | Renderer state, Electron `BrowserWindow`, direct `child_process` (must use `@orca/process-host`) |
+| General Chat Bridge  | `src/main/general-chat/research/`                                                     | Seeding `BRIEF.md`, `references/sources.json`, and `references/research-notes.md` on handoff                                                      | Video rendering or engine CLI calls                                                              |
+| Runtime RPC          | `src/main/runtime/rpc/methods/video-studio/`                                          | Zod-validated RPC methods, `RevisionClock` stream events, workspace handoff, mobile allowlisting                                                  | Renderer DOM, raw OS paths exposed to client                                                     |
+| Renderer Client & UI | `src/renderer/src/runtime/video-studio/`, `src/renderer/src/components/video-studio/` | Typed RPC client, controller hooks (React Compiler clean), Structured Inspector (`Research`/`Script`/`Production`), conflict & validation banners | `node:fs`, `node:path`, raw filesystem paths, `dangerouslySetInnerHTML`                          |
+| Mobile Browse        | `mobile/src/host-screen/`                                                             | Read-only host browsing of projects, style summary, storyboard count, renders                                                                     | Mutating RPCs, SSH execution, desktop-only Zod locales                                           |
 
 ---
 
@@ -99,30 +103,31 @@ Core principles:
 
 Each artifact inside `<profileDir>/video-studio/projects/<projectId>/` has one authoritative owner so UI editing and coding-agent editing never create competing truths:
 
-| File | Authoritative Owner | Content & Responsibility | Edit Mechanism |
-|---|---|---|---|
-| `project.json` | Orca Video Core | Portable project metadata (`id`, `title`, `aspectRatio`, `durationSeconds`, `fps`, `engine`, `styleProfileId`, `workflowStage`) | Synced on project CRUD & style attach |
-| `.orca/schema-version.json` | Orca Video Core | Project directory layout `schemaVersion` (`2`) and migration timestamps | Managed on scaffold/migration |
-| `.orca/project-state.json` | Orca Runtime Cache (non-portable, gitignored) | Local preview session runtime state (`sessionId`, `pid`, `creationTimeMs`, `port`, `startedAt`) & transaction recovery markers | Runtime process lifecycle only; never treated as source truth across hosts |
-| `.orca/tx.log` | Orca Transaction Manager | Transient write-ahead journal during multi-file commits, removed on commit completion | Transaction engine & startup recovery only |
-| `styles/style-profile.json` | **Canonical Structured Style Source** (Orca Video Core) | Structured visual, typography, camera, motion, effects, composition, and subtitle tokens + snapshot provenance (`sourceStyleId`, `version`) | Structured Inspector / Style Service (`expectedRevision`) |
-| `frame.md` | HyperFrames Creative Spec | YAML frontmatter (tokens mirrored from `style-profile.json` in HyperFrames format) + freeform design prose | Targeted frontmatter patch + Markdown reconciliation detection |
-| `DESIGN.md` | OpenMotion / Brand Context | Visual identity philosophy, brand notes, and OpenMotion package compatibility prose | Targeted metadata sync + freeform prose preserved |
-| `MOTION.md` | OpenMotion Motion Language Spec | Motion rules, camera language, pacing notes, transition vocabulary, creative directives | Targeted header/rule block sync + freeform prose preserved |
-| `BRIEF.md` | Production Intent (`hyperframes` compatible) | YAML frontmatter (`workflow`, `flow`, `storyboard`, `message`, `aspect`, `length`, `audience`, `language`) + `## Intent`, `## Assets`, `## Notes` | Targeted frontmatter/section update (`expectedRevision`) |
-| `STORYBOARD.md` | **Canonical Scene Planning Source** | Ordered `## Frame N — Title` blocks with permanent `scene_id`, `status`, `duration`, `transition_in`, `engine`, `src`, `assets`, `voiceover`, `motion_presets`, `camera`, `narrative_role`, plus `## Locked` | Parsed via HyperFrames-compatible lenient parser; patched per `scene_id` block |
-| `SCRIPT.md` | Final TTS Narration (optional) | Locked narration script used when TTS voiceover is generated; distinct from advisory `voiceover` lines in `STORYBOARD.md` | Written/edited during scripting or TTS workflows |
-| `assets/asset-registry.json` | **Canonical Asset Metadata Source** | Asset IDs, versions, types, custom states, structured `components`, hashes, dependencies, provenance, licenses | Asset Registry service (`expectedRevision`) |
-| `references/sources.json` | Research Provenance Store | Structured source records (`id`, `url`, `title`, `domain`, `accessedAt`, `claimIds`, `verificationStatus`, `origin`) | General Chat handoff / user research verification |
-| `references/research-notes.md` | Research Context Prose | Synthesized findings and open questions from General Chat / user research | Read/edited as Markdown reference |
-| `hyperframes.json` | HyperFrames CLI Config | `$schema`, `registry`, `paths` (`blocks: "compositions"`, `components: "compositions/components"`, `assets: "assets"`), `media.autoProxy` | HyperFrames CLI / scaffold initialization |
-| `meta.json` | HyperFrames Project Metadata | `{ id, name, createdAt }` expected by HyperFrames CLI | Scaffold initialization |
-| `package.json` | HyperFrames Workspace Scripts | Scripts (`check`, `preview`, `render`) and pinned engine metadata (`"engines": { "hyperframes": "0.9.94" }`) | Scaffold initialization |
-| `index.html` | **Canonical HyperFrames Root Composition** | Root timeline shell mounting `compositions/*.html` via `data-composition-src` and `data-track-kind` | Scaffolded once; edited by coding agent / HyperFrames Studio; **never overwritten** unless `overwrite: true` |
-| `compositions/*.html` | **Canonical Scene Animation Source** | Actual `<template>` sub-compositions, DOM/SVG/GSAP motion, actual durations & assets used | Edited by coding agent / HyperFrames Studio; **never regenerated from JSON** |
-| `renders/` | Output Artifacts | Rendered MP4/WebM/etc. outputs tracked in `VideoStudioProject.renders` | Render job manager only |
+| File                           | Authoritative Owner                                     | Content & Responsibility                                                                                                                                                                                     | Edit Mechanism                                                                                               |
+| ------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `project.json`                 | Orca Video Core                                         | Portable project metadata (`id`, `title`, `aspectRatio`, `durationSeconds`, `fps`, `engine`, `styleProfileId`, `workflowStage`)                                                                              | Synced on project CRUD & style attach                                                                        |
+| `.orca/schema-version.json`    | Orca Video Core                                         | Project directory layout `schemaVersion` (`2`) and migration timestamps                                                                                                                                      | Managed on scaffold/migration                                                                                |
+| `.orca/project-state.json`     | Orca Runtime Cache (non-portable, gitignored)           | Local preview session runtime state (`sessionId`, `pid`, `creationTimeMs`, `port`, `startedAt`) & transaction recovery markers                                                                               | Runtime process lifecycle only; never treated as source truth across hosts                                   |
+| `.orca/tx.log`                 | Orca Transaction Manager                                | Transient write-ahead journal during multi-file commits, removed on commit completion                                                                                                                        | Transaction engine & startup recovery only                                                                   |
+| `styles/style-profile.json`    | **Canonical Structured Style Source** (Orca Video Core) | Structured visual, typography, camera, motion, effects, composition, and subtitle tokens + snapshot provenance (`sourceStyleId`, `version`)                                                                  | Structured Inspector / Style Service (`expectedRevision`)                                                    |
+| `frame.md`                     | HyperFrames Creative Spec                               | YAML frontmatter (tokens mirrored from `style-profile.json` in HyperFrames format) + freeform design prose                                                                                                   | Targeted frontmatter patch + Markdown reconciliation detection                                               |
+| `DESIGN.md`                    | OpenMotion / Brand Context                              | Visual identity philosophy, brand notes, and OpenMotion package compatibility prose                                                                                                                          | Targeted metadata sync + freeform prose preserved                                                            |
+| `MOTION.md`                    | OpenMotion Motion Language Spec                         | Motion rules, camera language, pacing notes, transition vocabulary, creative directives                                                                                                                      | Targeted header/rule block sync + freeform prose preserved                                                   |
+| `BRIEF.md`                     | Production Intent (`hyperframes` compatible)            | YAML frontmatter (`workflow`, `flow`, `storyboard`, `message`, `aspect`, `length`, `audience`, `language`) + `## Intent`, `## Assets`, `## Notes`                                                            | Targeted frontmatter/section update (`expectedRevision`)                                                     |
+| `STORYBOARD.md`                | **Canonical Scene Planning Source**                     | Ordered `## Frame N — Title` blocks with permanent `scene_id`, `status`, `duration`, `transition_in`, `engine`, `src`, `assets`, `voiceover`, `motion_presets`, `camera`, `narrative_role`, plus `## Locked` | Parsed via HyperFrames-compatible lenient parser; patched per `scene_id` block                               |
+| `SCRIPT.md`                    | Final TTS Narration (optional)                          | Locked narration script used when TTS voiceover is generated; distinct from advisory `voiceover` lines in `STORYBOARD.md`                                                                                    | Written/edited during scripting or TTS workflows                                                             |
+| `assets/asset-registry.json`   | **Canonical Asset Metadata Source**                     | Asset IDs, versions, types, custom states, structured `components`, hashes, dependencies, provenance, licenses                                                                                               | Asset Registry service (`expectedRevision`)                                                                  |
+| `references/sources.json`      | Research Provenance Store                               | Structured source records (`id`, `url`, `title`, `domain`, `accessedAt`, `claimIds`, `verificationStatus`, `origin`)                                                                                         | General Chat handoff / user research verification                                                            |
+| `references/research-notes.md` | Research Context Prose                                  | Synthesized findings and open questions from General Chat / user research                                                                                                                                    | Read/edited as Markdown reference                                                                            |
+| `hyperframes.json`             | HyperFrames CLI Config                                  | `$schema`, `registry`, `paths` (`blocks: "compositions"`, `components: "compositions/components"`, `assets: "assets"`), `media.autoProxy`                                                                    | HyperFrames CLI / scaffold initialization                                                                    |
+| `meta.json`                    | HyperFrames Project Metadata                            | `{ id, name, createdAt }` expected by HyperFrames CLI                                                                                                                                                        | Scaffold initialization                                                                                      |
+| `package.json`                 | HyperFrames Workspace Scripts                           | Scripts (`check`, `preview`, `render`) and pinned engine metadata (`"engines": { "hyperframes": "0.9.94" }`)                                                                                                 | Scaffold initialization                                                                                      |
+| `index.html`                   | **Canonical HyperFrames Root Composition**              | Root timeline shell mounting `compositions/*.html` via `data-composition-src` and `data-track-kind`                                                                                                          | Scaffolded once; edited by coding agent / HyperFrames Studio; **never overwritten** unless `overwrite: true` |
+| `compositions/*.html`          | **Canonical Scene Animation Source**                    | Actual `<template>` sub-compositions, DOM/SVG/GSAP motion, actual durations & assets used                                                                                                                    | Edited by coding agent / HyperFrames Studio; **never regenerated from JSON**                                 |
+| `renders/`                     | Output Artifacts                                        | Rendered MP4/WebM/etc. outputs tracked in `VideoStudioProject.renders`                                                                                                                                       | Render job manager only                                                                                      |
 
 ### Bidirectional Style Reconciliation Rules
+
 1. `styles/style-profile.json` is the canonical structured token source read by UI Inspector and future engine adapters.
 2. When the user saves tokens through Structured Inspector, Orca executes a multi-file transaction updating `styles/style-profile.json` plus the managed YAML frontmatter/header tokens in `frame.md`, `DESIGN.md`, and `MOTION.md` while **preserving all manual prose sections**.
 3. If an external editor or Orca coding agent edits the managed tokens inside `frame.md`, `DESIGN.md`, or `MOTION.md` directly on disk (causing their token projection to diverge from `styles/style-profile.json`), Orca computes a **Reconciliation Diff** (`videoStudio.getStyleReconciliationDiff`) and surfaces two explicit user choices in UI without silent overwrite:
@@ -130,6 +135,7 @@ Each artifact inside `<profileDir>/video-studio/projects/<projectId>/` has one a
    - **Re-apply Style Profile JSON to Markdown** (re-syncs managed frontmatter/header tokens from JSON while preserving prose).
 
 ### Planned vs Actual Composition State
+
 `STORYBOARD.md` records **planned** intent (`duration`, `transition_in`, `assets`, `motion_presets`, `status`). `VideoEngineAdapter.inspect()` inspects `index.html` and `compositions/*.html` to produce **actual** composition telemetry (`actualTotalDurationSeconds`, per-file durations, mounted `data-composition-src` paths, referenced asset paths, missing files). Orca computes a non-blocking `CompositionDriftReport` per scene (`scene_id` / `src` match) showing duration mismatches, unmounted scenes, or missing referenced assets.
 
 ---
@@ -137,6 +143,7 @@ Each artifact inside `<profileDir>/video-studio/projects/<projectId>/` has one a
 ## 5. Engine Adapter Contracts
 
 ### Extended `VideoEngineAdapter` Interface
+
 Located in `src/main/video-studio/engines/video-render-engine.ts`:
 
 ```ts
@@ -159,16 +166,19 @@ export type ValidationReport = {
   status: ValidationStatus
   engine: VideoStudioEngine
   engineVersion?: string
-  inputFingerprint: string          // SHA-256 over entry HTML, compositions/scenes, hyperframes.json, style-profile.json, asset-registry.json
+  inputFingerprint: string // SHA-256 over entry HTML, compositions/scenes, hyperframes.json, style-profile.json, asset-registry.json
   revisions?: {
     compositionSha256: string
     styleSha256?: string
     assetsSha256?: string
   }
-  stale?: boolean                   // True when current workspace inputFingerprint differs from when this report ran
+  stale?: boolean // True when current workspace inputFingerprint differs from when this report ran
   findings: VideoStudioCheckFinding[]
   skippedChecks: string[]
-  sectionStatuses: Record<string, { status: ValidationStatus; errorCount: number; warningCount: number }>
+  sectionStatuses: Record<
+    string,
+    { status: ValidationStatus; errorCount: number; warningCount: number }
+  >
   productionGate: {
     allowed: boolean
     blockingReasons: string[]
@@ -188,8 +198,16 @@ export interface VideoEngineAdapter {
     project: VideoStudioProject,
     options?: { overwrite?: boolean; styleSnapshot?: StyleProfileSnapshot }
   ): Promise<VideoStudioCompositionState>
-  inspect(projectDir: string, project: VideoStudioProject, preview?: VideoStudioPreviewState): Promise<VideoStudioCompositionState>
-  validate(projectDir: string, deps: VideoEngineProcessDeps, signal?: AbortSignal): Promise<ValidationReport>
+  inspect(
+    projectDir: string,
+    project: VideoStudioProject,
+    preview?: VideoStudioPreviewState
+  ): Promise<VideoStudioCompositionState>
+  validate(
+    projectDir: string,
+    deps: VideoEngineProcessDeps,
+    signal?: AbortSignal
+  ): Promise<ValidationReport>
   startPreview(
     projectDir: string,
     projectName: string,
@@ -213,6 +231,7 @@ export interface VideoEngineAdapter {
 ```
 
 ### Validation Status, Precedence, Freshness & Production Gate Semantics
+
 - **Strict Precedence Order (highest to lowest):** `unsupported` -> `error` -> `failed` -> `partial` -> `passed`.
 - `unsupported`: Engine adapter does not implement structured check (`remotion` planned slot). `productionGate.allowed = false`.
 - `error`: Engine validator process crashed, timed out, returned an unparseable failure payload, or failed invocation/CLI usage. `productionGate.allowed = false`.
@@ -222,6 +241,7 @@ export interface VideoEngineAdapter {
 - **Freshness & Input Fingerprinting:** Every `ValidationReport` records `inputFingerprint` (SHA-256 across `index.html`, `compositions/*.html` / `scenes/*.html`, `hyperframes.json`, `styles/style-profile.json`, and `assets/asset-registry.json`). Before honoring `productionGate.allowed` for final delivery render or displaying a cached check badge, Orca recomputes the project's current `inputFingerprint`; if it changed since `checkedAt`, the cached report is flagged `stale: true` and `productionGate` blocks delivery until validation re-runs against the current revision.
 
 ### HyperFrames `0.9.94` CLI Alignment Fixes
+
 1. **Exact Version Pinning (`0.9.94`):**
    - Adapter declares `HYPERFRAMES_PINNED_VERSION = '0.9.94'` and verifies **exact semver string equality** (`detectedVersion === '0.9.94'`) — comparing only major/minor versions is explicitly rejected as unverified.
    - Declaring `package.json` `engines` alone does not pin a dependency. Orca resolves the executable deterministically from an Orca-managed/lockfile-pinned `hyperframes@0.9.94` runtime installation first (or an explicit pinned binary path in `node_modules/.bin/hyperframes` / configured runtime dir) before falling back to PATH `hyperframes`, never relies on unpinned `npx latest`, and never auto-installs silently.
@@ -241,6 +261,7 @@ export interface VideoEngineAdapter {
    - Real stdout/stderr samples captured from `hyperframes 0.9.94` (`doctor`, `check`, `preview`, `render`) will be stored as deterministic unit-test fixtures so parser expectations are verified against authentic CLI output rather than synthetic guesses.
 
 ### Reserved `RemotionEngineAdapter`
+
 - Keeps `id: 'remotion'`, `targetVersion: 'planned'`, `capabilities()` reporting `false` / `[]` honestly without mocks.
 - `probe()` returns `status: 'planned'`, `available: false`.
 - `validate()` returns `ValidationReport` with `status: 'unsupported'` and `productionGate: { allowed: false, blockingReasons: ['Remotion runtime is scheduled for Phase 06.'] }`.
@@ -312,8 +333,11 @@ export interface VideoEngineAdapter {
 ### Schema Contracts (Engine-Agnostic, Zod-Validated)
 
 #### A. Style Profile (`styles/style-profile.json`)
+
 ### Style & Asset Identity, Versioning & Snapshot Model
+
 Both Style Profiles and Master Assets share strict separation between identity, contract schema, immutable library publication, and local project edits:
+
 - **`id` (Logical Identity):** Permanent slug identifying the semantic style or entity across projects (e.g., `technical-explainer-01`, `ac_indoor_001`).
 - **`schemaVersion`:** Structural contract revision (`1`) governing JSON validation and migrations.
 - **`version` (Published Version):** Monotonic immutable integer (`1, 2, ...`) assigned inside the Host Library (`styles/<styleId>/` or `assets/<assetId>/v<n>/`). Once published, a library version `v<n>` is immutable and NEVER silently mutated in place.
@@ -351,7 +375,7 @@ type StyleProfile = {
       highlight?: string
       border?: string
     }
-    lighting: string       // e.g. 'soft-neutral', 'high-contrast', 'flat-editorial'
+    lighting: string // e.g. 'soft-neutral', 'high-contrast', 'flat-editorial'
     renderingStyle: string // e.g. '2.5d-semi-realistic', 'flat-vector', 'editorial-print'
     cornerRadiusPx: number
   }
@@ -376,13 +400,13 @@ type StyleProfile = {
   }
   effects: {
     allowedEffects: string[] // e.g. ['airflow', 'callout', 'motion-blur']
-    bannedEffects: string[]  // e.g. ['neon-glow', 'heavy-drop-shadow']
+    bannedEffects: string[] // e.g. ['neon-glow', 'heavy-drop-shadow']
   }
   composition: {
     headerZonePercent: number
     focalZonePercent: number
     actionSafePercent: number // default 90
-    titleSafePercent: number  // default 80
+    titleSafePercent: number // default 80
   }
   subtitle: {
     mode: 'word-highlight' | 'anchor-rail' | 'none'
@@ -398,18 +422,21 @@ type StyleProfile = {
   }
 }
 ```
+
 Built-in read-only presets shipped with Orca:
+
 1. `technical-explainer-01` (v1) — 2.5D semi-realistic technical illustration, cream/beige/charcoal/yellow/blue/orange palette, bold sans-serif, orthographic pan/zoom camera, word-by-word yellow-highlighted black-pill subtitles.
 2. `clean-editorial-01` (v1) — General-purpose editorial/infographic look (neutral warm paper, serif/sans display + clean mono data, measured fades & slide reveals, lower-third anchor-rail subtitles) so non-technical topics are first-class out of the box.
 
 #### B. Structured Storyboard (`STORYBOARD.md`)
+
 Compatible with HyperFrames `@hyperframes/core/storyboard` while extending per-frame `extra` fields with Orca's permanent identity:
 
 ```markdown
 ---
 format: 1080x1920
 duration: 60s
-message: "How heat transfer drives AC power consumption"
+message: 'How heat transfer drives AC power consumption'
 arc: Hook -> Mechanism -> Comparison -> Conclusion
 audience: General tech-curious viewers
 style_profile: technical-explainer-01
@@ -431,11 +458,13 @@ style_profile: technical-explainer-01
 
 Focus on the remote LCD rising/dropping from 25°C to 16°C at center frame.
 ```
+
 - `scene_id` is generated once (`scene_<short-uuid>`) and **never changes** when frames are reordered, renamed, or edited.
 - If an agent writes a new `## Frame N` without a `scene_id`, the parser assigns/persists a deterministic or new stable `scene_id` on explicit save/reconcile without disturbing unrelated frames.
 
 #### C. Master Asset Registry (`assets/asset-registry.json`)
-```ts
+
+````ts
 type AssetType =
   | 'object'
   | 'character'
@@ -522,11 +551,14 @@ type MasterAssetRecord = {
   createdAt: number
   updatedAt: number
 }
-```
+````
+
 - Deletion guard & dynamic reference caveat: Removing an asset from a project checks `STORYBOARD.md` frame `assets:` references and static file references in `index.html`, `compositions/*.html`, `scenes/*.html`, CSS, and SVG files. Because static scanning cannot exhaustively detect dynamic/evaluated JavaScript references, the registry reports dynamic-script heuristics (`mayBeReferencedDynamically`), blocks deletion with `video_studio_asset_in_use` if statically referenced (unless `force: true`), and **never deletes potentially referenced files on disk without explicit confirmation** (`forceDeleteFiles: true`).
 
 #### D. Research Sources (`references/sources.json`)
+
 Reuses `GeneralChatSource` identity fields from `src/shared/general-chat/general-chat-research-contract.ts` and extends them for video verification:
+
 ```ts
 type VideoStudioResearchSource = {
   id: string
@@ -542,6 +574,7 @@ type VideoStudioResearchSource = {
 ```
 
 #### E. Extension Points (Contracts Only in Phase 02–03)
+
 1. **Universal Motion Registry (`src/shared/video-studio/motion-registry-contract.ts`):**
    - Defines `MotionPresetMetadata` (`id`, `version`, `category`, `parameters`, `dependencies`, `executionKind: 'executable' | 'knowledge-only' | 'planned'`, `implementations: Record<string, { status: 'executable' | 'knowledge-only' | 'planned' | 'unsupported'; adapterType?: string }>`), plus a small read-only built-in starter catalog matching common storyboard presets (`camera.smooth_zoom`, `camera.pan`, `typography.counter_up`, `typography.word_highlight`, `object.pop_in`, `diagram.flow_path`, `chart.line_draw`). **Presets whose status is `'knowledge-only'` or `'planned'` MUST NOT be reported as executable (`'executable'`) or runnable until an implementation adapter exists.**
 2. **OpenMotion Motion Package Adapter Interface (`src/main/video-studio/extensions/motion-package-contract.ts`):**
@@ -555,51 +588,52 @@ All methods live in `src/shared/video-studio/video-studio-rpc-contract.ts`, regi
 
 ### Complete Method Inventory (Existing + New)
 
-| Method | Purpose | Optimistic Lock / Guard |
-|---|---|---|
-| `videoStudio.listProjects` / `createProject` / `updateProject` / `deleteProject` | Project catalog CRUD + directory cleanup | Atomic catalog lane |
-| `videoStudio.probeEngines` | Capabilities + `EnvironmentReport` (with pinned `0.9.94` diagnostics) | Safe read-only probe |
-| `videoStudio.getCompositionState` | Mounted compositions, file list, planned-vs-actual drift summary, active preview | Read-only inspect |
-| `videoStudio.scaffoldComposition` | Non-destructive modular scaffold (`overwrite?: boolean`, optional `styleProfileId`) | Per-project mutation queue |
-| `videoStudio.openCompositionWorkspace` | Open/reuse `FolderWorkspace` for Coding Workspace editing | Host folder workspace lookup |
-| `videoStudio.checkComposition` | Runs `VideoEngineAdapter.validate()`, returns 5-state `ValidationReport` + `productionGate` | Single active check/render per project |
-| `videoStudio.startPreview` / `stopPreview` | Preview Session Manager lifecycle (`forceNew?: boolean`) | Process identity + port ownership verified |
-| `videoStudio.startRender` / `cancelRender` | Render execution (`quality`, optional `startSeconds`/`endSeconds`), progress stream | Single active check/render per project |
-| `videoStudio.subscribeJobs` | Streaming jobs, preview state, engine probe, and **project file-revision notifications** | `RevisionClock` stream |
-| `videoStudio.readRenderOutputChunk` | Bounded base64 MP4 streaming (<= 512 KiB/chunk) | Strict `renders/` containment + catalog record check |
-| **Style Profile Methods** | | |
-| `videoStudio.listStyleProfiles` | Lists built-in presets + User Host Library profiles | Read-only |
-| `videoStudio.saveLibraryStyleProfile` | Create/update User Host Library style profile (rejects built-in overwrite) | Host Style Library lock + `expectedRevision` |
-| `videoStudio.duplicateStyleProfile` | Clones built-in or library style into User Host Library with new ID | Host Style Library lock |
-| `videoStudio.deleteLibraryStyleProfile` | Removes user library style (does not alter existing project snapshots) | Host Style Library lock |
-| `videoStudio.getProjectStyleState` | Returns `styles/style-profile.json`, token revision, and Markdown drift flag | Project read |
-| `videoStudio.applyStyleProfileToProject` | Snapshots built-in/library style to project (`style-profile.json`, `frame.md`, `DESIGN.md`, `MOTION.md`) | Multi-file TX + `expectedRevisions` |
-| `videoStudio.updateProjectStyleTokens` | Updates canonical `style-profile.json` and syncs managed frontmatter/headers | Multi-file TX + `expectedRevisions` |
-| `videoStudio.getStyleReconciliationDiff` | Compares `style-profile.json` tokens vs Markdown tokens (`frame.md`/`DESIGN.md`/`MOTION.md`) | Read-only diff |
-| `videoStudio.reconcileProjectStyle` | Resolves drift (`'import-from-markdown'` or `'reapply-json'`) | Multi-file TX + `expectedRevisions` |
-| **Brief, Storyboard & Research Methods** | | |
-| `videoStudio.getProjectDocuments` | Parsed `BRIEF.md`, `STORYBOARD.md`, `SCRIPT.md`, `references/sources.json`, `research-notes.md` + `revisions` map + trust state | Read-only |
-| `videoStudio.updateProjectBrief` | Updates `BRIEF.md` frontmatter/sections (`expectedRevision`) | Project TX |
-| `videoStudio.updateProjectScript` | Updates `SCRIPT.md` narration/voiceover markdown (`expectedRevision`) | Project TX |
-| `videoStudio.upsertResearchSource` | Adds or edits a verified/manual source in `references/sources.json` & syncs `research-notes.md` (`expectedRevision`) | URL/schema validation + Project TX |
-| `videoStudio.deleteResearchSource` | Removes a source from `references/sources.json` (`expectedRevision`) | Project TX |
-| `videoStudio.approveProjectExecution` | Records explicit user execution approval (`trustState: 'approved-preview' | 'approved-render'`) bound to current `inputFingerprint` | Project TX + Audit state |
-| `videoStudio.addStoryboardFrame` | Appends/inserts a frame with new permanent `scene_id` into `STORYBOARD.md` | Project TX + `expectedRevision` |
-| `videoStudio.patchStoryboardFrame` | Patches one frame by `scene_id` (title, status, duration, transition, engine, src, assets, voiceover, motion_presets, camera, narrative) | Project TX + `expectedRevision` |
-| `videoStudio.deleteStoryboardFrame` | Removes a frame by `scene_id` (does not delete `compositions/*.html` on disk) | Project TX + `expectedRevision` |
-| `videoStudio.reorderStoryboardFrames` | Reorders frames by `scene_id[]` while preserving every `scene_id` and `## Locked` | Project TX + `expectedRevision` |
-| **Master Asset Registry Methods** | | |
-| `videoStudio.listLibraryAssets` / `listProjectAssets` | Lists Host Asset Library and project `asset-registry.json` (plus invariant/dependency warnings) | Read-only |
-| `videoStudio.registerOrImportAsset` | Imports uploaded/base64-bounded or workspace-relative asset into project or immutable Host Library `v1`, validates invariants, writes SHA-256 & metadata | Containment validation + Host Asset Lock -> Project TX + `expectedRevision` |
-| `videoStudio.updateAssetMetadata` | Updates asset name, type, tags, **asset state CRUD** (`add/update/remove` in `states` + `defaultState`), structured `components`, dependencies, provenance, license, and consistency locks (validating all invariants) | Project TX + `expectedRevision` |
-| `videoStudio.applyLibraryAssetToProject` | Copies immutable versioned library asset (`v<n>`) + state files + verified dependencies into project `assets/` | Host Asset Library Lock -> Project TX |
-| `videoStudio.saveProjectAssetToLibrary` | Publishes a project asset + state files + verified dependencies into Host Asset Library as immutable new version (`v1` or `v<n+1>`) without mutating prior library versions | Host Asset Library Lock -> Project TX |
-| `videoStudio.removeProjectAsset` | Removes asset from registry (and optionally unreferenced files); blocks if referenced unless `force: true` | Dependency scan + Project TX |
-| `videoStudio.deleteLibraryAsset` | Deletes asset from Host Asset Library | Host Asset Library Lock |
-| **Motion Extension Method** | | |
-| `videoStudio.listMotionPresets` | Returns read-only Universal Motion Registry entries for Inspector/Storyboard selectors | Read-only |
+| Method                                                                           | Purpose                                                                                                                                                                                                                | Optimistic Lock / Guard                                                     |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `videoStudio.listProjects` / `createProject` / `updateProject` / `deleteProject` | Project catalog CRUD + directory cleanup                                                                                                                                                                               | Atomic catalog lane                                                         |
+| `videoStudio.probeEngines`                                                       | Capabilities + `EnvironmentReport` (with pinned `0.9.94` diagnostics)                                                                                                                                                  | Safe read-only probe                                                        |
+| `videoStudio.getCompositionState`                                                | Mounted compositions, file list, planned-vs-actual drift summary, active preview                                                                                                                                       | Read-only inspect                                                           |
+| `videoStudio.scaffoldComposition`                                                | Non-destructive modular scaffold (`overwrite?: boolean`, optional `styleProfileId`)                                                                                                                                    | Per-project mutation queue                                                  |
+| `videoStudio.openCompositionWorkspace`                                           | Open/reuse `FolderWorkspace` for Coding Workspace editing                                                                                                                                                              | Host folder workspace lookup                                                |
+| `videoStudio.checkComposition`                                                   | Runs `VideoEngineAdapter.validate()`, returns 5-state `ValidationReport` + `productionGate`                                                                                                                            | Single active check/render per project                                      |
+| `videoStudio.startPreview` / `stopPreview`                                       | Preview Session Manager lifecycle (`forceNew?: boolean`)                                                                                                                                                               | Process identity + port ownership verified                                  |
+| `videoStudio.startRender` / `cancelRender`                                       | Render execution (`quality`, optional `startSeconds`/`endSeconds`), progress stream                                                                                                                                    | Single active check/render per project                                      |
+| `videoStudio.subscribeJobs`                                                      | Streaming jobs, preview state, engine probe, and **project file-revision notifications**                                                                                                                               | `RevisionClock` stream                                                      |
+| `videoStudio.readRenderOutputChunk`                                              | Bounded base64 MP4 streaming (<= 512 KiB/chunk)                                                                                                                                                                        | Strict `renders/` containment + catalog record check                        |
+| **Style Profile Methods**                                                        |                                                                                                                                                                                                                        |                                                                             |
+| `videoStudio.listStyleProfiles`                                                  | Lists built-in presets + User Host Library profiles                                                                                                                                                                    | Read-only                                                                   |
+| `videoStudio.saveLibraryStyleProfile`                                            | Create/update User Host Library style profile (rejects built-in overwrite)                                                                                                                                             | Host Style Library lock + `expectedRevision`                                |
+| `videoStudio.duplicateStyleProfile`                                              | Clones built-in or library style into User Host Library with new ID                                                                                                                                                    | Host Style Library lock                                                     |
+| `videoStudio.deleteLibraryStyleProfile`                                          | Removes user library style (does not alter existing project snapshots)                                                                                                                                                 | Host Style Library lock                                                     |
+| `videoStudio.getProjectStyleState`                                               | Returns `styles/style-profile.json`, token revision, and Markdown drift flag                                                                                                                                           | Project read                                                                |
+| `videoStudio.applyStyleProfileToProject`                                         | Snapshots built-in/library style to project (`style-profile.json`, `frame.md`, `DESIGN.md`, `MOTION.md`)                                                                                                               | Multi-file TX + `expectedRevisions`                                         |
+| `videoStudio.updateProjectStyleTokens`                                           | Updates canonical `style-profile.json` and syncs managed frontmatter/headers                                                                                                                                           | Multi-file TX + `expectedRevisions`                                         |
+| `videoStudio.getStyleReconciliationDiff`                                         | Compares `style-profile.json` tokens vs Markdown tokens (`frame.md`/`DESIGN.md`/`MOTION.md`)                                                                                                                           | Read-only diff                                                              |
+| `videoStudio.reconcileProjectStyle`                                              | Resolves drift (`'import-from-markdown'` or `'reapply-json'`)                                                                                                                                                          | Multi-file TX + `expectedRevisions`                                         |
+| **Brief, Storyboard & Research Methods**                                         |                                                                                                                                                                                                                        |                                                                             |
+| `videoStudio.getProjectDocuments`                                                | Parsed `BRIEF.md`, `STORYBOARD.md`, `SCRIPT.md`, `references/sources.json`, `research-notes.md` + `revisions` map + trust state                                                                                        | Read-only                                                                   |
+| `videoStudio.updateProjectBrief`                                                 | Updates `BRIEF.md` frontmatter/sections (`expectedRevision`)                                                                                                                                                           | Project TX                                                                  |
+| `videoStudio.updateProjectScript`                                                | Updates `SCRIPT.md` narration/voiceover markdown (`expectedRevision`)                                                                                                                                                  | Project TX                                                                  |
+| `videoStudio.upsertResearchSource`                                               | Adds or edits a verified/manual source in `references/sources.json` & syncs `research-notes.md` (`expectedRevision`)                                                                                                   | URL/schema validation + Project TX                                          |
+| `videoStudio.deleteResearchSource`                                               | Removes a source from `references/sources.json` (`expectedRevision`)                                                                                                                                                   | Project TX                                                                  |
+| `videoStudio.approveProjectExecution`                                            | Records explicit user execution approval (`trustState: 'approved-preview'                                                                                                                                              | 'approved-render'`) bound to current `inputFingerprint`                     | Project TX + Audit state |
+| `videoStudio.addStoryboardFrame`                                                 | Appends/inserts a frame with new permanent `scene_id` into `STORYBOARD.md`                                                                                                                                             | Project TX + `expectedRevision`                                             |
+| `videoStudio.patchStoryboardFrame`                                               | Patches one frame by `scene_id` (title, status, duration, transition, engine, src, assets, voiceover, motion_presets, camera, narrative)                                                                               | Project TX + `expectedRevision`                                             |
+| `videoStudio.deleteStoryboardFrame`                                              | Removes a frame by `scene_id` (does not delete `compositions/*.html` on disk)                                                                                                                                          | Project TX + `expectedRevision`                                             |
+| `videoStudio.reorderStoryboardFrames`                                            | Reorders frames by `scene_id[]` while preserving every `scene_id` and `## Locked`                                                                                                                                      | Project TX + `expectedRevision`                                             |
+| **Master Asset Registry Methods**                                                |                                                                                                                                                                                                                        |                                                                             |
+| `videoStudio.listLibraryAssets` / `listProjectAssets`                            | Lists Host Asset Library and project `asset-registry.json` (plus invariant/dependency warnings)                                                                                                                        | Read-only                                                                   |
+| `videoStudio.registerOrImportAsset`                                              | Imports uploaded/base64-bounded or workspace-relative asset into project or immutable Host Library `v1`, validates invariants, writes SHA-256 & metadata                                                               | Containment validation + Host Asset Lock -> Project TX + `expectedRevision` |
+| `videoStudio.updateAssetMetadata`                                                | Updates asset name, type, tags, **asset state CRUD** (`add/update/remove` in `states` + `defaultState`), structured `components`, dependencies, provenance, license, and consistency locks (validating all invariants) | Project TX + `expectedRevision`                                             |
+| `videoStudio.applyLibraryAssetToProject`                                         | Copies immutable versioned library asset (`v<n>`) + state files + verified dependencies into project `assets/`                                                                                                         | Host Asset Library Lock -> Project TX                                       |
+| `videoStudio.saveProjectAssetToLibrary`                                          | Publishes a project asset + state files + verified dependencies into Host Asset Library as immutable new version (`v1` or `v<n+1>`) without mutating prior library versions                                            | Host Asset Library Lock -> Project TX                                       |
+| `videoStudio.removeProjectAsset`                                                 | Removes asset from registry (and optionally unreferenced files); blocks if referenced unless `force: true`                                                                                                             | Dependency scan + Project TX                                                |
+| `videoStudio.deleteLibraryAsset`                                                 | Deletes asset from Host Asset Library                                                                                                                                                                                  | Host Asset Library Lock                                                     |
+| **Motion Extension Method**                                                      |                                                                                                                                                                                                                        |                                                                             |
+| `videoStudio.listMotionPresets`                                                  | Returns read-only Universal Motion Registry entries for Inspector/Storyboard selectors                                                                                                                                 | Read-only                                                                   |
 
 ### Mobile Routing & Passthrough Codes
+
 - **Mobile Read-Only Allowlist (`runtime-rpc-mobile-video-studio-methods.ts`):** Add `listStyleProfiles`, `getProjectStyleState`, `getProjectDocuments`, `listLibraryAssets`, `listProjectAssets`, `listMotionPresets` for read-only mobile inspection; keep SSH hosts explicitly refused via `mobileRpcSshRefusal`.
 - **New Passthrough Error Codes (`runtime-passthrough-codes.ts`):** `video_studio_file_conflict`, `video_studio_tx_recovery_conflict`, `video_studio_invalid_path`, `video_studio_style_not_found`, `video_studio_style_readonly`, `video_studio_asset_not_found`, `video_studio_asset_in_use`, `video_studio_asset_invariant_invalid`, `video_studio_scene_not_found`, `video_studio_invalid_state_file`, `video_studio_preview_session_stale`, `video_studio_execution_approval_required`.
 
@@ -610,6 +644,7 @@ All methods live in `src/shared/video-studio/video-studio-rpc-contract.ts`, regi
 All UI work follows `docs/STYLEGUIDE.md`, `main.css` design tokens, `components/ui/` primitives, Lucide icons, `useTranslate()`, React Compiler compatibility (no `try/finally` inside hooks), and responsive desktop/narrow touch targets (`min-h-11 @lg:min-h-9`).
 
 ### Stage-Aware Project Detail Surface (`VideoStudioProjects.tsx`, `VideoStudioWorkflow.tsx`)
+
 Instead of showing only a static metadata form plus `Production` panel, the selected project detail view presents **four explicit workflow stages** (`workflowStage`: `'research' | 'script' | 'style' | 'production'`, preserving backward compatibility for legacy saved projects):
 
 1. **`Research` Stage:**
@@ -628,9 +663,9 @@ Instead of showing only a static metadata form plus `Production` panel, the sele
    - **Universal Motion Registry Inspector:** Browses available namespaced motion presets explicitly labeled as `executable`, `knowledge-only`, or `planned` so unimplemented presets are never misreported as runnable.
 4. **`Production` Stage (`VideoStudioProductionPanel.tsx`):**
    - **Engine Readiness & Trust Banner:** Displays `HyperFrames 0.9.94` readiness (`node 22+`, `ffmpeg`, `ffprobe`, `chrome`, exact pinned version check) + **Recheck** button + `Remotion (Phase 06)` status, plus **Execution Trust Approval Prompt** (hosted in `<profileDir>/video-studio/security/trust-store.json`) before spawning Chrome on unapproved external/AI-modified compositions.
-   - **Composition Actions:** *Scaffold / Re-scaffold* (non-destructive `overwrite: false`, filling missing Phase 02–03 files without touching user/agent compositions) + confirmation-gated *Reset entry HTML* (`overwrite: true`), *Open in Workspace* (switches to Coding Workspace with the project folder mounted so coding agents can author `compositions/*.html`), *Run Check* (displays 5-state `ValidationReport` badge, `skippedChecks`, `productionGate` notice, findings with `fixHint`/`suggestedColor`), and *Start / Open / Stop Preview* managed by Preview Session Manager.
-   - **Render & Playback:** Quality (`Draft`, `Looks`, `Delivery`), `Render MP4` (gated by `productionGate.allowed` when required browser checks were skipped unless an explicit override/draft setting is added later), live `@hf-progress` progress bar & bounded logs, render history list, and chunked Blob `<video controls>` playback + *Save MP4*.
-4. **External Edit Conflict Handling:**
+   - **Composition Actions:** _Scaffold / Re-scaffold_ (non-destructive `overwrite: false`, filling missing Phase 02–03 files without touching user/agent compositions) + confirmation-gated _Reset entry HTML_ (`overwrite: true`), _Open in Workspace_ (switches to Coding Workspace with the project folder mounted so coding agents can author `compositions/*.html`), _Run Check_ (displays 5-state `ValidationReport` badge, `skippedChecks`, `productionGate` notice, findings with `fixHint`/`suggestedColor`), and _Start / Open / Stop Preview_ managed by Preview Session Manager.
+   - **Render & Playback:** Quality (`Draft`, `Looks`, `Delivery`), `Render MP4` (gated by `productionGate.allowed` when required browser checks were skipped unless an explicit override/draft setting is added later), live `@hf-progress` progress bar & bounded logs, render history list, and chunked Blob `<video controls>` playback + _Save MP4_.
+5. **External Edit Conflict Handling:**
    - File watcher pushes `projectFilesChanged` events over `videoStudio.subscribeJobs`. If the user has unsaved edits in the Inspector or hits `video_studio_file_conflict`, an inline alert banner offers **Reload from disk** cleanly without overwriting coding-agent changes.
 
 ---
@@ -638,6 +673,7 @@ Instead of showing only a static metadata form plus `Production` panel, the sele
 ## 9. Preview and Rendering Lifecycle
 
 ### Preview Mode Progression Roadmap
+
 1. **Phase 02–03 (This Spec):**
    - **External Browser Preview** (local loopback URL opened via validated `shell.openExternal`) + **Chunked MP4 Playback** (`<video controls>` via `readRenderOutputChunk`, working across both local and remote hosts).
 2. **Phase 04–05 (Target Native Workspace):**
@@ -646,6 +682,7 @@ Instead of showing only a static metadata form plus `Production` panel, the sele
    - **Embedded Remotion Player** + **Unified Multi-Engine Preview**.
 
 ### Preview Session Manager (`src/main/video-studio/video-studio-preview-manager.ts`)
+
 - Tracks active preview handles in memory per `(profileDir, projectId)`, stores authoritative session records in host-managed `<profileDir>/video-studio/security/preview-sessions.json`, and mirrors non-authoritative cache state into `.orca/project-state.json`.
 - **Startup / Reuse Verification (Six-Factor Process & Ownership Check — Never Trust Raw PID or Generic HTTP 200 Alone):**
   Before reusing or stopping a session:
@@ -686,6 +723,7 @@ Untrusted HTML/CSS/JS inside `index.html`, `compositions/*.html`, or imported SV
 ```
 
 ### Enforced Security Controls & Minimal Execution Trust Policy (Phase 02–03)
+
 1. **Host-Managed Execution Trust Store & Verification Policy (Outside Project Dir):**
    - Authoritative execution approval lives **strictly outside the project directory** in host-managed `<profileDir>/video-studio/security/trust-store.json`, keyed by `(projectId, projectRootRealpath)`. **Project files inside `projects/<projectId>/` (including `.orca/project-state.json`) MUST NEVER be able to grant or persist execution approval to themselves.**
    - Trust record tracks `{ projectId, projectRootRealpath, sourceOrigin: 'orca-scaffold' | 'ai-generated' | 'imported-external', trustState: 'untrusted' | 'approved', approvedFingerprint?: string, approvedAt?: number }`.
@@ -700,6 +738,7 @@ Untrusted HTML/CSS/JS inside `index.html`, `compositions/*.html`, or imported SV
 7. **Untrusted Project File Hygiene:** PIDs, ports, URLs, or `src` paths read from `project.json`, `.orca/project-state.json`, `STORYBOARD.md`, or `asset-registry.json` are never trusted without validation and OS/containment verification.
 
 ### Documented Security Limits in Phase 02–03 (Not a Full Sandbox Yet)
+
 - **Not a Full Execution Sandbox:** Environment variable allowlisting, path containment validation, and opening previews in an external system browser are necessary defense-in-depth boundaries, **NOT a full execution sandbox** for arbitrary untrusted HTML/CSS/JavaScript.
 - **External Browser Network/Localhost Access:** When preview opens in the user's system browser during Phase 02–03, scripts inside `http://127.0.0.1:<port>` run under the browser's localhost origin — they cannot access Electron/Orca IPC or host files outside the preview server, **but** can attempt outbound HTTP requests or talk to other unauthenticated localhost ports reachable by the user's browser. Strict CSP/request interception inside an isolated embedded guest or `--docker` container is scheduled for Phase 04+.
 - **Untrusted Render Network Egress:** Native Chrome launched locally by `hyperframes render` may fetch external CDN URLs (e.g., `cdn.jsdelivr.net` for GSAP/fonts) unless `--docker` or offline asset localization is enforced. Phase 04+ will introduce asset bundling/offline CDN vendoring and strict isolated container rendering.
@@ -711,18 +750,19 @@ Untrusted HTML/CSS/JS inside `index.html`, `compositions/*.html`, or imported SV
 Because operations such as `applyStyleProfileToProject` and `reconcileProjectStyle` update multiple files (`styles/style-profile.json`, `frame.md`, `DESIGN.md`, `MOTION.md`), single-file atomic rename alone is insufficient.
 
 ### Concurrency Architecture & Canonical Lock Order
+
 1. **Canonical Lock Acquisition Order (Deadlock Prevention):**
    Operations spanning both Host Libraries and a Project MUST acquire locks strictly in this global order and **never** invert it (`Project` -> `Host*Library` is forbidden):
    1. `HostStyleLibraryLock` (`<profileDir>/video-studio/styles/`)
    2. `HostAssetLibraryLock` (`<profileDir>/video-studio/assets/`)
    3. `ProjectMutationQueue[projectId]` (`projects/<projectId>/`)
-   Operations scoped strictly to a single resource acquire only that resource's lock.
+      Operations scoped strictly to a single resource acquire only that resource's lock.
 2. **Commit Protocol with Pre-Commit Backup & Staged Hash Verification (`.orca/tx.log`):**
    - **Step 1 (Validate & Backup):** Inside the acquired locks, re-read target files, verify every `expectedRevision` (`sha256` hash) matches disk, write pre-image backups of existing targets into `.orca/.staging/<txId>/backups/...`, and record `{ txId, state: 'preparing', targets: [{ path, existed, beforeSha256, backupPath, afterSha256, stagedPath }] }` into `.orca/tx.log` atomically.
    - **Step 2 (Stage & Verify Before Commit):** Write new contents into `.orca/.staging/<txId>/staged/...` via `durableWriteTempPath`. **Mandatory Gate:** Re-read every staged file and every pre-image backup on disk and verify both existence and exact SHA-256 equality (`staged == afterSha256`, `backup == beforeSha256` for pre-existing files) **before** advancing `.orca/tx.log`.
    - **Step 3 (Commit):** Only after Step 2 verification succeeds, update `.orca/tx.log` state to `'committing'` and atomically rename each staged file onto its target path.
    - **Step 4 (Cleanup):** Mark `'committed'` / unlink `.orca/tx.log` and `.orca/.staging/<txId>/`. Suppress watcher conflict alerts for Orca's own write generations.
-4. **Failure & Startup Crash Recovery Rules:**
+3. **Failure & Startup Crash Recovery Rules:**
    - **Failure before `'committing'`:** Discard `.orca/.staging/<txId>/` and delete `.orca/tx.log`; target files remain untouched.
    - **Failure or Crash during `'committing'` (detected on next project open or catalog startup):**
      - Inspect each target file's current `sha256` hash on disk:
@@ -750,22 +790,22 @@ Because operations such as `applyStyleProfileToProject` and `reconcileProjectSty
 
 The long-term product target is **mandatory native feature integration** of **HyperFrames** (`Apache 2.0`), **OpenMotion** (`Apache 2.0`), and **Remotion** (License-gated engine adapter) directly inside Orca AI Video Studio — using official packages, direct Apache-2.0 source extraction/refactoring into Orca modules, and unified adapters rather than treating OpenMotion as mere design inspiration or relying on external standalone apps. Because OpenMotion is itself built on HyperFrames, Orca avoids duplicating overlapping editors by consolidating on one Orca UI, one Runtime RPC layer, and unified registries.
 
-| Upstream Repo | Source Module / Feature | Upstream Version / Commit | License | Integration Method | Shared Dependencies | Target Orca Module | Target Phase |
-|---|---|---|---|---|---|---|---|
-| `heygen-com/hyperframes` | CLI (`doctor`, `check`, `preview`, `render`, `init`) | Pinned `0.9.94` | Apache 2.0 | Official CLI via `@orca/process-host` adapter | Node 22+, FFmpeg, Chrome | `src/main/video-studio/engines/hyperframes-*` | **02–03 (Now)** |
-| `heygen-com/hyperframes` | Modular sub-compositions, `BRIEF.md`, `STORYBOARD.md`, `frame.md`, registry blocks, `media-use` / audio / captions | `0.9.94` | Apache 2.0 | Native file contract + CLI/skill workflow | GSAP, Three.js, Whisper, FFmpeg | Project layout & Agent Runner | **02–05** |
-| `heygen-com/hyperframes` | Embedded Studio / `<hyperframes-player>` | `0.9.94` (audit at Phase 04) | Apache 2.0 | Isolated guest frame / official `@hyperframes/player` package | Web Components / HTTP preview | `src/renderer/.../video-studio/preview/` | **04** |
-| `nexu-io/openmotion` | `Motion Package` v0.2 (`motion-package.json`, `DESIGN.md`, `MOTION.md`, manifest/inventory) | Audit upstream `main` at Phase 04 start | Apache 2.0 | Contract now -> Source extraction + adapter | Zod, YAML/JSON parsers | `src/main/video-studio/extensions/` & `Style Profile` | **03 (Contract) -> 04 (Importer)** |
-| `nexu-io/openmotion` | `Motion Knowledge Library` (300+ `Motion.md` guides in `library/`) | Audit upstream `main` at Phase 04 start | Apache 2.0 | Source/content indexing + loader module | Markdown metadata index | `Universal Motion Registry` | **04** |
-| `nexu-io/openmotion` | `Reference Recreation` skills (`skills/openmotion-recreate`) | Audit upstream `main` at Phase 04 start | Apache 2.0 | Skill/workflow extraction into Orca agent skills | Vision/LLM, FFmpeg contact sheets | `Reference Video Analyzer` | **04–05** |
-| `nexu-io/openmotion` | `Template Discovery` & search modules | Audit upstream `main` at Phase 04 start | Apache 2.0 | Source extraction & refactoring into Orca Core | Search/index helpers | `Orca Template Registry` | **04** |
-| `nexu-io/openmotion` | `Brand Kit` workflow (`BRANDKIT.md`, `openmotion-brandkit`) | Audit upstream `main` at Phase 04 start | Apache 2.0 | Adapter mapping Brand Kit -> `style-profile.json` + `frame.md` | Asset Registry | `Style Profile Manager` | **04** |
-| `nexu-io/openmotion` | `Media Generation Gateway` (image/video/music/TTS providers) | Audit upstream `main` at Phase 04 start | Apache 2.0 | Provider adapter extraction (reusing Orca encrypted key store) | HTTP/API clients | `Unified Model Gateway` | **04–05** |
-| `nexu-io/openmotion` | `Production Skills` (`openmotion-director`, `openmotion-production`) | Audit upstream `main` at Phase 04 start | Apache 2.0 | Skill registry integration with Orca coding agents | Structured Agent Host | `Automated Agent Runner` | **05** |
-| `nexu-io/openmotion` | `Asset Versioning` | Audit upstream `main` at Phase 04 start | Apache 2.0 | Feature alignment into `asset-registry.json` | SHA-256 + Host Library | `Master Asset Registry` | **03 (Schema) -> 04 (Versioning UI)** |
-| `nexu-io/openmotion` | `MCP Tools` (`mcp.ts`) | Audit upstream `main` at Phase 04 start | Apache 2.0 | Expose Orca Video Core operations as Orca Agent / MCP tools | Orca MCP & RPC | `Orca Agent Tool Registry` | **04–05** |
-| `nexu-io/openmotion` | Reusable editor/timeline UI components (`src/motion/*`) | Audit upstream `main` at Phase 04 start | Apache 2.0 | Selective component adaptation matching `STYLEGUIDE.md` | React 19, Tailwind | `Native Video Studio UI` | **04–08** |
-| `remotion-dev/remotion` | Core engine, `@remotion/player`, `@remotion/renderer`, `@remotion/bundler`, `@remotion/transitions`, `@remotion/captions`, `@remotion/three` | Audit compatible v4.x at Phase 06 start | **Remotion License** (Free `<=3` team; Company License `>=4` / Automators; *exclude* paid Editor Starter) | Official packages behind `VideoEngineAdapter` (+ optional HF `window.__hfRemotion` interop) | React, esbuild, FFmpeg/compositor binaries (`app.asar.unpacked`) | `src/main/video-studio/engines/remotion-engine-adapter.ts` | **06** |
+| Upstream Repo            | Source Module / Feature                                                                                                                      | Upstream Version / Commit               | License                                                                                                   | Integration Method                                                                          | Shared Dependencies                                              | Target Orca Module                                         | Target Phase                          |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------- |
+| `heygen-com/hyperframes` | CLI (`doctor`, `check`, `preview`, `render`, `init`)                                                                                         | Pinned `0.9.94`                         | Apache 2.0                                                                                                | Official CLI via `@orca/process-host` adapter                                               | Node 22+, FFmpeg, Chrome                                         | `src/main/video-studio/engines/hyperframes-*`              | **02–03 (Now)**                       |
+| `heygen-com/hyperframes` | Modular sub-compositions, `BRIEF.md`, `STORYBOARD.md`, `frame.md`, registry blocks, `media-use` / audio / captions                           | `0.9.94`                                | Apache 2.0                                                                                                | Native file contract + CLI/skill workflow                                                   | GSAP, Three.js, Whisper, FFmpeg                                  | Project layout & Agent Runner                              | **02–05**                             |
+| `heygen-com/hyperframes` | Embedded Studio / `<hyperframes-player>`                                                                                                     | `0.9.94` (audit at Phase 04)            | Apache 2.0                                                                                                | Isolated guest frame / official `@hyperframes/player` package                               | Web Components / HTTP preview                                    | `src/renderer/.../video-studio/preview/`                   | **04**                                |
+| `nexu-io/openmotion`     | `Motion Package` v0.2 (`motion-package.json`, `DESIGN.md`, `MOTION.md`, manifest/inventory)                                                  | Audit upstream `main` at Phase 04 start | Apache 2.0                                                                                                | Contract now -> Source extraction + adapter                                                 | Zod, YAML/JSON parsers                                           | `src/main/video-studio/extensions/` & `Style Profile`      | **03 (Contract) -> 04 (Importer)**    |
+| `nexu-io/openmotion`     | `Motion Knowledge Library` (300+ `Motion.md` guides in `library/`)                                                                           | Audit upstream `main` at Phase 04 start | Apache 2.0                                                                                                | Source/content indexing + loader module                                                     | Markdown metadata index                                          | `Universal Motion Registry`                                | **04**                                |
+| `nexu-io/openmotion`     | `Reference Recreation` skills (`skills/openmotion-recreate`)                                                                                 | Audit upstream `main` at Phase 04 start | Apache 2.0                                                                                                | Skill/workflow extraction into Orca agent skills                                            | Vision/LLM, FFmpeg contact sheets                                | `Reference Video Analyzer`                                 | **04–05**                             |
+| `nexu-io/openmotion`     | `Template Discovery` & search modules                                                                                                        | Audit upstream `main` at Phase 04 start | Apache 2.0                                                                                                | Source extraction & refactoring into Orca Core                                              | Search/index helpers                                             | `Orca Template Registry`                                   | **04**                                |
+| `nexu-io/openmotion`     | `Brand Kit` workflow (`BRANDKIT.md`, `openmotion-brandkit`)                                                                                  | Audit upstream `main` at Phase 04 start | Apache 2.0                                                                                                | Adapter mapping Brand Kit -> `style-profile.json` + `frame.md`                              | Asset Registry                                                   | `Style Profile Manager`                                    | **04**                                |
+| `nexu-io/openmotion`     | `Media Generation Gateway` (image/video/music/TTS providers)                                                                                 | Audit upstream `main` at Phase 04 start | Apache 2.0                                                                                                | Provider adapter extraction (reusing Orca encrypted key store)                              | HTTP/API clients                                                 | `Unified Model Gateway`                                    | **04–05**                             |
+| `nexu-io/openmotion`     | `Production Skills` (`openmotion-director`, `openmotion-production`)                                                                         | Audit upstream `main` at Phase 04 start | Apache 2.0                                                                                                | Skill registry integration with Orca coding agents                                          | Structured Agent Host                                            | `Automated Agent Runner`                                   | **05**                                |
+| `nexu-io/openmotion`     | `Asset Versioning`                                                                                                                           | Audit upstream `main` at Phase 04 start | Apache 2.0                                                                                                | Feature alignment into `asset-registry.json`                                                | SHA-256 + Host Library                                           | `Master Asset Registry`                                    | **03 (Schema) -> 04 (Versioning UI)** |
+| `nexu-io/openmotion`     | `MCP Tools` (`mcp.ts`)                                                                                                                       | Audit upstream `main` at Phase 04 start | Apache 2.0                                                                                                | Expose Orca Video Core operations as Orca Agent / MCP tools                                 | Orca MCP & RPC                                                   | `Orca Agent Tool Registry`                                 | **04–05**                             |
+| `nexu-io/openmotion`     | Reusable editor/timeline UI components (`src/motion/*`)                                                                                      | Audit upstream `main` at Phase 04 start | Apache 2.0                                                                                                | Selective component adaptation matching `STYLEGUIDE.md`                                     | React 19, Tailwind                                               | `Native Video Studio UI`                                   | **04–08**                             |
+| `remotion-dev/remotion`  | Core engine, `@remotion/player`, `@remotion/renderer`, `@remotion/bundler`, `@remotion/transitions`, `@remotion/captions`, `@remotion/three` | Audit compatible v4.x at Phase 06 start | **Remotion License** (Free `<=3` team; Company License `>=4` / Automators; _exclude_ paid Editor Starter) | Official packages behind `VideoEngineAdapter` (+ optional HF `window.__hfRemotion` interop) | React, esbuild, FFmpeg/compositor binaries (`app.asar.unpacked`) | `src/main/video-studio/engines/remotion-engine-adapter.ts` | **06**                                |
 
 ---
 

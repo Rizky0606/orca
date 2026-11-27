@@ -55,6 +55,12 @@ export function assertSafeRelativePath(
   return segments
 }
 
+function readErrorCode(error: unknown): string | undefined {
+  return error instanceof Error && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : undefined
+}
+
 export async function resolveCanonicalRoot(
   rootDir: string,
   errorCode = VIDEO_STUDIO_INVALID_PATH_ERROR
@@ -66,7 +72,7 @@ export async function resolveCanonicalRoot(
       const real = await canonicalRealpath(current)
       return missingTail.length === 0 ? real : join(real, ...missingTail.toReversed())
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code
+      const code = readErrorCode(error)
       if (code !== 'ENOENT') {
         throw new Error(errorCode, { cause: error })
       }
@@ -96,7 +102,7 @@ export async function resolveContainedPath(
     try {
       info = await lstat(current)
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      if (readErrorCode(error) === 'ENOENT') {
         return join(current, ...segments.slice(i + 1))
       }
       throw new Error(errorCode, { cause: error })

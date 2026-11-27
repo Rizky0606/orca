@@ -17,12 +17,21 @@ import type {
   VideoStudioPreviewState,
   VideoStudioRenderJobSnapshot
 } from '../../../../shared/video-studio/video-studio-rpc-contract'
+import type { ValidationStatus } from '../../../../shared/video-studio/video-studio-validation-contract'
+
+export type VideoStudioCheckResultView = VideoStudioCheckResult & {
+  status?: ValidationStatus
+  stale?: boolean
+  skippedChecks?: string[]
+  productionGate?: { allowed: boolean; blockingReasons: string[] }
+  browserSkipped?: boolean
+}
 
 export type VideoStudioProductionController = {
   engines: VideoStudioEngineStatus[] | null
   probingEngines: boolean
   composition: VideoStudioCompositionState | null
-  checkResult: VideoStudioCheckResult | null
+  checkResult: VideoStudioCheckResultView | null
   job: VideoStudioRenderJobSnapshot | null
   preview: VideoStudioPreviewState
   busyAction: string | null

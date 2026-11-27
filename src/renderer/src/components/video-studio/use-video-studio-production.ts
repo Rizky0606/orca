@@ -14,7 +14,6 @@ import type { ExecutionHostId } from '../../../../shared/execution-host/executio
 import type { RuntimeClientTarget } from '../../../../shared/remote-runtime/host-catalog/runtime-client-target'
 import type { VideoStudioProject } from '../../../../shared/video-studio/video-studio-project'
 import type {
-  VideoStudioCheckResult,
   VideoStudioCompositionState,
   VideoStudioEngineStatus,
   VideoStudioPreviewState,
@@ -28,53 +27,26 @@ import {
   runWithProductionBusy,
   subscribeProductionProjectStream,
   triggerVideoDownload,
+  type VideoStudioCheckResultView,
   type VideoStudioProductionController
 } from './video-studio-production-actions'
 
 export type { VideoStudioProductionController }
 
-export function useVideoStudioProduction(params: {
-  hostId: ExecutionHostId
-  target: RuntimeClientTarget
+export function useVideoStudioEngineProbe(
+  target: RuntimeClientTarget,
   pairingRevision: number | undefined
-  project: VideoStudioProject | undefined
-  onReloadProjects: () => void
-}): VideoStudioProductionController {
-  const { hostId, target, pairingRevision, project, onReloadProjects } = params
-  const t = useTranslate()
-  const mounted = useRef(true)
-  const videoUrlRef = useRef<string | null>(null)
-  const lastJobStatusRef = useRef<string | undefined>(undefined)
-
+): {
+  engines: VideoStudioEngineStatus[] | null
+  probingEngines: boolean
+  reprobeEngines: () => void
+} {
   const [engines, setEngines] = useState<VideoStudioEngineStatus[] | null>(null)
   const [probingEngines, setProbingEngines] = useState(true)
-  const [composition, setComposition] = useState<VideoStudioCompositionState | null>(null)
-  const [checkResult, setCheckResult] = useState<VideoStudioCheckResult | null>(null)
-  const [job, setJob] = useState<VideoStudioRenderJobSnapshot | null>(null)
-  const [preview, setPreview] = useState<VideoStudioPreviewState>({ active: false })
-  const [busyAction, setBusyAction] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [selectedRenderId, setSelectedRenderId] = useState<string | null>(null)
-  const [videoUrl, setVideoUrl] = useState<string | null>(null)
-  const [loadingVideo, setLoadingVideo] = useState(false)
   const [probeTrigger, setProbeTrigger] = useState(0)
-  const [externalChangedPaths, setExternalChangedPaths] = useState<string[]>([])
-  const [compRefreshTick, setCompRefreshTick] = useState(0)
-
-  const projectId = project?.id
-  const handleCompletedRender = useEffectEvent(onReloadProjects)
-
-  useEffect(() => {
-    mounted.current = true
-    return () => {
-      mounted.current = false
-      releaseVideoObjectUrl(videoUrlRef)
-    }
-  }, [])
 
   useEffect(() => {
     let cancelled = false
-    setProbingEngines(true)
     void probeVideoStudioEnginesForTarget(target, pairingRevision)
       .then((res) => {
         if (!cancelled) {
@@ -91,6 +63,60 @@ export function useVideoStudioProduction(params: {
       cancelled = true
     }
   }, [target, pairingRevision, probeTrigger])
+
+  return {
+    engines,
+    probingEngines,
+    reprobeEngines: () => {
+      setProbingEngines(true)
+      setProbeTrigger((n) => n + 1)
+    }
+  }
+}
+
+export function useVideoStudioProduction(params: {
+  hostId: ExecutionHostId
+  target: RuntimeClientTarget
+  pairingRevision: number | undefined
+  project: VideoStudioProject | undefined
+  onReloadProjects: () => void
+  engineProbe?: {
+    engines: VideoStudioEngineStatus[] | null
+    probingEngines: boolean
+    reprobeEngines: () => void
+  }
+}): VideoStudioProductionController {
+  const { hostId, target, pairingRevision, project, onReloadProjects, engineProbe } = params
+  const t = useTranslate()
+  const mounted = useRef(true)
+  const videoUrlRef = useRef<string | null>(null)
+  const lastJobStatusRef = useRef<string | undefined>(undefined)
+
+  const fallbackProbe = useVideoStudioEngineProbe(target, pairingRevision)
+  const activeProbe = engineProbe ?? fallbackProbe
+
+  const [composition, setComposition] = useState<VideoStudioCompositionState | null>(null)
+  const [checkResult, setCheckResult] = useState<VideoStudioCheckResultView | null>(null)
+  const [job, setJob] = useState<VideoStudioRenderJobSnapshot | null>(null)
+  const [preview, setPreview] = useState<VideoStudioPreviewState>({ active: false })
+  const [busyAction, setBusyAction] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [selectedRenderId, setSelectedRenderId] = useState<string | null>(null)
+  const [videoUrl, setVideoUrl] = useState<string | null>(null)
+  const [loadingVideo, setLoadingVideo] = useState(false)
+  const [externalChangedPaths, setExternalChangedPaths] = useState<string[]>([])
+  const [compRefreshTick, setCompRefreshTick] = useState(0)
+
+  const projectId = project?.id
+  const handleCompletedRender = useEffectEvent(onReloadProjects)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      releaseVideoObjectUrl(videoUrlRef)
+    }
+  }, [])
 
   useEffect(() => {
     if (!projectId) {
@@ -111,24 +137,14 @@ export function useVideoStudioProduction(params: {
   }, [target, pairingRevision, projectId, compRefreshTick])
 
   useEffect(() => {
-    setCheckResult(null)
-    setError(null)
-    setSelectedRenderId(null)
-    setExternalChangedPaths([])
-    releaseVideoObjectUrl(videoUrlRef)
-    setVideoUrl(null)
-    lastJobStatusRef.current = undefined
     if (!projectId) {
-      setComposition(null)
-      setJob(null)
-      setPreview({ active: false })
       return
     }
     return subscribeProductionProjectStream({
       target,
       projectId,
       lastJobStatusRef,
-      setEngines,
+      setEngines: () => {},
       setJob,
       setCheckResult,
       setPreview,
@@ -182,8 +198,8 @@ export function useVideoStudioProduction(params: {
   }
 
   return {
-    engines,
-    probingEngines,
+    engines: activeProbe.engines,
+    probingEngines: activeProbe.probingEngines,
     composition,
     checkResult,
     job,
@@ -199,7 +215,7 @@ export function useVideoStudioProduction(params: {
       setCompRefreshTick((n) => n + 1)
     },
     recheckEngines: () => {
-      setProbeTrigger((n) => n + 1)
+      activeProbe.reprobeEngines()
       setCompRefreshTick((n) => n + 1)
     },
     scaffoldComposition: (overwrite = false) =>

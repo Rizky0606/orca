@@ -158,9 +158,8 @@ export function VideoStudioAssetRegistryPanel({
                     <Button
                       key={stateKey}
                       type="button"
-                      size="sm"
+                      size="xs"
                       variant={activeState === stateKey ? 'secondary' : 'outline'}
-                      className="h-6 px-2 text-2xs"
                       onClick={() =>
                         setSelectedStates((prev) => ({ ...prev, [asset.id]: stateKey }))
                       }
@@ -177,7 +176,9 @@ export function VideoStudioAssetRegistryPanel({
                     </Badge>
                   ) : null}
                   {asset.consistency.lockGeometry ? (
-                    <Badge variant="referenceLabel">locked geometry</Badge>
+                    <Badge variant="referenceLabel">
+                      {t('videoStudio.assetLockedGeometry', 'locked geometry')}
+                    </Badge>
                   ) : null}
                 </div>
 
@@ -246,7 +247,10 @@ export function VideoStudioAssetRegistryPanel({
                 onClick={() => void inspector.applyLibraryAsset(item.id, item.version)}
               >
                 <PackagePlus aria-hidden="true" className="size-3.5" />
-                {item.name} (v{item.version})
+                {t('videoStudio.libraryAssetItem', '{{name}} (v{{version}})', {
+                  name: item.name,
+                  version: item.version
+                })}
               </Button>
             ))}
           </div>
@@ -260,7 +264,7 @@ export function VideoStudioAssetRegistryPanel({
         <div className="grid min-w-0 gap-2 @sm:grid-cols-3">
           <Input
             aria-label={t('videoStudio.assetIdLabel', 'Asset ID')}
-            placeholder="ac_indoor_001"
+            placeholder={t('videoStudio.assetIdPlaceholder', 'ac_indoor_001')}
             className="min-h-11 @lg:min-h-9"
             value={newAssetId}
             disabled={busy}
@@ -276,7 +280,7 @@ export function VideoStudioAssetRegistryPanel({
           />
           <Input
             aria-label={t('videoStudio.defaultStateLabel', 'Default state')}
-            placeholder="closed"
+            placeholder={t('videoStudio.defaultStatePlaceholder', 'closed')}
             className="min-h-11 @lg:min-h-9"
             value={newAssetState}
             disabled={busy}
@@ -285,7 +289,7 @@ export function VideoStudioAssetRegistryPanel({
         </div>
         <Textarea
           rows={2}
-          className="font-mono text-xs"
+          variant="code"
           aria-label={t('videoStudio.assetSvgLabel', 'SVG markup')}
           value={newSvg}
           disabled={busy}

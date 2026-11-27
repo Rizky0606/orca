@@ -24,29 +24,28 @@ export type ProjectInputFingerprintOptions = {
   runtimeIdentity?: string
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 export function stableJsonSerialize(value: unknown): string {
-  if (value === null || typeof value !== 'object') {
-    return JSON.stringify(value) ?? 'null'
-  }
-  if (Array.isArray(value)) {
-    return `[${value
-      .map((item) =>
+  if (!isPlainObject(value)) {
+    if (Array.isArray(value)) {
+      return `[${Array.from(value, (item) =>
         item === undefined || typeof item === 'function' || typeof item === 'symbol'
           ? 'null'
           : stableJsonSerialize(item)
-      )
-      .join(',')}]`
+      ).join(',')}]`
+    }
+    return JSON.stringify(value) ?? 'null'
   }
-  const record = value as Record<string, unknown>
-  const keys = Object.keys(record).sort()
+  const keys = Object.keys(value).sort()
   const parts = keys
-    .filter(
-      (key) =>
-        record[key] !== undefined &&
-        typeof record[key] !== 'function' &&
-        typeof record[key] !== 'symbol'
-    )
-    .map((key) => `${JSON.stringify(key)}:${stableJsonSerialize(record[key])}`)
+    .filter((key) => {
+      const entry = value[key]
+      return entry !== undefined && typeof entry !== 'function' && typeof entry !== 'symbol'
+    })
+    .map((key) => `${JSON.stringify(key)}:${stableJsonSerialize(value[key])}`)
   return `{${parts.join(',')}}`
 }
 

@@ -48,7 +48,11 @@ export function VideoStudioStyleMotionPanel({
           </h3>
           {profile ? (
             <Badge variant="outline">
-              {profile.name} · v{profile.version} ({profile.tier})
+              {t('videoStudio.styleProfileVersionBadge', '{{name}} · v{{version}} ({{tier}})', {
+                name: profile.name,
+                version: profile.version,
+                tier: profile.tier
+              })}
             </Badge>
           ) : null}
         </div>
@@ -102,8 +106,16 @@ export function VideoStudioStyleMotionPanel({
           </div>
           {diff?.diffs.map((entry) => (
             <p key={`${entry.file}:${entry.tokenPath}`} className="font-mono wrap-anywhere">
-              {entry.file} · {entry.tokenPath}: JSON={JSON.stringify(entry.jsonValue)} vs MD=
-              {JSON.stringify(entry.markdownValue)}
+              {t(
+                'videoStudio.styleDriftEntry',
+                '{{file}} · {{tokenPath}}: JSON={{jsonValue}} vs MD={{markdownValue}}',
+                {
+                  file: entry.file,
+                  tokenPath: entry.tokenPath,
+                  jsonValue: JSON.stringify(entry.jsonValue),
+                  markdownValue: JSON.stringify(entry.markdownValue)
+                }
+              )}
             </p>
           ))}
         </div>
@@ -157,7 +169,7 @@ export function VideoStudioStyleMotionPanel({
       <div className="flex flex-wrap items-center gap-2 rounded border border-border bg-background p-2.5">
         <Input
           aria-label={t('videoStudio.duplicateStyleIdLabel', 'Duplicate ID')}
-          placeholder="custom-explainer-01"
+          placeholder={t('videoStudio.duplicateStyleIdPlaceholder', 'custom-explainer-01')}
           className="min-h-11 w-44 @lg:min-h-8"
           value={dupId}
           disabled={busy}

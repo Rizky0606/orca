@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import * as z from 'zod'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   VideoEngineProcessDeps,
@@ -153,10 +154,11 @@ describe('VideoStudioPreviewManager (6-factor identity verification)', () => {
     })
 
     const sessionsFile = VideoStudioPreviewManager.getSessionsFilePath(profileDir)
-    const persisted = JSON.parse(await readFile(sessionsFile, 'utf8')) as {
-      schemaVersion: number
-      sessions: Record<string, PreviewSessionRecord>
-    }
+    const SessionsFileSchema = z.object({
+      schemaVersion: z.number(),
+      sessions: z.record(z.string(), z.record(z.string(), z.unknown()))
+    })
+    const persisted = SessionsFileSchema.parse(JSON.parse(await readFile(sessionsFile, 'utf8')))
     expect(persisted.schemaVersion).toBe(1)
     expect(persisted.sessions['proj-1']).toMatchObject({
       projectId: 'proj-1',
@@ -338,9 +340,10 @@ describe('VideoStudioPreviewManager (6-factor identity verification)', () => {
       expect(stopped, testCase.name).toEqual({ active: false })
       expect(testCase.osControl.terminateProcessTree, testCase.name).not.toHaveBeenCalled()
 
-      const afterStop = JSON.parse(await readFile(sessionsFile, 'utf8')) as {
-        sessions: Record<string, PreviewSessionRecord>
-      }
+      const SessionsMapSchema = z.object({
+        sessions: z.record(z.string(), z.record(z.string(), z.unknown()))
+      })
+      const afterStop = SessionsMapSchema.parse(JSON.parse(await readFile(sessionsFile, 'utf8')))
       expect(afterStop.sessions['proj-1'], testCase.name).toBeUndefined()
 
       if (!testCase.expectedSessionId) {
@@ -454,9 +457,10 @@ describe('VideoStudioPreviewManager (6-factor identity verification)', () => {
     expect(stopped).toEqual({ active: false })
     expect(osControl.terminateProcessTree).toHaveBeenCalledWith(44300)
 
-    const persisted = JSON.parse(await readFile(sessionsFile, 'utf8')) as {
-      sessions: Record<string, PreviewSessionRecord>
-    }
+    const SessionsMapSchema = z.object({
+      sessions: z.record(z.string(), z.record(z.string(), z.unknown()))
+    })
+    const persisted = SessionsMapSchema.parse(JSON.parse(await readFile(sessionsFile, 'utf8')))
     expect(persisted.sessions['proj-1']).toBeUndefined()
   })
 

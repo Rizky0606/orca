@@ -1,6 +1,7 @@
 import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import * as z from 'zod'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createHyperFramesEngineAdapter } from './engines/hyperframes-engine-adapter'
 import { createHostVideoEngineDeps } from './engines/host-video-engine-deps'
@@ -26,6 +27,7 @@ afterEach(async () => {
 })
 
 describe('Video Studio Render Smoke, Seek & Causal Consistency Gate', () => {
+  // Sequential CLI lint across 6 fixtures takes up to ~30s on Windows hosts.
   it('validates smoke & full compositions with pinned HyperFrames 0.9.94 CLI', async () => {
     const prereqs = await checkRenderPrerequisites()
     expect(prereqs.hasHyperFrames0994).toBe(true)
@@ -43,6 +45,7 @@ describe('Video Studio Render Smoke, Seek & Causal Consistency Gate', () => {
     }
   }, 60_000)
 
+  // End-to-end Chrome check, 4 headless snapshot batches, and optional MP4 encode require >60s.
   it('proves 1080x1920 Chrome check, non-congruent #fan pixels, seek determinism, golden match, Style & Asset causal changes, and mandatory render gate', async () => {
     const prereqs = await checkRenderPrerequisites()
     const requireRenderSmoke = process.env.ORCA_REQUIRE_RENDER_SMOKE === '1'
@@ -110,9 +113,18 @@ describe('Video Studio Render Smoke, Seek & Causal Consistency Gate', () => {
     await cp(join(CONSISTENCY_FIXTURES_ROOT, 'fixture-a-ac-explainer'), styleMutated, {
       recursive: true
     })
-    const rawStyle = JSON.parse(
-      await readFile(join(styleMutated, 'styles', 'style-profile.json'), 'utf8')
-    ) as { visual: { palette: { background: string; accentPrimary: string } } }
+    const StyleJsonSchema = z
+      .object({
+        visual: z
+          .object({
+            palette: z.object({ background: z.string(), accentPrimary: z.string() }).passthrough()
+          })
+          .passthrough()
+      })
+      .passthrough()
+    const rawStyle = StyleJsonSchema.parse(
+      JSON.parse(await readFile(join(styleMutated, 'styles', 'style-profile.json'), 'utf8'))
+    )
     rawStyle.visual.palette.background = '#E2F8F3'
     rawStyle.visual.palette.accentPrimary = '#0F766E'
     await writeFile(
@@ -139,9 +151,14 @@ describe('Video Studio Render Smoke, Seek & Causal Consistency Gate', () => {
     await cp(join(CONSISTENCY_FIXTURES_ROOT, 'fixture-a-ac-explainer'), assetMutated, {
       recursive: true
     })
-    const rawReg = JSON.parse(
-      await readFile(join(assetMutated, 'assets', 'asset-registry.json'), 'utf8')
-    ) as { assets: { id: string; defaultState: string }[] }
+    const AssetJsonSchema = z
+      .object({
+        assets: z.array(z.object({ id: z.string(), defaultState: z.string() }).passthrough())
+      })
+      .passthrough()
+    const rawReg = AssetJsonSchema.parse(
+      JSON.parse(await readFile(join(assetMutated, 'assets', 'asset-registry.json'), 'utf8'))
+    )
     rawReg.assets[0]!.defaultState = 'cutaway'
     await writeFile(
       join(assetMutated, 'assets', 'asset-registry.json'),
@@ -184,14 +201,21 @@ describe('Video Studio Render Smoke, Seek & Causal Consistency Gate', () => {
       args: ['-v', 'error', '-print_format', 'json', '-show_streams', smokeOut]
     })
     expect(probe.code).toBe(0)
-    const streams = JSON.parse(probe.stdout) as {
-      streams?: {
-        codec_type?: string
-        width?: number
-        height?: number
-        r_frame_rate?: string
-      }[]
-    }
+    const ProbeStreamsSchema = z.object({
+      streams: z
+        .array(
+          z
+            .object({
+              codec_type: z.string().optional(),
+              width: z.number().optional(),
+              height: z.number().optional(),
+              r_frame_rate: z.string().optional()
+            })
+            .passthrough()
+        )
+        .optional()
+    })
+    const streams = ProbeStreamsSchema.parse(JSON.parse(probe.stdout))
     const videoStream = streams.streams?.find((s) => s.codec_type === 'video')
     expect(videoStream).toMatchObject({ width: 1080, height: 1920, r_frame_rate: '30/1' })
   }, 180_000)

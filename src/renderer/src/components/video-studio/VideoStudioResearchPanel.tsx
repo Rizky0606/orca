@@ -128,7 +128,7 @@ export function VideoStudioResearchPanel({
           <Textarea
             id={`brief-markdown-${projectId}`}
             rows={5}
-            className="font-mono text-xs"
+            variant="code"
             value={briefBody}
             disabled={busy}
             onChange={(e) => setBriefBody(e.currentTarget.value)}
@@ -217,7 +217,7 @@ export function VideoStudioResearchPanel({
           />
           <Input
             aria-label={t('videoStudio.sourceUrlLabel', 'Source URL')}
-            placeholder="https://..."
+            placeholder={t('videoStudio.sourceUrlPlaceholder', 'https://...')}
             type="url"
             className="min-h-11 @sm:col-span-4 @lg:min-h-9"
             value={sourceUrl}
@@ -237,9 +237,13 @@ export function VideoStudioResearchPanel({
               <SelectValue />
             </SelectTrigger>
             <SelectContent position="popper">
-              <SelectItem value="verified">verified</SelectItem>
-              <SelectItem value="unverified">unverified</SelectItem>
-              <SelectItem value="assumed">assumed</SelectItem>
+              <SelectItem value="verified">
+                {t('videoStudio.sourceVerified', 'verified')}
+              </SelectItem>
+              <SelectItem value="unverified">
+                {t('videoStudio.sourceUnverified', 'unverified')}
+              </SelectItem>
+              <SelectItem value="assumed">{t('videoStudio.sourceAssumed', 'assumed')}</SelectItem>
             </SelectContent>
           </Select>
           <Button

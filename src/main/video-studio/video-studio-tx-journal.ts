@@ -40,6 +40,12 @@ export function sha256Bytes(content: string | Uint8Array): string {
   return createHash('sha256').update(content).digest('hex')
 }
 
+export function readErrorCode(error: unknown): string | undefined {
+  return error instanceof Error && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : undefined
+}
+
 export async function readFileWithSha256(
   absPath: string
 ): Promise<{ exists: boolean; bytes: Buffer | null; sha256: string | null }> {
@@ -47,7 +53,7 @@ export async function readFileWithSha256(
     const bytes = await readFile(absPath)
     return { exists: true, bytes, sha256: sha256Bytes(bytes) }
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    if (readErrorCode(error) === 'ENOENT') {
       return { exists: false, bytes: null, sha256: null }
     }
     throw error

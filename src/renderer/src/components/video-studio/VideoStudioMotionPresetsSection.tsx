@@ -53,7 +53,15 @@ export function VideoStudioMotionPresetsSection({
                   <Badge variant={badgeVariant}>{label}</Badge>
                 </div>
                 <p className="text-2xs text-muted-foreground">
-                  {preset.category} · v{preset.version} · hyperframes: {hfStatus}
+                  {t(
+                    'videoStudio.motionPresetSummary',
+                    '{{category}} · v{{version}} · hyperframes: {{status}}',
+                    {
+                      category: preset.category,
+                      version: preset.version,
+                      status: hfStatus
+                    }
+                  )}
                 </p>
               </li>
             )

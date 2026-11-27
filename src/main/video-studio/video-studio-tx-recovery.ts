@@ -3,6 +3,7 @@ import { SafeResourceIdSchema } from '../../shared/video-studio/video-studio-ide
 import type { VideoStudioLockCoordinator } from './video-studio-locks'
 import { assertSafeRelativePath, resolveContainedPath } from './video-studio-path-containment'
 import {
+  readErrorCode,
   readFileWithSha256,
   sha256Bytes,
   TxJournalSchema,
@@ -49,10 +50,11 @@ function validateJournalStructure(
   }
 
   const candidateTxId =
-    parsedJson &&
     typeof parsedJson === 'object' &&
-    typeof (parsedJson as { txId?: unknown }).txId === 'string'
-      ? (parsedJson as { txId: string }).txId
+    parsedJson !== null &&
+    'txId' in parsedJson &&
+    typeof parsedJson.txId === 'string'
+      ? parsedJson.txId
       : 'malformed'
   const safeTxId = SafeResourceIdSchema.safeParse(candidateTxId).success
     ? candidateTxId
@@ -172,7 +174,7 @@ async function runRecoveryUnlocked(
   try {
     journalRaw = await readFile(txLogAbs, 'utf8')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    if (readErrorCode(error) === 'ENOENT') {
       return { recovered: false, action: 'none' }
     }
     throw error

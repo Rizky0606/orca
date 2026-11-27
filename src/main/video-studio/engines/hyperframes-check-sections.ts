@@ -154,16 +154,16 @@ export function collectCheckSectionFindings(
     if (NON_SECTION_KEYS.has(key) || !isPlainRecord(sectionVal)) {
       continue
     }
-    const hasFindings = Array.isArray(sectionVal.findings)
-    const hasErrors = Array.isArray(sectionVal.errors)
-    const hasWarnings = Array.isArray(sectionVal.warnings)
-    if (!hasFindings && !hasErrors && !hasWarnings) {
+    const findingsList = Array.isArray(sectionVal.findings) ? sectionVal.findings : null
+    const errorsList = Array.isArray(sectionVal.errors) ? sectionVal.errors : null
+    const warningsList = Array.isArray(sectionVal.warnings) ? sectionVal.warnings : null
+    if (!findingsList && !errorsList && !warningsList) {
       continue
     }
     const sectionFindings = [
-      ...(hasFindings ? toValidationFindings(sectionVal.findings as unknown[], 'error', key) : []),
-      ...(hasErrors ? toValidationFindings(sectionVal.errors as unknown[], 'error', key) : []),
-      ...(hasWarnings ? toValidationFindings(sectionVal.warnings as unknown[], 'warning', key) : [])
+      ...(findingsList ? toValidationFindings(findingsList, 'error', key) : []),
+      ...(errorsList ? toValidationFindings(errorsList, 'error', key) : []),
+      ...(warningsList ? toValidationFindings(warningsList, 'warning', key) : [])
     ]
     findings.push(...sectionFindings)
 

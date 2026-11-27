@@ -202,7 +202,11 @@ export class VideoStudioFileWatcher {
         })
         return
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM') {
+        const code =
+          error instanceof Error && 'code' in error && typeof error.code === 'string'
+            ? error.code
+            : undefined
+        if (code !== 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM') {
           return
         }
       }

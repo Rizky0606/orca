@@ -42,8 +42,10 @@ export async function inspectProjectAssetRegistry(
   if (
     typeof raw !== 'object' ||
     raw === null ||
-    (raw as { schemaVersion?: unknown }).schemaVersion !== 1 ||
-    !Array.isArray((raw as { assets?: unknown }).assets)
+    !('schemaVersion' in raw) ||
+    raw.schemaVersion !== 1 ||
+    !('assets' in raw) ||
+    !Array.isArray(raw.assets)
   ) {
     return {
       assets: [],
@@ -55,16 +57,14 @@ export async function inspectProjectAssetRegistry(
   const assets: MasterAssetRecord[] = []
   const invariantErrors: Record<string, string[]> = {}
   const seenIds = new Set<string>()
-  const rawAssets = (raw as { assets: unknown[] }).assets
+  const rawAssets: unknown[] = raw.assets
   for (let i = 0; i < rawAssets.length; i += 1) {
     const entry = rawAssets[i]
     const parsedRecord = MasterAssetRecordSchema.safeParse(entry)
     if (!parsedRecord.success) {
       const fallbackId =
-        typeof entry === 'object' &&
-        entry !== null &&
-        typeof (entry as { id?: unknown }).id === 'string'
-          ? (entry as { id: string }).id
+        typeof entry === 'object' && entry !== null && 'id' in entry && typeof entry.id === 'string'
+          ? entry.id
           : `_invalid_${i}`
       invariantErrors[fallbackId] = [parsedRecord.error.message]
       continue
