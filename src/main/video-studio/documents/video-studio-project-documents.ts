@@ -18,6 +18,7 @@ import {
   type VideoStudioUpsertResearchSourceResult
 } from '../../../shared/video-studio/video-studio-document-rpc-contract'
 import type { StoryboardDocument } from '../../../shared/video-studio/video-studio-storyboard-contract'
+import { computeProjectInputFingerprint } from '../engines/project-input-fingerprint'
 import { resolveVideoStudioProjectDir } from '../video-studio-composition-paths'
 import { VideoStudioLockCoordinator } from '../video-studio-locks'
 import { VideoStudioTransactionCoordinator } from '../video-studio-transactions'
@@ -86,6 +87,10 @@ export class VideoStudioProjectDocumentsStore {
     const trustRecord = this.trustStore
       ? await this.trustStore.getTrustRecord(projectId, projectDir)
       : null
+    const live = await computeProjectInputFingerprint(projectDir).catch(() => null)
+    const trustMatchesLive =
+      Boolean(trustRecord && live) &&
+      trustRecord!.inputFingerprint.toLowerCase() === live!.inputFingerprint.toLowerCase()
 
     return {
       briefMarkdown,
@@ -96,8 +101,9 @@ export class VideoStudioProjectDocumentsStore {
       researchSources: parseSourcesJson(contents.get('references/sources.json') ?? null),
       researchNotesMarkdown: contents.get('references/research-notes.md') ?? '',
       revisions,
-      trustState: trustRecord?.trustState ?? 'unapproved',
-      ...(trustRecord ? { approvedInputFingerprint: trustRecord.inputFingerprint } : {})
+      trustState: trustMatchesLive ? trustRecord!.trustState : 'unapproved',
+      ...(trustRecord ? { approvedInputFingerprint: trustRecord.inputFingerprint } : {}),
+      ...(live ? { currentInputFingerprint: live.inputFingerprint } : {})
     }
   }
 

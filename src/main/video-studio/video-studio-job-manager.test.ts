@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,12 +6,16 @@ import type {
   VideoStudioProject,
   VideoStudioRenderRecord
 } from '../../shared/video-studio/video-studio-project'
+import { computeProjectInputFingerprint } from './engines/project-input-fingerprint'
 import type { VideoRenderEngineAdapter } from './engines/video-render-engine'
 import { openVideoStudioCatalog } from './video-studio-catalog'
+import { resolveVideoStudioProjectDir } from './video-studio-composition-paths'
 import {
   disposeAllVideoStudioJobManagers,
   openVideoStudioJobManager
 } from './video-studio-job-registry'
+import { VideoStudioPreviewManager } from './video-studio-preview-manager'
+import { VideoStudioTrustStore } from './video-studio-trust-store'
 
 const sampleProject = (
   id: string,
@@ -234,5 +238,237 @@ describe('VideoStudioJobManager', () => {
     await expect(
       manager.startRender(sampleProject('rem-1', { engine: 'remotion' }), 'looks')
     ).rejects.toThrow('video_studio_engine_unavailable')
+  })
+
+  it('enforces Host Trust Store before Chrome check, preview, and render including TOCTOU edits', async () => {
+    const projectDir = resolveVideoStudioProjectDir(profileDir, 'p-untrusted')
+    await mkdir(projectDir, { recursive: true })
+    await writeFile(join(projectDir, 'hyperframes.json'), '{"paths":{}}', 'utf8')
+    await writeFile(join(projectDir, 'index.html'), '<html><body>untrusted</body></html>', 'utf8')
+
+    const adapter: VideoRenderEngineAdapter = {
+      id: 'hyperframes',
+      probeEnvironment: vi.fn(),
+      scaffoldProject: vi.fn(),
+      checkProject: vi.fn(async (dir) => ({
+        passed: true,
+        errors: [],
+        warnings: [],
+        summary: 'ok',
+        checkedAt: Date.now(),
+        status: 'passed' as const,
+        engine: 'hyperframes' as const,
+        inputFingerprint: (await computeProjectInputFingerprint(dir)).inputFingerprint,
+        findings: [],
+        skippedChecks: [],
+        sectionStatuses: {},
+        productionGate: { allowed: true, blockingReasons: [] }
+      })),
+      startPreview: vi.fn().mockResolvedValue({
+        state: { active: true, url: 'http://127.0.0.1:4101/#project/p-untrusted', port: 4101 },
+        stop: vi.fn().mockResolvedValue(undefined)
+      }),
+      renderProject: vi.fn(async (_dir, req) => ({
+        id: req.renderId,
+        engine: 'hyperframes' as const,
+        quality: req.quality,
+        fileName: req.fileName,
+        durationSeconds: 30,
+        width: 1920,
+        height: 1080,
+        fps: 30,
+        sizeBytes: 512,
+        createdAt: 12345
+      }))
+    }
+
+    const catalog = await openVideoStudioCatalog(profileDir)
+    const manager = await openVideoStudioJobManager(profileDir, {
+      catalog,
+      getAdapter: () => adapter
+    })
+    const project = sampleProject('p-untrusted')
+
+    await expect(manager.runCheck(project)).rejects.toThrow(
+      'video_studio_execution_approval_required'
+    )
+    await expect(manager.startPreview(project)).rejects.toThrow(
+      'video_studio_execution_approval_required'
+    )
+    await expect(manager.startRender(project, 'looks')).rejects.toThrow(
+      'video_studio_execution_approval_required'
+    )
+    expect(adapter.checkProject).not.toHaveBeenCalled()
+    expect(adapter.startPreview).not.toHaveBeenCalled()
+    expect(adapter.renderProject).not.toHaveBeenCalled()
+
+    // Static browserless lint mode skips Chrome and does not require execution approval
+    await expect(manager.runCheck(project, { browser: false })).resolves.toMatchObject({
+      passed: true
+    })
+    expect(adapter.checkProject).toHaveBeenCalledTimes(1)
+
+    // Preview-only approval allows check & preview, blocks render
+    const trustStore = new VideoStudioTrustStore(profileDir)
+    const fp = await computeProjectInputFingerprint(projectDir)
+    await trustStore.approveProjectExecution({
+      projectId: 'p-untrusted',
+      projectDir,
+      trustState: 'approved-preview',
+      inputFingerprint: fp.inputFingerprint
+    })
+
+    await expect(manager.runCheck(project)).resolves.toMatchObject({ passed: true })
+    await expect(manager.startPreview(project)).resolves.toMatchObject({ active: true })
+    await expect(manager.startRender(project, 'looks')).rejects.toThrow(
+      'video_studio_execution_approval_required'
+    )
+
+    // Full render approval allows render, then external file edit invalidates trust & marks check stale
+    await trustStore.approveProjectExecution({
+      projectId: 'p-untrusted',
+      projectDir,
+      trustState: 'approved-render',
+      inputFingerprint: fp.inputFingerprint
+    })
+    await writeFile(
+      join(projectDir, 'index.html'),
+      '<html><body><script>tamper()</script></body></html>',
+      'utf8'
+    )
+
+    const compState = await manager.getCompositionState('p-untrusted')
+    expect((compState as { checkStale?: boolean }).checkStale).toBe(true)
+
+    await expect(manager.startRender(project, 'looks')).rejects.toThrow(
+      'video_studio_execution_approval_required'
+    )
+    expect(adapter.renderProject).not.toHaveBeenCalled()
+  })
+
+  it('catches TOCTOU edit right before Chrome render spawn and cleans up preview sessions', async () => {
+    const projectDir = resolveVideoStudioProjectDir(profileDir, 'p-toctou')
+    await mkdir(projectDir, { recursive: true })
+    await writeFile(join(projectDir, 'hyperframes.json'), '{"paths":{}}', 'utf8')
+    await writeFile(join(projectDir, 'index.html'), '<html><body>safe</body></html>', 'utf8')
+    const fp = await computeProjectInputFingerprint(projectDir)
+    const trustStore = new VideoStudioTrustStore(profileDir)
+    await trustStore.approveProjectExecution({
+      projectId: 'p-toctou',
+      projectDir,
+      trustState: 'approved-render',
+      inputFingerprint: fp.inputFingerprint
+    })
+
+    const renderProject = vi.fn()
+    const adapter: VideoRenderEngineAdapter = {
+      id: 'hyperframes',
+      probeEnvironment: vi.fn(),
+      scaffoldProject: vi.fn(),
+      checkProject: vi.fn(),
+      startPreview: vi.fn().mockResolvedValue({
+        state: { active: true, url: 'http://127.0.0.1:4102/#project/p-toctou', port: 4102 },
+        stop: vi.fn().mockResolvedValue(undefined)
+      }),
+      renderProject
+    }
+
+    const catalog = await openVideoStudioCatalog(profileDir)
+    const manager = await openVideoStudioJobManager(profileDir, {
+      catalog,
+      getAdapter: () => adapter,
+      beforeExecutionSpawn: async () => {
+        await writeFile(
+          join(projectDir, 'index.html'),
+          '<html><body><script>toctou()</script></body></html>',
+          'utf8'
+        )
+      }
+    } as Record<string, unknown>)
+
+    await expect(manager.startRender(sampleProject('p-toctou'), 'looks')).rejects.toThrow(
+      'video_studio_execution_approval_required'
+    )
+    expect(renderProject).not.toHaveBeenCalled()
+    expect(VideoStudioPreviewManager.getSessionsFilePath(profileDir)).toContain('security')
+  })
+
+  it('watches project directory for external edits while suppressing Orca TX self-writes', async () => {
+    const adapter: VideoRenderEngineAdapter = {
+      id: 'hyperframes',
+      probeEnvironment: vi.fn(),
+      scaffoldProject: vi.fn(async (dir) => {
+        await mkdir(dir, { recursive: true })
+        await writeFile(join(dir, 'hyperframes.json'), '{}', 'utf8')
+        await writeFile(join(dir, 'index.html'), '<html></html>', 'utf8')
+        await writeFile(join(dir, 'STORYBOARD.md'), '# Storyboard\n', 'utf8')
+        return {
+          initialized: true,
+          entryExists: true,
+          files: ['STORYBOARD.md', 'hyperframes.json', 'index.html'],
+          previewActive: false
+        }
+      }),
+      checkProject: vi.fn(),
+      startPreview: vi.fn(),
+      renderProject: vi.fn()
+    }
+
+    const catalog = await openVideoStudioCatalog(profileDir)
+    const manager = await openVideoStudioJobManager(profileDir, {
+      catalog,
+      getAdapter: () => adapter,
+      watcherDebounceMs: 30
+    } as Record<string, unknown>)
+    const project = sampleProject('p-watch')
+    await manager.scaffoldComposition(project)
+
+    const fileEvents: unknown[] = []
+    const unsub = (
+      manager as unknown as {
+        subscribeFilesChanged: (fn: (evt: unknown) => void) => () => void
+        watchProject: (id: string) => Promise<void>
+        documents: {
+          updateProjectScript: (params: {
+            projectId: string
+            scriptMarkdown: string
+          }) => Promise<unknown>
+        }
+      }
+    ).subscribeFilesChanged((evt) => fileEvents.push(evt))
+    await (manager as unknown as { watchProject: (id: string) => Promise<void> }).watchProject(
+      'p-watch'
+    )
+
+    // Self-write via TX must NOT emit projectFilesChanged
+    await (
+      manager as unknown as {
+        documents: {
+          updateProjectScript: (params: {
+            projectId: string
+            scriptMarkdown: string
+          }) => Promise<unknown>
+        }
+      }
+    ).documents.updateProjectScript({
+      projectId: 'p-watch',
+      scriptMarkdown: '# Script\nInternal TX update'
+    })
+    await new Promise((r) => setTimeout(r, 120))
+    expect(fileEvents).toHaveLength(0)
+
+    // External write MUST emit projectFilesChanged
+    const projectDir = resolveVideoStudioProjectDir(profileDir, 'p-watch')
+    await writeFile(join(projectDir, 'STORYBOARD.md'), '## Frame 1 — External\n', 'utf8')
+    await vi.waitFor(() => {
+      expect(fileEvents.length).toBeGreaterThanOrEqual(1)
+    })
+    expect(fileEvents[0]).toMatchObject({
+      type: 'projectFilesChanged',
+      projectId: 'p-watch',
+      externalEdit: true,
+      changedPaths: expect.arrayContaining(['STORYBOARD.md'])
+    })
+    unsub()
   })
 })

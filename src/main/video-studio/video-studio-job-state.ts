@@ -4,7 +4,6 @@ import type {
   VideoStudioPreviewState,
   VideoStudioRenderJobSnapshot
 } from '../../shared/video-studio/video-studio-rpc-contract'
-import type { VideoStudioPreviewHandle } from './engines/video-render-engine'
 
 export const MAX_JOB_LOG_LINES = 100
 
@@ -31,7 +30,7 @@ export function appendJobLogLine(ring: readonly string[], line: string): string[
 
 export function projectVideoStudioJobsEvent(params: {
   jobs: ReadonlyMap<string, ActiveJobEntry>
-  previews: ReadonlyMap<string, VideoStudioPreviewHandle>
+  previews: ReadonlyMap<string, VideoStudioPreviewState>
   engines?: VideoStudioEngineStatus[]
   revision: number
   projectIdFilter?: string
@@ -43,9 +42,9 @@ export function projectVideoStudioJobsEvent(params: {
     }
   }
   const previews: Record<string, VideoStudioPreviewState> = {}
-  for (const [projectId, handle] of params.previews.entries()) {
+  for (const [projectId, state] of params.previews.entries()) {
     if (!params.projectIdFilter || projectId === params.projectIdFilter) {
-      previews[projectId] = handle.state
+      previews[projectId] = state
     }
   }
   return {

@@ -1,4 +1,5 @@
 import * as z from 'zod'
+import { StyleIdSchema } from '../video-studio/video-studio-style-contract'
 
 // ─── RPC Method Constants ────────────────────────────────────────────────────
 
@@ -240,7 +241,8 @@ export const GeneralChatHandoffVideoStudioParams = z.strictObject({
   briefMarkdown: z.string().max(60_000).optional(),
   aspectRatio: z.enum(['16:9', '9:16', '1:1']).default('16:9'),
   durationSeconds: z.number().int().min(5).max(3600).default(45),
-  engine: z.enum(['hyperframes', 'remotion']).default('hyperframes')
+  engine: z.enum(['hyperframes', 'remotion']).default('hyperframes'),
+  styleProfileId: StyleIdSchema.optional()
 })
 export type GeneralChatHandoffVideoStudioParams = z.infer<
   typeof GeneralChatHandoffVideoStudioParams

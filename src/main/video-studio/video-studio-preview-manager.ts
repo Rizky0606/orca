@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { isEligibleLocalCertificateHost } from '../../shared/browser/navigation/browser-url'
 import type { VideoStudioPreviewState } from '../../shared/video-studio/video-studio-rpc-contract'
 import { createHyperFramesEngineAdapter } from './engines/hyperframes-engine-adapter'
 import type {
@@ -15,7 +14,7 @@ import {
   type ObservedPreviewProcess,
   type PreviewOsControl
 } from './preview-os-control'
-import { PreviewSessionStore } from './preview-session-store'
+import { buildVerifiedPreviewRecord, PreviewSessionStore } from './preview-session-store'
 import {
   PreviewSessionRecordSchema,
   verifyStoredPreviewSession,
@@ -45,6 +44,7 @@ export type StartPreviewParams = {
   projectDir: string
   adapter?: VideoEngineAdapter
   deps: VideoEngineProcessDeps
+  forceNew?: boolean
   onExit?: () => void
   signal?: AbortSignal
 }
@@ -105,6 +105,14 @@ export class VideoStudioPreviewManager {
     return this.activeHandles.get(projectId)?.handle.state ?? { active: false }
   }
 
+  listActivePreviewStates(): ReadonlyMap<string, VideoStudioPreviewState> {
+    const out = new Map<string, VideoStudioPreviewState>()
+    for (const [projectId, entry] of this.activeHandles.entries()) {
+      out.set(projectId, entry.handle.state)
+    }
+    return out
+  }
+
   async verifySession(
     projectId: string,
     projectDir: string,
@@ -148,7 +156,7 @@ export class VideoStudioPreviewManager {
     const existingActive = this.activeHandles.get(params.projectId)
     const verification = await this.verifySession(params.projectId, params.projectDir)
 
-    if (verification.status === 'healthy') {
+    if (verification.status === 'healthy' && !params.forceNew) {
       if (existingActive && existingActive.sessionId === verification.record.sessionId) {
         return existingActive.handle
       }
@@ -176,8 +184,11 @@ export class VideoStudioPreviewManager {
       return reusedHandle
     }
 
-    let forceNew = false
-    if (verification.status === 'unhealthy' && verification.belongsToProject) {
+    let forceNew = params.forceNew === true
+    if (verification.status === 'healthy' && params.forceNew) {
+      await this.osControl.terminateProcessTree(verification.record.pid).catch(() => false)
+      await this.store.remove(params.projectId)
+    } else if (verification.status === 'unhealthy' && verification.belongsToProject) {
       await this.osControl.terminateProcessTree(verification.record.pid).catch(() => false)
       await this.store.remove(params.projectId)
       forceNew = true
@@ -259,33 +270,17 @@ export class VideoStudioPreviewManager {
     const observed = pid > 0 ? await this.osControl.inspectProcess(pid) : null
     await assertStillActive()
 
-    const executablePath = observed?.executablePath ?? rawHandle.executablePath ?? ''
-    const creationTimeMs = observed?.creationTimeMs ?? null
-    const port = rawHandle.state.port ?? 3002
-    const url = rawHandle.state.url ?? `http://127.0.0.1:${port}/#project/${params.projectId}`
-    const rawHost = new URL(url).hostname.toLowerCase()
-    const host = isEligibleLocalCertificateHost(rawHost) ? rawHost : '127.0.0.1'
-
-    if (
-      pid > 0 &&
-      executablePath &&
-      typeof creationTimeMs === 'number' &&
-      Number.isFinite(creationTimeMs) &&
-      creationTimeMs > 0
-    ) {
-      await this.store.upsert({
-        sessionId,
-        projectId: params.projectId,
-        projectDirRealpath,
-        pid,
-        creationTimeMs,
-        executablePath,
-        port,
-        host,
-        url,
-        projectName: rawHandle.projectName ?? params.projectId,
-        startedAt: Date.now()
-      })
+    const record = buildVerifiedPreviewRecord({
+      sessionId,
+      projectId: params.projectId,
+      projectDirRealpath,
+      pid,
+      creationTimeMs: observed?.creationTimeMs ?? null,
+      executablePath: observed?.executablePath ?? rawHandle.executablePath ?? '',
+      rawHandle
+    })
+    if (record) {
+      await this.store.upsert(record)
       await assertStillActive()
     }
 

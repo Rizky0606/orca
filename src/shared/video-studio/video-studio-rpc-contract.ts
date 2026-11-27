@@ -83,12 +83,27 @@ export const VideoStudioProbeEnginesResult = z.object({
 
 // ─── Composition State & Workspace ────────────────────────────────────────────
 
+export const VideoStudioCompositionDriftSummarySchema = z.object({
+  inSync: z.boolean(),
+  hasWarnings: z.boolean(),
+  plannedTotalDurationSeconds: z.number(),
+  actualTotalDurationSeconds: z.number(),
+  unmountedScenes: z.array(z.string()),
+  missingFiles: z.array(z.string())
+})
+export type VideoStudioCompositionDriftSummary = z.infer<
+  typeof VideoStudioCompositionDriftSummarySchema
+>
+
 export const VideoStudioCompositionStateSchema = z.object({
   initialized: z.boolean(),
   entryExists: z.boolean(),
   files: z.array(z.string()),
   previewActive: z.boolean(),
-  previewUrl: z.string().optional()
+  previewUrl: z.string().optional(),
+  checkStale: z.boolean().optional(),
+  currentInputFingerprint: z.string().optional(),
+  drift: VideoStudioCompositionDriftSummarySchema.optional()
 })
 export type VideoStudioCompositionState = z.infer<typeof VideoStudioCompositionStateSchema>
 

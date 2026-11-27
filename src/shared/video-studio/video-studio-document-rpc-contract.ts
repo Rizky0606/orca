@@ -42,7 +42,8 @@ export const VideoStudioGetProjectDocumentsResult = z.object({
   researchNotesMarkdown: z.string(),
   revisions: z.record(z.string(), z.string()),
   trustState: ProjectExecutionTrustStateSchema.default('unapproved'),
-  approvedInputFingerprint: z.string().optional()
+  approvedInputFingerprint: z.string().optional(),
+  currentInputFingerprint: z.string().optional()
 })
 
 export const VideoStudioUpdateProjectBriefParams = z.strictObject({

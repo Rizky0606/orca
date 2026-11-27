@@ -1,55 +1,68 @@
-import { randomUUID } from 'node:crypto'
 import type {
-  VideoStudioEngine,
   VideoStudioProject,
   VideoStudioRenderQuality
 } from '../../shared/video-studio/video-studio-project'
 import type {
-  VideoStudioCheckResult,
   VideoStudioCompositionState,
   VideoStudioEngineStatus,
   VideoStudioJobsEvent,
   VideoStudioPreviewState,
+  VideoStudioProjectFilesChangedEvent,
   VideoStudioRenderJobSnapshot
 } from '../../shared/video-studio/video-studio-rpc-contract'
+import type { VideoEngineCheckResult } from '../../shared/video-studio/video-studio-validation-contract'
 import { createRevisionClock, type RevisionClock } from '../runtime/events/revisioned-state'
-import { openVideoStudioCatalog, type VideoStudioCatalog } from './video-studio-catalog'
-import {
-  inspectVideoStudioCompositionState,
-  resolveVideoStudioProjectDir
-} from './video-studio-composition-paths'
 import { createHostVideoEngineDeps } from './engines/host-video-engine-deps'
-import type {
-  VideoEngineProcessDeps,
-  VideoStudioPreviewHandle
-} from './engines/video-render-engine'
+import type { VideoEngineProcessDeps } from './engines/video-render-engine'
 import {
   getVideoRenderEngineAdapter,
   probeAllVideoRenderEngines
 } from './engines/video-render-engine-registry'
-import { runVideoStudioCheckTask, runVideoStudioRenderTask } from './video-studio-job-runner'
+import { openVideoStudioCatalog, type VideoStudioCatalog } from './video-studio-catalog'
+import { resolveVideoStudioProjectDir } from './video-studio-composition-paths'
+import {
+  ensureProjectScaffoldReady,
+  refreshStaleCheckOnExternalEdit,
+  runVerifiedProjectCheck,
+  startVerifiedProjectPreview,
+  startVerifiedProjectRender
+} from './video-studio-execution-tasks'
+import {
+  createVideoStudioHostServices,
+  type VideoStudioHostServices
+} from './video-studio-host-services'
 import {
   ACTIVE_JOB_STATUSES,
-  appendJobLogLine,
   projectVideoStudioJobsEvent,
   type ActiveJobEntry
 } from './video-studio-job-state'
+import type { PreviewOsControl } from './video-studio-preview-manager'
+import {
+  disposeVideoStudioJobResources,
+  refreshVideoStudioCompositionState,
+  scaffoldProjectWithBaselineTrust
+} from './video-studio-project-execution'
 
 export type VideoStudioJobManagerOptions = {
   catalog?: VideoStudioCatalog
   engineDeps?: VideoEngineProcessDeps
   probeEngines?: (deps: VideoEngineProcessDeps) => Promise<VideoStudioEngineStatus[]>
   getAdapter?: typeof getVideoRenderEngineAdapter
+  previewOsControl?: PreviewOsControl
+  watcherDebounceMs?: number
+  beforeExecutionSpawn?: (projectId: string, projectDir: string) => Promise<void>
 }
 
 export class VideoStudioJobManager {
   readonly revisions: RevisionClock = createRevisionClock()
+  private readonly services: VideoStudioHostServices
   private readonly jobs = new Map<string, ActiveJobEntry>()
-  private readonly previews = new Map<string, VideoStudioPreviewHandle>()
+  private readonly lastChecks = new Map<string, VideoEngineCheckResult>()
   private readonly listeners = new Set<() => void>()
   private readonly engineDeps: VideoEngineProcessDeps
   private readonly probeAll: (deps: VideoEngineProcessDeps) => Promise<VideoStudioEngineStatus[]>
   private readonly getAdapter: typeof getVideoRenderEngineAdapter
+  private readonly unwatchFilesListener: () => void
   private catalogPromise: Promise<VideoStudioCatalog> | null = null
   private lastEngines: VideoStudioEngineStatus[] | undefined
   private disposed = false
@@ -61,6 +74,41 @@ export class VideoStudioJobManager {
     this.engineDeps = options.engineDeps ?? createHostVideoEngineDeps()
     this.probeAll = options.probeEngines ?? probeAllVideoRenderEngines
     this.getAdapter = options.getAdapter ?? getVideoRenderEngineAdapter
+    this.services = createVideoStudioHostServices(profileDir, options)
+    this.unwatchFilesListener = this.services.watcher.subscribe((event) => {
+      void refreshStaleCheckOnExternalEdit({
+        profileDir: this.profileDir,
+        projectId: event.projectId,
+        lastChecks: this.lastChecks,
+        jobs: this.jobs,
+        notify: () => this.notify()
+      })
+    })
+  }
+
+  get locks() {
+    return this.services.locks
+  }
+  get watcher() {
+    return this.services.watcher
+  }
+  get tx() {
+    return this.services.tx
+  }
+  get trustStore() {
+    return this.services.trustStore
+  }
+  get previewManager() {
+    return this.services.previewManager
+  }
+  get styleStore() {
+    return this.services.styleStore
+  }
+  get documents() {
+    return this.services.documents
+  }
+  get assets() {
+    return this.services.assets
   }
 
   private getCatalog(): Promise<VideoStudioCatalog> {
@@ -83,6 +131,25 @@ export class VideoStudioJobManager {
     return () => this.listeners.delete(listener)
   }
 
+  subscribeFilesChanged(
+    listener: (event: VideoStudioProjectFilesChangedEvent) => void
+  ): () => void {
+    return this.services.watcher.subscribe(listener)
+  }
+
+  async watchProject(projectId: string): Promise<void> {
+    if (!this.disposed) {
+      await this.services.watcher.watchProject(
+        projectId,
+        resolveVideoStudioProjectDir(this.profileDir, projectId)
+      )
+    }
+  }
+
+  async unwatchProject(projectId: string): Promise<void> {
+    await this.services.watcher.unwatchProject(projectId)
+  }
+
   getJobSnapshot(projectId: string): VideoStudioRenderJobSnapshot | null {
     return this.jobs.get(projectId)?.snapshot ?? null
   }
@@ -90,7 +157,7 @@ export class VideoStudioJobManager {
   listSnapshots(projectIdFilter?: string): VideoStudioJobsEvent {
     return projectVideoStudioJobsEvent({
       jobs: this.jobs,
-      previews: this.previews,
+      previews: this.services.previewManager.listActivePreviewStates(),
       engines: this.lastEngines,
       revision: this.revisions.next(),
       projectIdFilter
@@ -98,7 +165,7 @@ export class VideoStudioJobManager {
   }
 
   getPreviewState(projectId: string): VideoStudioPreviewState {
-    return this.previews.get(projectId)?.state ?? { active: false }
+    return this.services.previewManager.getPreviewState(projectId)
   }
 
   async probeEngines(): Promise<VideoStudioEngineStatus[]> {
@@ -108,104 +175,73 @@ export class VideoStudioJobManager {
     return engines
   }
 
-  async getCompositionState(projectId: string): Promise<VideoStudioCompositionState> {
-    const projectDir = resolveVideoStudioProjectDir(this.profileDir, projectId)
-    return inspectVideoStudioCompositionState(projectDir, this.getPreviewState(projectId))
+  getCompositionState(projectId: string): Promise<VideoStudioCompositionState> {
+    return refreshVideoStudioCompositionState({
+      projectId,
+      projectDir: resolveVideoStudioProjectDir(this.profileDir, projectId),
+      previewState: this.getPreviewState(projectId),
+      lastChecks: this.lastChecks,
+      jobs: this.jobs
+    })
   }
 
-  async scaffoldComposition(
+  scaffoldComposition(
     project: VideoStudioProject,
-    options?: { overwrite?: boolean }
+    options?: { overwrite?: boolean; styleProfileId?: string }
   ): Promise<VideoStudioCompositionState> {
-    this.assertEngineUsable(project.engine)
-    const projectDir = resolveVideoStudioProjectDir(this.profileDir, project.id)
-    const state = await this.getAdapter(project.engine).scaffoldProject(
-      projectDir,
-      project,
-      options
-    )
-    const preview = this.getPreviewState(project.id)
-    return {
-      ...state,
-      previewActive: preview.active,
-      ...(preview.url ? { previewUrl: preview.url } : {})
+    if (project.engine === 'remotion') {
+      throw new Error('video_studio_engine_unavailable')
     }
+    return scaffoldProjectWithBaselineTrust({
+      projectDir: resolveVideoStudioProjectDir(this.profileDir, project.id),
+      project,
+      adapter: this.getAdapter(project.engine),
+      styleStore: this.services.styleStore,
+      trustStore: this.services.trustStore,
+      watcher: this.services.watcher,
+      previewState: this.getPreviewState(project.id),
+      options
+    })
   }
 
-  async runCheck(project: VideoStudioProject): Promise<VideoStudioCheckResult> {
+  async runCheck(
+    project: VideoStudioProject,
+    options?: { browser?: boolean }
+  ): Promise<VideoEngineCheckResult> {
     const projectDir = await this.ensureScaffoldReady(project, true)
-    const abortController = new AbortController()
-    const entry: ActiveJobEntry = {
-      abortController,
-      snapshot: {
-        projectId: project.id,
-        kind: 'check',
-        engine: project.engine,
-        status: 'checking',
-        logLines: [],
-        startedAt: Date.now()
-      }
-    }
-    this.jobs.set(project.id, entry)
-    this.notify()
-
-    return runVideoStudioCheckTask({
+    return runVerifiedProjectCheck({
+      project,
       projectDir,
       adapter: this.getAdapter(project.engine),
       engineDeps: this.engineDeps,
-      entry,
-      abortController,
-      isCurrent: () => this.jobs.get(project.id) === entry,
-      onUpdate: () => this.notify(),
-      onFail: (error) =>
-        this.recordJobFailure(project.id, entry, abortController.signal.aborted, error)
+      trustStore: this.services.trustStore,
+      browser: options?.browser,
+      beforeExecutionSpawn: this.options.beforeExecutionSpawn,
+      jobs: this.jobs,
+      lastChecks: this.lastChecks,
+      notify: () => this.notify()
     })
   }
 
   async startRender(
     project: VideoStudioProject,
-    quality: VideoStudioRenderQuality
+    quality: VideoStudioRenderQuality,
+    options?: { startSeconds?: number; endSeconds?: number }
   ): Promise<VideoStudioRenderJobSnapshot> {
     const projectDir = await this.ensureScaffoldReady(project, true)
-    const renderId = randomUUID()
-    const fileName = `${renderId}.mp4`
-    const abortController = new AbortController()
-    const entry: ActiveJobEntry = {
-      abortController,
-      snapshot: {
-        projectId: project.id,
-        renderId,
-        kind: 'render',
-        engine: project.engine,
-        quality,
-        status: 'rendering',
-        progressPercent: 0,
-        logLines: [],
-        startedAt: Date.now()
-      }
-    }
-    this.jobs.set(project.id, entry)
-    this.notify()
-
-    const initialSnapshot = entry.snapshot
-    const catalog = await this.getCatalog()
-    entry.promise = runVideoStudioRenderTask({
+    return startVerifiedProjectRender({
       project,
       projectDir,
-      renderId,
-      fileName,
       quality,
+      options,
       adapter: this.getAdapter(project.engine),
       engineDeps: this.engineDeps,
-      catalog,
-      entry,
-      abortController,
-      isCurrent: () => this.jobs.get(project.id) === entry,
-      onUpdate: () => this.notify(),
-      onFail: (error) =>
-        this.recordJobFailure(project.id, entry, abortController.signal.aborted, error)
+      trustStore: this.services.trustStore,
+      getCatalog: () => this.getCatalog(),
+      beforeExecutionSpawn: this.options.beforeExecutionSpawn,
+      jobs: this.jobs,
+      notify: () => this.notify()
     })
-    return initialSnapshot
   }
 
   async cancelProjectWork(projectId: string): Promise<VideoStudioRenderJobSnapshot | null> {
@@ -222,96 +258,56 @@ export class VideoStudioJobManager {
     return this.jobs.get(projectId)?.snapshot ?? null
   }
 
-  async startPreview(project: VideoStudioProject): Promise<VideoStudioPreviewState> {
+  async startPreview(
+    project: VideoStudioProject,
+    options?: { forceNew?: boolean }
+  ): Promise<VideoStudioPreviewState> {
     const projectDir = await this.ensureScaffoldReady(project, false)
-    await this.stopPreview(project.id).catch(() => {})
-    const handle = await this.getAdapter(project.engine).startPreview(
+    return startVerifiedProjectPreview({
+      project,
       projectDir,
-      this.engineDeps,
-      () => {
-        if (this.previews.get(project.id) === handle) {
-          this.previews.delete(project.id)
-          this.notify()
-        }
-      }
-    )
-    this.previews.set(project.id, handle)
-    this.notify()
-    return handle.state
+      forceNew: options?.forceNew,
+      adapter: this.getAdapter(project.engine),
+      engineDeps: this.engineDeps,
+      trustStore: this.services.trustStore,
+      previewManager: this.services.previewManager,
+      beforeExecutionSpawn: this.options.beforeExecutionSpawn,
+      notify: () => this.notify()
+    })
   }
 
   async stopPreview(projectId: string): Promise<VideoStudioPreviewState> {
-    const handle = this.previews.get(projectId)
-    if (handle) {
-      this.previews.delete(projectId)
-      await handle.stop().catch(() => {})
-      this.notify()
-    }
-    return { active: false }
+    const state = await this.services.previewManager.stopPreview(
+      projectId,
+      resolveVideoStudioProjectDir(this.profileDir, projectId)
+    )
+    this.notify()
+    return state
   }
 
   async dispose(): Promise<void> {
     this.disposed = true
-    const stops: Promise<unknown>[] = []
-    for (const entry of this.jobs.values()) {
-      entry.abortController?.abort()
-      if (entry.promise) {
-        stops.push(entry.promise.catch(() => {}))
-      }
-    }
-    for (const handle of this.previews.values()) {
-      stops.push(handle.stop().catch(() => {}))
-    }
-    this.previews.clear()
-    await Promise.all(stops)
-    this.listeners.clear()
+    this.unwatchFilesListener()
+    await disposeVideoStudioJobResources({
+      jobs: this.jobs.values(),
+      previewManager: this.services.previewManager,
+      watcher: this.services.watcher,
+      trustStore: this.services.trustStore,
+      listeners: this.listeners
+    })
   }
 
-  private async ensureScaffoldReady(
+  private ensureScaffoldReady(
     project: VideoStudioProject,
     requireIdleJob: boolean
   ): Promise<string> {
-    if (this.disposed) {
-      throw new Error('video_studio_manager_disposed')
-    }
-    this.assertEngineUsable(project.engine)
-    if (requireIdleJob) {
-      const existing = this.jobs.get(project.id)
-      if (existing && ACTIVE_JOB_STATUSES.has(existing.snapshot.status)) {
-        throw new Error('video_studio_job_already_running')
-      }
-    }
-    const projectDir = resolveVideoStudioProjectDir(this.profileDir, project.id)
-    if (!(await inspectVideoStudioCompositionState(projectDir)).initialized) {
-      await this.getAdapter(project.engine).scaffoldProject(projectDir, project)
-    }
-    return projectDir
-  }
-
-  private recordJobFailure(
-    projectId: string,
-    entry: ActiveJobEntry,
-    cancelled: boolean,
-    error: unknown
-  ): void {
-    if (this.jobs.get(projectId) !== entry) {
-      return
-    }
-    const message = error instanceof Error ? error.message : String(error)
-    entry.snapshot = {
-      ...entry.snapshot,
-      status: cancelled ? 'cancelled' : 'failed',
-      completedAt: Date.now(),
-      ...(cancelled ? {} : { error: message }),
-      logLines: appendJobLogLine(entry.snapshot.logLines, message)
-    }
-    entry.abortController = undefined
-    this.notify()
-  }
-
-  private assertEngineUsable(engine: VideoStudioEngine): void {
-    if (engine === 'remotion') {
-      throw new Error('video_studio_engine_unavailable')
-    }
+    return ensureProjectScaffoldReady({
+      disposed: this.disposed,
+      profileDir: this.profileDir,
+      project,
+      requireIdleJob,
+      jobs: this.jobs,
+      scaffoldComposition: (item) => this.scaffoldComposition(item)
+    })
   }
 }

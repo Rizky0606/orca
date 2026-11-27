@@ -37,27 +37,13 @@ import {
   resolveVideoStudioRenderOutputFile
 } from '../../../../video-studio/video-studio-composition-paths'
 import { openVideoStudioJobManager } from '../../../../video-studio/video-studio-job-registry'
-import { defineMethod, defineStreamingMethod, type RpcContext } from '../../core'
+import { defineMethod, defineStreamingMethod, InvalidArgumentError } from '../../core'
 import { bindRpcSubscriptionStream } from '../../core-subscription-stream'
+import { VIDEO_STUDIO_ASSET_METHODS } from './video-studio-asset-methods'
 import { openVideoStudioCompositionWorkspace } from './video-studio-composition-workspace'
-
-function profileDirectory({ runtime }: RpcContext): string {
-  const directory = runtime.requireStore().getProfileStorageDirectory?.()
-  if (!directory) {
-    throw new Error('runtime_unavailable')
-  }
-  return directory
-}
-
-async function requireProject(context: RpcContext, projectId: string) {
-  const directory = profileDirectory(context)
-  const catalog = await openVideoStudioCatalog(directory)
-  const project = await catalog.get(projectId)
-  if (!project) {
-    throw new Error('video_studio_project_not_found')
-  }
-  return { directory, project }
-}
+import { VIDEO_STUDIO_DOCUMENT_METHODS } from './video-studio-document-methods'
+import { profileDirectory, requireProject, runVideoStudioRpc } from './video-studio-rpc-context'
+import { VIDEO_STUDIO_STYLE_METHODS } from './video-studio-style-methods'
 
 async function readRenderChunk(
   directory: string,
@@ -84,7 +70,7 @@ async function readRenderChunk(
     const fileStats = await handle.stat()
     const totalBytes = fileStats.size
     if (offset > totalBytes) {
-      throw Object.assign(new Error('invalid_argument'), { code: 'invalid_argument' })
+      throw new InvalidArgumentError('invalid_argument')
     }
     const bytesToRead = Math.min(maxBytes, Math.max(0, totalBytes - offset))
     const buffer = Buffer.allocUnsafe(bytesToRead)
@@ -139,6 +125,7 @@ export const VIDEO_STUDIO_METHODS = [
       const directory = profileDirectory(context)
       const manager = await openVideoStudioJobManager(directory)
       await manager.cancelProjectWork(params.id).catch(() => {})
+      await manager.unwatchProject(params.id).catch(() => {})
       return (await openVideoStudioCatalog(directory)).remove(params)
     }
   }),
@@ -155,50 +142,51 @@ export const VIDEO_STUDIO_METHODS = [
     name: VIDEO_STUDIO_GET_COMPOSITION_STATE_METHOD,
     permission: 'workspace',
     params: VideoStudioGetCompositionStateParams,
-    handler: async ({ projectId }, context) => {
-      const { directory } = await requireProject(context, projectId)
-      const manager = await openVideoStudioJobManager(directory)
-      return manager.getCompositionState(projectId)
-    }
+    handler: ({ projectId }, context) =>
+      runVideoStudioRpc(context, async () => {
+        const { manager } = await requireProject(context, projectId)
+        return manager.getCompositionState(projectId)
+      })
   }),
   defineMethod({
     name: VIDEO_STUDIO_SCAFFOLD_COMPOSITION_METHOD,
     permission: 'workspace',
     params: VideoStudioScaffoldCompositionParams,
-    handler: async ({ projectId, overwrite }, context) => {
-      const { directory, project } = await requireProject(context, projectId)
-      const manager = await openVideoStudioJobManager(directory)
-      return manager.scaffoldComposition(project, { overwrite })
-    }
+    handler: ({ projectId, overwrite, styleProfileId }, context) =>
+      runVideoStudioRpc(context, async () => {
+        const { project, manager } = await requireProject(context, projectId)
+        return manager.scaffoldComposition(project, { overwrite, styleProfileId })
+      })
   }),
   defineMethod({
     name: VIDEO_STUDIO_OPEN_COMPOSITION_WORKSPACE_METHOD,
     permission: 'workspace',
     params: VideoStudioOpenCompositionWorkspaceParams,
-    handler: async ({ projectId }, context) => {
-      const { directory, project } = await requireProject(context, projectId)
-      return openVideoStudioCompositionWorkspace(context, directory, project)
-    }
+    handler: ({ projectId }, context) =>
+      runVideoStudioRpc(context, async (directory) => {
+        const { project } = await requireProject(context, projectId)
+        return openVideoStudioCompositionWorkspace(context, directory, project)
+      })
   }),
   defineMethod({
     name: VIDEO_STUDIO_CHECK_COMPOSITION_METHOD,
     permission: 'workspace',
     params: VideoStudioCheckCompositionParams,
-    handler: async ({ projectId }, context) => {
-      const { directory, project } = await requireProject(context, projectId)
-      const manager = await openVideoStudioJobManager(directory)
-      return manager.runCheck(project)
-    }
+    handler: ({ projectId }, context) =>
+      runVideoStudioRpc(context, async () => {
+        const { project, manager } = await requireProject(context, projectId)
+        return manager.runCheck(project)
+      })
   }),
   defineMethod({
     name: VIDEO_STUDIO_START_RENDER_METHOD,
     permission: 'workspace',
     params: VideoStudioStartRenderParams,
-    handler: async ({ projectId, quality }, context) => {
-      const { directory, project } = await requireProject(context, projectId)
-      const manager = await openVideoStudioJobManager(directory)
-      return { job: await manager.startRender(project, quality) }
-    }
+    handler: ({ projectId, quality, startSeconds, endSeconds }, context) =>
+      runVideoStudioRpc(context, async () => {
+        const { project, manager } = await requireProject(context, projectId)
+        return { job: await manager.startRender(project, quality, { startSeconds, endSeconds }) }
+      })
   }),
   defineMethod({
     name: VIDEO_STUDIO_CANCEL_RENDER_METHOD,
@@ -218,19 +206,35 @@ export const VIDEO_STUDIO_METHODS = [
       const manager = await openVideoStudioJobManager(profileDirectory(context))
       const frame = context.requestId ? `:${context.requestId}` : ''
       const subscriptionId = `videoStudio:jobs:${context.connectionId ?? 'local'}${frame}`
-      let dispose = (): void => {}
-      const stream = bindRpcSubscriptionStream(context, subscriptionId, () => dispose())
+      let unsubJobs = (): void => {}
+      let unsubFiles = (): void => {}
+      const stream = bindRpcSubscriptionStream(context, subscriptionId, () => {
+        unsubJobs()
+        unsubFiles()
+      })
       if (stream.isClosed()) {
         return
       }
-      dispose = manager.subscribe(() => {
+      if (params?.projectId) {
+        await manager.watchProject(params.projectId)
+      }
+      if (stream.isClosed()) {
+        return
+      }
+      unsubJobs = manager.subscribe(() => {
         if (!stream.isClosed()) {
           emit(manager.listSnapshots(params?.projectId))
         }
       })
+      unsubFiles = manager.subscribeFilesChanged((event) => {
+        if (!stream.isClosed() && (!params?.projectId || event.projectId === params.projectId)) {
+          emit(event)
+        }
+      })
       emit(manager.listSnapshots(params?.projectId))
       if (stream.isClosed()) {
-        dispose()
+        unsubJobs()
+        unsubFiles()
       }
     }
   }),
@@ -238,11 +242,11 @@ export const VIDEO_STUDIO_METHODS = [
     name: VIDEO_STUDIO_START_PREVIEW_METHOD,
     permission: 'workspace',
     params: VideoStudioStartPreviewParams,
-    handler: async ({ projectId }, context) => {
-      const { directory, project } = await requireProject(context, projectId)
-      const manager = await openVideoStudioJobManager(directory)
-      return manager.startPreview(project)
-    }
+    handler: ({ projectId, forceNew }, context) =>
+      runVideoStudioRpc(context, async () => {
+        const { project, manager } = await requireProject(context, projectId)
+        return manager.startPreview(project, { forceNew })
+      })
   }),
   defineMethod({
     name: VIDEO_STUDIO_STOP_PREVIEW_METHOD,
@@ -257,7 +261,12 @@ export const VIDEO_STUDIO_METHODS = [
     name: VIDEO_STUDIO_READ_RENDER_OUTPUT_CHUNK_METHOD,
     permission: 'workspace',
     params: VideoStudioReadRenderOutputChunkParams,
-    handler: async ({ projectId, renderId, offset, maxBytes }, context) =>
-      readRenderChunk(profileDirectory(context), projectId, renderId, offset, maxBytes)
-  })
+    handler: ({ projectId, renderId, offset, maxBytes }, context) =>
+      runVideoStudioRpc(context, (directory) =>
+        readRenderChunk(directory, projectId, renderId, offset, maxBytes)
+      )
+  }),
+  ...VIDEO_STUDIO_STYLE_METHODS,
+  ...VIDEO_STUDIO_DOCUMENT_METHODS,
+  ...VIDEO_STUDIO_ASSET_METHODS
 ]

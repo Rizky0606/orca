@@ -192,9 +192,26 @@ async function deriveFallbackProjectLockId(projectDir: string): Promise<string> 
   return `dir-${sha256Bytes(normalized).slice(0, 32)}`
 }
 
+export type VideoStudioTransactionObserver = {
+  onBeforeCommit?: (info: {
+    projectDir: string
+    projectId?: string
+    relativePaths: readonly string[]
+  }) => void
+  onAfterCommit?: (info: {
+    projectDir: string
+    projectId?: string
+    revisions: Record<string, string | null>
+    succeeded: boolean
+  }) => void
+}
+
 /** Coordinates hash-verified, lock-ordered multi-file transactions under `<projectDir>/.orca/`. */
 export class VideoStudioTransactionCoordinator {
-  constructor(private readonly lockCoordinator = new VideoStudioLockCoordinator()) {}
+  constructor(
+    private readonly lockCoordinator = new VideoStudioLockCoordinator(),
+    private readonly observer?: VideoStudioTransactionObserver
+  ) {}
 
   async runProjectTransaction(params: ProjectTransactionParams): Promise<ProjectTransactionResult> {
     const lockId = params.projectId ?? (await deriveFallbackProjectLockId(params.projectDir))
@@ -255,23 +272,41 @@ export class VideoStudioTransactionCoordinator {
     await writeJournal('committing')
     await onPhase?.('committing', txId)
 
-    for (const item of prepared) {
-      if (item.kind === 'write' && item.stagedAbs) {
-        await mkdir(dirname(item.targetAbs), { recursive: true })
-        await renameDurable(item.stagedAbs, item.targetAbs)
-      } else if (item.kind === 'delete') {
-        await rm(item.targetAbs, { force: true })
+    this.observer?.onBeforeCommit?.({
+      projectDir,
+      projectId: params.projectId,
+      relativePaths: entries.map((item) => item.relativePath)
+    })
+    let committedRevisions: Record<string, string | null> = {}
+    let commitSucceeded = false
+    try {
+      for (const item of prepared) {
+        if (item.kind === 'write' && item.stagedAbs) {
+          await mkdir(dirname(item.targetAbs), { recursive: true })
+          await renameDurable(item.stagedAbs, item.targetAbs)
+        } else if (item.kind === 'delete') {
+          await rm(item.targetAbs, { force: true })
+        }
       }
-    }
-    await onPhase?.('committed', txId)
+      await onPhase?.('committed', txId)
 
-    await rm(txLogAbs, { force: true })
-    await rm(stagingAbs, { recursive: true, force: true })
+      await rm(txLogAbs, { force: true })
+      await rm(stagingAbs, { recursive: true, force: true })
 
-    const revisions: Record<string, string | null> = {}
-    for (const item of prepared) {
-      revisions[item.entry.relativePath] = item.entry.afterSha256
+      const revisions: Record<string, string | null> = {}
+      for (const item of prepared) {
+        revisions[item.entry.relativePath] = item.entry.afterSha256
+      }
+      committedRevisions = revisions
+      commitSucceeded = true
+      return { txId, revisions }
+    } finally {
+      this.observer?.onAfterCommit?.({
+        projectDir,
+        projectId: params.projectId,
+        revisions: committedRevisions,
+        succeeded: commitSucceeded
+      })
     }
-    return { txId, revisions }
   }
 }
