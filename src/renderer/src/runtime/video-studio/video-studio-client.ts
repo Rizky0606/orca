@@ -15,7 +15,7 @@ import {
   VIDEO_STUDIO_STOP_PREVIEW_METHOD,
   VIDEO_STUDIO_SUBSCRIBE_JOBS_METHOD,
   VIDEO_STUDIO_UPDATE_PROJECT_METHOD,
-  VideoStudioJobsEventSchema,
+  VideoStudioSubscribeJobsEventSchema,
   type VideoStudioCancelRenderParams,
   type VideoStudioCancelRenderResult,
   type VideoStudioCheckCompositionParams,
@@ -31,6 +31,7 @@ import {
   type VideoStudioOpenCompositionWorkspaceParams,
   type VideoStudioOpenCompositionWorkspaceResult,
   type VideoStudioProbeEnginesResult,
+  type VideoStudioProjectFilesChangedEvent,
   type VideoStudioReadRenderOutputChunkParams,
   type VideoStudioReadRenderOutputChunkResult,
   type VideoStudioScaffoldCompositionParams,
@@ -233,14 +234,20 @@ export function subscribeVideoStudioJobsForTarget(
   params: VideoStudioSubscribeJobsParams,
   handlers: {
     onEvent: (event: VideoStudioJobsEvent) => void
+    onFilesChanged?: (event: VideoStudioProjectFilesChangedEvent) => void
     onError?: (error: unknown) => void
     onClose?: () => void
   }
 ) {
   return subscribeRuntimeRpc(target, VIDEO_STUDIO_SUBSCRIBE_JOBS_METHOD, params, {
     onEvent: (result) => {
-      const parsed = VideoStudioJobsEventSchema.safeParse(result)
-      if (parsed.success) {
+      const parsed = VideoStudioSubscribeJobsEventSchema.safeParse(result)
+      if (!parsed.success) {
+        return
+      }
+      if (parsed.data.type === 'projectFilesChanged') {
+        handlers.onFilesChanged?.(parsed.data)
+      } else {
         handlers.onEvent(parsed.data)
       }
     },

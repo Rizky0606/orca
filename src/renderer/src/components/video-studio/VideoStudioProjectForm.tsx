@@ -19,6 +19,7 @@ import {
   type VideoStudioProject
 } from '../../../../shared/video-studio/video-studio-project'
 import type { VideoStudioCreateProjectParams } from '../../../../shared/video-studio/video-studio-rpc-contract'
+import type { StyleProfile } from '../../../../shared/video-studio/video-studio-style-contract'
 import { VideoStudioWorkflow, type VideoStudioProductionController } from './VideoStudioWorkflow'
 import {
   parseVideoStudioDraft,
@@ -30,6 +31,9 @@ export function VideoStudioProjectForm({
   project,
   busy,
   production,
+  styleProfiles,
+  activeStage,
+  hideWorkflow,
   onSave,
   onCancel,
   onDelete
@@ -37,6 +41,9 @@ export function VideoStudioProjectForm({
   project?: VideoStudioProject
   busy: boolean
   production?: VideoStudioProductionController
+  styleProfiles?: readonly StyleProfile[]
+  activeStage?: VideoStudioProject['workflowStage']
+  hideWorkflow?: boolean
   onSave: (fields: VideoStudioCreateProjectParams) => void
   onCancel: () => void
   onDelete: (trigger: HTMLButtonElement) => void
@@ -59,11 +66,15 @@ export function VideoStudioProjectForm({
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSubmitted(true)
-    if (parsed.project) {
-      onSave(parsed.project)
+    const effective =
+      activeStage && activeStage !== draft.workflowStage
+        ? parseVideoStudioDraft({ ...draft, workflowStage: activeStage })
+        : parsed
+    if (effective.project) {
+      onSave(effective.project)
       return
     }
-    const field = parsed.errors?.[0]
+    const field = effective.errors?.[0]
     if (typeof field === 'string') {
       document.getElementById(`${formId}-${field}`)?.focus()
     }
@@ -209,12 +220,43 @@ export function VideoStudioProjectForm({
             </Select>
           </div>
         </div>
-        <VideoStudioWorkflow
-          stage={draft.workflowStage}
-          project={project}
-          production={production}
-          onChange={(stage) => change('workflowStage', stage)}
-        />
+        {!project ? (
+          <div className="grid min-w-0 content-start gap-2">
+            <Label htmlFor={`${formId}-style`}>
+              {t('videoStudio.initialStyleProfile', 'Visual style profile')}
+            </Label>
+            <Select
+              value={draft.styleProfileId ?? 'technical-explainer-01'}
+              disabled={busy}
+              onValueChange={(value) => change('styleProfileId', value)}
+            >
+              <SelectTrigger id={`${formId}-style`} className="min-h-11 w-full @lg:min-h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                {(styleProfiles && styleProfiles.length > 0
+                  ? styleProfiles
+                  : [
+                      { id: 'technical-explainer-01', name: 'Technical Explainer 01' },
+                      { id: 'clean-editorial-01', name: 'Clean Editorial 01' }
+                    ]
+                ).map((item) => (
+                  <SelectItem key={item.id} value={item.id} className="min-h-11 sm:min-h-8">
+                    {item.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+        {!hideWorkflow ? (
+          <VideoStudioWorkflow
+            stage={draft.workflowStage}
+            project={project}
+            production={production}
+            onChange={(stage) => change('workflowStage', stage)}
+          />
+        ) : null}
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">
           {project ? (
             <Button

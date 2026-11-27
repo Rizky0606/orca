@@ -13,24 +13,40 @@ import {
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { useTranslate } from '@/i18n/use-translate'
 import { cn } from '@/lib/class-names'
+import type { VideoStudioProject } from '../../../../shared/video-studio/video-studio-project'
+import { VideoStudioAssetRegistryPanel } from './VideoStudioAssetRegistryPanel'
 import { VideoStudioProductionPanel } from './VideoStudioProductionPanel'
 import { VideoStudioProjectForm } from './VideoStudioProjectForm'
 import { VideoStudioProjectList } from './VideoStudioProjectList'
+import { VideoStudioResearchPanel } from './VideoStudioResearchPanel'
+import { VideoStudioStoryboardPanel } from './VideoStudioStoryboardPanel'
+import { VideoStudioStyleMotionPanel } from './VideoStudioStyleMotionPanel'
+import { VideoStudioWorkflow } from './VideoStudioWorkflow'
 import type { useVideoStudioController } from './use-video-studio-controller'
+import type { VideoStudioInspectorController } from './video-studio-inspector-types'
 import type { VideoStudioProductionController } from './use-video-studio-production'
 
 export function VideoStudioProjects({
   controller,
-  production
+  production,
+  inspector,
+  initialScriptView = 'storyboard'
 }: {
   controller: ReturnType<typeof useVideoStudioController>
   production?: VideoStudioProductionController
+  inspector?: VideoStudioInspectorController
+  initialScriptView?: 'storyboard' | 'assets'
 }) {
   const t = useTranslate()
   const { snapshot, loading, saving, error, projectId } = controller
   const [pane, setPane] = useState<'list' | 'detail' | null>(null)
   const [creating, setCreating] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [scriptView, setScriptView] = useState<'storyboard' | 'assets'>(initialScriptView)
+  const [stageChoice, setStageChoice] = useState<{
+    projectId: string
+    stage: VideoStudioProject['workflowStage']
+  } | null>(null)
   const createButton = useRef<HTMLButtonElement>(null)
   const invokingRow = useRef<HTMLButtonElement>(null)
   const deleteButton = useRef<HTMLButtonElement>(null)
@@ -38,6 +54,10 @@ export function VideoStudioProjects({
   const deleted = useRef(false)
   const detailTitleId = useId()
   const project = snapshot?.projects.find(({ id }) => id === projectId)
+  const activeStage: VideoStudioProject['workflowStage'] =
+    project && stageChoice?.projectId === project.id
+      ? stageChoice.stage
+      : (project?.workflowStage ?? 'research')
   const editing = creating || project !== undefined
   const detail = editing && pane !== 'list'
 
@@ -169,14 +189,71 @@ export function VideoStudioProjects({
                   {creating ? t('videoStudio.newProject', 'New project') : project?.title}
                 </h2>
               </div>
-              {!creating && project && project.workflowStage === 'production' && production ? (
-                <VideoStudioProductionPanel project={project} production={production} />
+              {!creating && project ? (
+                <VideoStudioWorkflow
+                  stage={activeStage}
+                  project={project}
+                  production={production}
+                  onChange={(nextStage) =>
+                    setStageChoice({ projectId: project.id, stage: nextStage })
+                  }
+                />
+              ) : null}
+              {!creating && project && activeStage === 'research' && inspector ? (
+                <VideoStudioResearchPanel projectId={project.id} inspector={inspector} />
+              ) : null}
+              {!creating && project && activeStage === 'script' && inspector ? (
+                <div className="grid min-w-0 gap-4">
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={scriptView === 'storyboard' ? 'secondary' : 'outline'}
+                      className="min-h-11 @lg:min-h-8"
+                      onClick={() => setScriptView('storyboard')}
+                    >
+                      {t('videoStudio.scriptTabStoryboard', 'Storyboard & script')}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={scriptView === 'assets' ? 'secondary' : 'outline'}
+                      className="min-h-11 @lg:min-h-8"
+                      onClick={() => setScriptView('assets')}
+                    >
+                      {t('videoStudio.scriptTabAssets', 'Master assets')}
+                    </Button>
+                  </div>
+                  {scriptView === 'storyboard' ? (
+                    <VideoStudioStoryboardPanel
+                      key={`${project.id}:${inspector.documents?.revisions['SCRIPT.md'] ?? ''}`}
+                      projectId={project.id}
+                      inspector={inspector}
+                      drift={production?.composition?.drift}
+                    />
+                  ) : (
+                    <VideoStudioAssetRegistryPanel inspector={inspector} />
+                  )}
+                </div>
+              ) : null}
+              {!creating && project && activeStage === 'style' && inspector ? (
+                <VideoStudioStyleMotionPanel projectId={project.id} inspector={inspector} />
+              ) : null}
+              {!creating && project && activeStage === 'production' && production ? (
+                <VideoStudioProductionPanel
+                  project={project}
+                  production={production}
+                  inspector={inspector}
+                />
               ) : null}
               <VideoStudioProjectForm
                 key={creating ? 'new' : `${project?.id}:${project?.updatedAt}`}
                 project={creating ? undefined : project}
                 busy={loading || saving}
                 production={production}
+                styleProfiles={inspector?.libraryStyles}
+                activeStage={creating ? undefined : activeStage}
+                hideWorkflow={!creating && Boolean(project)}
                 onSave={(fields) => {
                   void controller.saveProject(creating ? null : projectId, fields).then((saved) => {
                     if (saved) {

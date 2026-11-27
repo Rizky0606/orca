@@ -22,6 +22,7 @@ import {
 import type { RuntimeClientTarget } from '../../../../shared/remote-runtime/host-catalog/runtime-client-target'
 import { VideoStudioProjects } from './VideoStudioProjects'
 import { useVideoStudioController } from './use-video-studio-controller'
+import { useVideoStudioInspector } from './use-video-studio-inspector'
 import { useVideoStudioProduction } from './use-video-studio-production'
 import { useVideoStudioSelection } from './video-studio-selection'
 
@@ -194,7 +195,14 @@ function VideoStudioOnHost({
     project: selectedProject,
     onReloadProjects: controller.refresh
   })
-  return <VideoStudioProjects controller={controller} production={production} />
+  const inspector = useVideoStudioInspector({
+    target,
+    pairingRevision,
+    projectId: selectedProject?.id
+  })
+  return (
+    <VideoStudioProjects controller={controller} production={production} inspector={inspector} />
+  )
 }
 
 export default function VideoStudioPage(): React.JSX.Element {
