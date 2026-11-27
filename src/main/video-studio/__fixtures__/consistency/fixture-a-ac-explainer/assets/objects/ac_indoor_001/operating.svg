@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420" width="640" height="420" data-asset-id="ac_indoor_001" data-state="operating">
+  <g id="chassis">
+    <rect x="40" y="60" width="560" height="240" rx="28" fill="#EFE7D6" stroke="#1E242B" stroke-width="8" />
+    <rect x="76" y="86" width="488" height="46" rx="12" fill="#2563EB" />
+  </g>
+  <g id="evaporator-coils">
+    <path d="M90 340 C190 385, 290 385, 390 340" fill="none" stroke="#2563EB" stroke-width="10" stroke-linecap="round" />
+    <path d="M250 350 C350 395, 450 395, 550 350" fill="none" stroke="#EA580C" stroke-width="10" stroke-linecap="round" />
+  </g>
+</svg>

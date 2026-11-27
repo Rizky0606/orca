@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "id": "inflation_chart",
+      "schemaVersion": 1,
+      "version": 1,
+      "name": "Inflation Basket Index Chart",
+      "type": "graphic",
+      "format": "svg",
+      "tags": ["finance", "chart"],
+      "defaultState": "baseline",
+      "states": {
+        "baseline": { "file": "assets/graphics/inflation_chart/baseline.svg" },
+        "spike": { "file": "assets/graphics/inflation_chart/spike.svg" }
+      },
+      "components": [
+        {
+          "id": "chart_bars",
+          "selector": "rect",
+          "animatable": true,
+          "allowedTransforms": ["scale", "opacity"]
+        }
+      ],
+      "supportedEngines": ["hyperframes"],
+      "dependencies": [],
+      "provenance": {
+        "source": "library",
+        "libraryAssetId": "inflation_chart",
+        "libraryVersion": 1
+      },
+      "consistency": { "lockGeometry": true, "lockProportions": true, "lockMaterials": true },
+      "createdAt": 1764140400000,
+      "updatedAt": 1764140400000
+    }
+  ]
+}

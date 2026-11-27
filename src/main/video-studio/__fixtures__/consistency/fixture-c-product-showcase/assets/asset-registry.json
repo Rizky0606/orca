@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "id": "showcase_card",
+      "schemaVersion": 1,
+      "version": 1,
+      "name": "Acoustic Studio Monitor Hero Card",
+      "type": "graphic",
+      "format": "svg",
+      "tags": ["product", "editorial"],
+      "defaultState": "hero",
+      "states": {
+        "hero": { "file": "assets/graphics/showcase_card/hero.svg" },
+        "specs": { "file": "assets/graphics/showcase_card/specs.svg" }
+      },
+      "components": [
+        {
+          "id": "woofer_cone",
+          "selector": "circle",
+          "animatable": true,
+          "allowedTransforms": ["scale"]
+        }
+      ],
+      "supportedEngines": ["hyperframes"],
+      "dependencies": [],
+      "provenance": { "source": "library", "libraryAssetId": "showcase_card", "libraryVersion": 1 },
+      "consistency": { "lockGeometry": true, "lockProportions": true, "lockMaterials": true },
+      "createdAt": 1764140400000,
+      "updatedAt": 1764140400000
+    }
+  ]
+}

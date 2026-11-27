@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420" width="640" height="420" data-asset-id="showcase_card" data-state="hero">
+  <rect x="60" y="40" width="520" height="340" rx="28" fill="#FFFFFF" stroke="#0F766E" stroke-width="8" />
+  <circle cx="240" cy="210" r="96" fill="#0F172A" />
+  <circle cx="240" cy="210" r="46" fill="#0F766E" />
+  <circle cx="440" cy="140" r="36" fill="#0284C7" />
+  <rect x="380" y="220" width="130" height="24" rx="12" fill="#0F172A" />
+</svg>
