@@ -16,11 +16,21 @@ const defaults: ProjectFields = {
   durationSeconds: 30,
   workflowStage: 'research',
   engine: 'hyperframes',
-  fps: DEFAULT_FPS
+  fps: DEFAULT_FPS,
+  styleProfileId: 'technical-explainer-01'
 }
 
 export function videoStudioDraft(project: ProjectFields = defaults): VideoStudioDraft {
-  const { title, prompt, aspectRatio, durationSeconds, workflowStage, engine, fps } = project
+  const {
+    title,
+    prompt,
+    aspectRatio,
+    durationSeconds,
+    workflowStage,
+    engine,
+    fps,
+    styleProfileId
+  } = project
   return {
     title,
     prompt,
@@ -28,13 +38,16 @@ export function videoStudioDraft(project: ProjectFields = defaults): VideoStudio
     durationSeconds: String(durationSeconds),
     workflowStage,
     engine,
-    fps
+    fps,
+    styleProfileId
   }
 }
 
 export function parseVideoStudioDraft(draft: VideoStudioDraft) {
+  const cleanedStyleId = draft.styleProfileId?.trim() || undefined
   const result = VideoStudioCreateProjectParams.safeParse({
     ...draft,
+    styleProfileId: cleanedStyleId,
     durationSeconds: draft.durationSeconds.trim() ? Number(draft.durationSeconds) : undefined
   })
   return result.success

@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <title>Fixture A — AC Heat Pump Explainer</title>
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&family=Inter:wght@500;700&display=swap"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      :root {
+        --hf-bg: #f7f3e9;
+        --hf-surface: #efe7d6;
+        --hf-ink: #1e242b;
+        --hf-muted: #4b5563;
+        --hf-accent: #2563eb;
+        --hf-accent-secondary: #ea580c;
+        --hf-highlight: #facc15;
+        --hf-sub-bg: #111827;
+        --hf-sub-fg: #f9fafb;
+        --hf-sub-hi: #facc15;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        background: var(--hf-bg);
+        color: var(--hf-ink);
+        font-family: 'Inter', system-ui, sans-serif;
+      }
+      #root {
+        position: relative;
+        width: 1080px;
+        height: 1920px;
+        background: var(--hf-bg);
+      }
+      .accent-band {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1080px;
+        height: 64px;
+        background: var(--hf-accent);
+      }
+      .comp-layer {
+        position: absolute;
+        inset: 0;
+        width: 1080px;
+        height: 1920px;
+      }
+      .hf-scene {
+        width: 100%;
+        height: 100%;
+        padding: 150px 84px 480px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 36px;
+        text-align: center;
+      }
+      .hf-kicker {
+        font-size: 30px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        color: var(--hf-accent);
+      }
+      .hf-heading {
+        margin: 0;
+        font-family: 'Space Grotesk', system-ui, sans-serif;
+        font-size: 76px;
+        line-height: 1.08;
+        font-weight: 700;
+        color: var(--hf-ink);
+      }
+      .hf-card {
+        width: 860px;
+        height: 540px;
+        border-radius: 24px;
+        background: var(--hf-surface);
+        border: 4px solid var(--hf-ink);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 28px;
+      }
+      .hf-card svg {
+        width: 100%;
+        height: 100%;
+      }
+      .fan-stage {
+        position: absolute;
+        left: 390px;
+        top: 1210px;
+        width: 300px;
+        height: 300px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+      }
+      #fan {
+        width: 280px;
+        height: 280px;
+        transform-origin: 50% 50%;
+      }
+      .subtitle-bar {
+        position: absolute;
+        left: 84px;
+        right: 84px;
+        bottom: 130px;
+        padding: 28px 36px;
+        border-radius: 22px;
+        background: var(--hf-sub-bg);
+        color: var(--hf-sub-fg);
+        font-size: 40px;
+        font-weight: 700;
+        text-align: center;
+        line-height: 1.25;
+      }
+      .subtitle-bar .hi {
+        color: var(--hf-sub-hi);
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="video-studio-main"
+      data-start="0"
+      data-width="1080"
+      data-height="1920"
+      data-fps="30"
+      data-duration="9"
+    >
+      <div class="accent-band"></div>
+      <div
+        id="layer-hook"
+        class="comp-layer"
+        data-composition-id="01-hook"
+        data-composition-src="./compositions/01-hook.html"
+        data-start="0"
+        data-duration="3"
+        data-track-index="0"
+      ></div>
+      <div
+        id="layer-cutaway"
+        class="comp-layer"
+        data-composition-id="02-cutaway"
+        data-composition-src="./compositions/02-cutaway.html"
+        data-start="3"
+        data-duration="3"
+        data-track-index="0"
+      ></div>
+      <div
+        id="layer-operating"
+        class="comp-layer"
+        data-composition-id="03-operating"
+        data-composition-src="./compositions/03-operating.html"
+        data-start="6"
+        data-duration="3"
+        data-track-index="0"
+      ></div>
+
+      <div class="fan-stage">
+        <svg id="fan" viewBox="0 0 200 200" width="280" height="280">
+          <circle cx="100" cy="100" r="92" fill="#FFFFFF" stroke="#1E242B" stroke-width="6" />
+          <path d="M100 100 L82 14 C102 6 122 10 132 24 Z" fill="#EA580C" />
+          <path d="M100 100 L182 126 C176 146 160 162 142 164 Z" fill="#2563EB" />
+          <path d="M100 100 L28 142 C18 124 18 102 28 84 Z" fill="#1E242B" />
+          <circle cx="100" cy="100" r="20" fill="#1E242B" />
+        </svg>
+      </div>
+
+      <div id="subtitle-pill" class="subtitle-bar">
+        Pumping <span class="hi">indoor heat</span> outside with phase change
+      </div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {}
+      if (typeof gsap !== 'undefined') {
+        const tl = gsap.timeline({ paused: true })
+        tl.fromTo('#fan', { rotation: 0 }, { rotation: 9 * 217, duration: 9, ease: 'none' }, 0)
+        window.__timelines['video-studio-main'] = tl
+        tl.seek(0)
+      }
+    </script>
+
+    <script type="module">
+      async function loadJson(path) {
+        const res = await fetch(path)
+        return res.json()
+      }
+      async function loadText(path) {
+        const res = await fetch(path)
+        return res.text()
+      }
+
+      const [styleProfile, assetRegistry] = await Promise.all([
+        loadJson('./styles/style-profile.json'),
+        loadJson('./assets/asset-registry.json')
+      ])
+
+      const p = styleProfile.visual.palette
+      const rootStyle = document.documentElement.style
+      rootStyle.setProperty('--hf-bg', p.background)
+      rootStyle.setProperty('--hf-surface', p.surface)
+      rootStyle.setProperty('--hf-ink', p.primaryText)
+      rootStyle.setProperty('--hf-muted', p.secondaryText)
+      rootStyle.setProperty('--hf-accent', p.accentPrimary)
+      rootStyle.setProperty('--hf-accent-secondary', p.accentSecondary || p.accentPrimary)
+      rootStyle.setProperty('--hf-highlight', p.highlight || p.accentPrimary)
+      rootStyle.setProperty('--hf-sub-bg', styleProfile.subtitle.backgroundColor)
+      rootStyle.setProperty('--hf-sub-fg', styleProfile.subtitle.textColor)
+      rootStyle.setProperty('--hf-sub-hi', styleProfile.subtitle.highlightColor)
+
+      const acAsset = assetRegistry.assets.find((a) => a.id === 'ac_indoor_001')
+      if (acAsset) {
+        const defaultPath = acAsset.states[acAsset.defaultState]?.file
+        const slots = [
+          ['[data-asset-slot="hook-asset"]', defaultPath],
+          ['[data-asset-slot="cutaway-asset"]', acAsset.states.cutaway?.file || defaultPath],
+          ['[data-asset-slot="operating-asset"]', acAsset.states.operating?.file || defaultPath]
+        ]
+        await Promise.all(
+          slots.map(async ([selector, relPath]) => {
+            if (!relPath) return
+            const svgMarkup = await loadText('./' + relPath)
+            for (const el of document.querySelectorAll(selector)) {
+              el.innerHTML = svgMarkup
+            }
+          })
+        )
+      }
+    </script>
+  </body>
+</html>

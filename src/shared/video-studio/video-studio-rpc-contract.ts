@@ -7,6 +7,31 @@ import {
   VideoStudioRenderQualitySchema,
   VideoStudioRenderRecordSchema
 } from './video-studio-project'
+import { StyleIdSchema } from './video-studio-style-contract'
+import {
+  VideoStudioCheckFindingSchema,
+  VideoStudioCheckResultSchema,
+  VideoStudioEngineStatusSchema,
+  VideoStudioMissingToolSchema,
+  type VideoStudioCheckFinding,
+  type VideoStudioCheckResult,
+  type VideoStudioEngineStatus,
+  type VideoStudioMissingTool
+} from './video-studio-validation-contract'
+
+export * from './video-studio-asset-rpc-contract'
+export * from './video-studio-document-rpc-contract'
+export * from './video-studio-style-rpc-contract'
+export {
+  VideoStudioCheckFindingSchema,
+  VideoStudioCheckResultSchema,
+  VideoStudioEngineStatusSchema,
+  VideoStudioMissingToolSchema,
+  type VideoStudioCheckFinding,
+  type VideoStudioCheckResult,
+  type VideoStudioEngineStatus,
+  type VideoStudioMissingTool
+}
 
 // ─── Method name constants ────────────────────────────────────────────────────
 
@@ -51,20 +76,6 @@ export const VideoStudioDeleteProjectResult = VideoStudioListProjectsResult
 
 // ─── Engine Probe ─────────────────────────────────────────────────────────────
 
-export const VideoStudioMissingToolSchema = z.enum(['node22', 'hyperframes', 'ffmpeg'])
-export type VideoStudioMissingTool = z.infer<typeof VideoStudioMissingToolSchema>
-
-export const VideoStudioEngineStatusSchema = z.object({
-  engine: VideoStudioEngineSchema,
-  available: z.boolean(),
-  status: z.enum(['ready', 'missing-tools', 'planned', 'error']),
-  missingTools: z.array(VideoStudioMissingToolSchema).default([]),
-  doctorOk: z.boolean().default(false),
-  version: z.string().optional(),
-  summary: z.string()
-})
-export type VideoStudioEngineStatus = z.infer<typeof VideoStudioEngineStatusSchema>
-
 export const VideoStudioProbeEnginesParams = z.strictObject({})
 export const VideoStudioProbeEnginesResult = z.object({
   engines: z.array(VideoStudioEngineStatusSchema)
@@ -72,12 +83,27 @@ export const VideoStudioProbeEnginesResult = z.object({
 
 // ─── Composition State & Workspace ────────────────────────────────────────────
 
+export const VideoStudioCompositionDriftSummarySchema = z.object({
+  inSync: z.boolean(),
+  hasWarnings: z.boolean(),
+  plannedTotalDurationSeconds: z.number(),
+  actualTotalDurationSeconds: z.number(),
+  unmountedScenes: z.array(z.string()),
+  missingFiles: z.array(z.string())
+})
+export type VideoStudioCompositionDriftSummary = z.infer<
+  typeof VideoStudioCompositionDriftSummarySchema
+>
+
 export const VideoStudioCompositionStateSchema = z.object({
   initialized: z.boolean(),
   entryExists: z.boolean(),
   files: z.array(z.string()),
   previewActive: z.boolean(),
-  previewUrl: z.string().optional()
+  previewUrl: z.string().optional(),
+  checkStale: z.boolean().optional(),
+  currentInputFingerprint: z.string().optional(),
+  drift: VideoStudioCompositionDriftSummarySchema.optional()
 })
 export type VideoStudioCompositionState = z.infer<typeof VideoStudioCompositionStateSchema>
 
@@ -88,7 +114,8 @@ export const VideoStudioGetCompositionStateResult = VideoStudioCompositionStateS
 
 export const VideoStudioScaffoldCompositionParams = z.strictObject({
   projectId: VideoStudioProjectId,
-  overwrite: z.boolean().optional()
+  overwrite: z.boolean().optional(),
+  styleProfileId: StyleIdSchema.optional()
 })
 export const VideoStudioScaffoldCompositionResult = VideoStudioCompositionStateSchema
 
@@ -101,24 +128,6 @@ export const VideoStudioOpenCompositionWorkspaceResult = z.object({
 })
 
 // ─── Composition Check ────────────────────────────────────────────────────────
-
-export const VideoStudioCheckFindingSchema = z.object({
-  severity: z.enum(['error', 'warning', 'info']),
-  code: z.string().optional(),
-  message: z.string(),
-  file: z.string().optional()
-})
-export type VideoStudioCheckFinding = z.infer<typeof VideoStudioCheckFindingSchema>
-
-export const VideoStudioCheckResultSchema = z.object({
-  passed: z.boolean(),
-  errors: z.array(VideoStudioCheckFindingSchema),
-  warnings: z.array(VideoStudioCheckFindingSchema),
-  summary: z.string(),
-  checkedAt: z.number(),
-  durationMs: z.number().optional()
-})
-export type VideoStudioCheckResult = z.infer<typeof VideoStudioCheckResultSchema>
 
 export const VideoStudioCheckCompositionParams = z.strictObject({
   projectId: VideoStudioProjectId
@@ -135,7 +144,8 @@ export const VideoStudioPreviewStateSchema = z.object({
 export type VideoStudioPreviewState = z.infer<typeof VideoStudioPreviewStateSchema>
 
 export const VideoStudioStartPreviewParams = z.strictObject({
-  projectId: VideoStudioProjectId
+  projectId: VideoStudioProjectId,
+  forceNew: z.boolean().optional()
 })
 export const VideoStudioStartPreviewResult = VideoStudioPreviewStateSchema
 
@@ -174,10 +184,21 @@ export const VideoStudioRenderJobSnapshotSchema = z.object({
 })
 export type VideoStudioRenderJobSnapshot = z.infer<typeof VideoStudioRenderJobSnapshotSchema>
 
-export const VideoStudioStartRenderParams = z.strictObject({
-  projectId: VideoStudioProjectId,
-  quality: VideoStudioRenderQualitySchema.default('looks')
-})
+export const VideoStudioStartRenderParams = z
+  .strictObject({
+    projectId: VideoStudioProjectId,
+    quality: VideoStudioRenderQualitySchema.default('looks'),
+    startSeconds: z.number().nonnegative().optional(),
+    endSeconds: z.number().positive().optional()
+  })
+  .refine(
+    (v) =>
+      v.startSeconds === undefined || v.endSeconds === undefined || v.endSeconds > v.startSeconds,
+    {
+      message: 'endSeconds must be greater than startSeconds',
+      path: ['endSeconds']
+    }
+  )
 export const VideoStudioStartRenderResult = z.object({
   job: VideoStudioRenderJobSnapshotSchema
 })
@@ -193,13 +214,40 @@ export const VideoStudioSubscribeJobsParams = z.strictObject({
   projectId: VideoStudioProjectId.optional()
 })
 
+export const VideoStudioProjectFilesChangedPayloadSchema = z.object({
+  projectId: VideoStudioProjectId,
+  changedPaths: z.array(z.string().min(1)),
+  revisions: z.record(z.string(), z.string()),
+  externalEdit: z.boolean(),
+  timestamp: z.number()
+})
+export type VideoStudioProjectFilesChangedPayload = z.infer<
+  typeof VideoStudioProjectFilesChangedPayloadSchema
+>
+
+export const VideoStudioProjectFilesChangedEventSchema =
+  VideoStudioProjectFilesChangedPayloadSchema.extend({
+    type: z.literal('projectFilesChanged')
+  })
+export type VideoStudioProjectFilesChangedEvent = z.infer<
+  typeof VideoStudioProjectFilesChangedEventSchema
+>
+
 export const VideoStudioJobsEventSchema = z.object({
+  type: z.literal('jobs').optional(),
   revision: z.number().int().nonnegative(),
   engines: z.array(VideoStudioEngineStatusSchema).optional(),
   jobs: z.array(VideoStudioRenderJobSnapshotSchema),
-  previews: z.record(z.string(), VideoStudioPreviewStateSchema).default({})
+  previews: z.record(z.string(), VideoStudioPreviewStateSchema).default({}),
+  projectFilesChanged: VideoStudioProjectFilesChangedPayloadSchema.optional()
 })
 export type VideoStudioJobsEvent = z.infer<typeof VideoStudioJobsEventSchema>
+
+export const VideoStudioSubscribeJobsEventSchema = z.union([
+  VideoStudioJobsEventSchema,
+  VideoStudioProjectFilesChangedEventSchema
+])
+export type VideoStudioSubscribeJobsEvent = z.infer<typeof VideoStudioSubscribeJobsEventSchema>
 
 // ─── Bounded MP4 Chunk Streaming ──────────────────────────────────────────────
 

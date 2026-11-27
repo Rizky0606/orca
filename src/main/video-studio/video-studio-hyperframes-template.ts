@@ -1,22 +1,30 @@
-import { access, mkdir, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   videoStudioDimensionsForAspectRatio,
   type VideoStudioProject
 } from '../../shared/video-studio/video-studio-project'
 import type { VideoStudioCompositionState } from '../../shared/video-studio/video-studio-rpc-contract'
+import { HYPERFRAMES_PINNED_VERSION } from './engines/hyperframes-doctor-parser'
 import { inspectVideoStudioCompositionState } from './video-studio-composition-paths'
+import { buildDefaultStyleProfile } from './video-studio-default-styles'
+import { buildDocumentSeeds } from './video-studio-document-seeds'
+import {
+  buildIndexHtml,
+  buildOpeningCompositionHtml,
+  OPENING_COMPOSITION_ID
+} from './video-studio-html-templates'
 
-const COMPOSITION_ID = 'video-studio-main'
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
+const ASSET_SUBDIRS = [
+  'objects',
+  'characters',
+  'environments',
+  'graphics',
+  'models',
+  'audio',
+  'video'
+] as const
+const LEGACY_HYPERFRAMES_KEYS = ['durationSeconds', 'fps', 'height', 'id', 'width'] as const
 
 function fileExists(filePath: string): Promise<boolean> {
   return access(filePath).then(
@@ -25,15 +33,120 @@ function fileExists(filePath: string): Promise<boolean> {
   )
 }
 
-function buildHyperFramesConfig(project: VideoStudioProject): string {
-  const { width, height } = videoStudioDimensionsForAspectRatio(project.aspectRatio)
+async function writeIfMissingOrOverwrite(
+  filePath: string,
+  content: string,
+  overwrite: boolean
+): Promise<void> {
+  if (overwrite || !(await fileExists(filePath))) {
+    await writeFile(filePath, content, 'utf8')
+  }
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** Checks whether `raw` matches the exact legacy Stage 2 5-key `hyperframes.json` object. */
+export function isExactLegacyHyperFramesConfig(raw: string): boolean {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return false
+  }
+  if (!isPlainRecord(parsed)) {
+    return false
+  }
+  const keys = Object.keys(parsed).sort()
+  if (
+    keys.length !== LEGACY_HYPERFRAMES_KEYS.length ||
+    keys.some((key, index) => key !== LEGACY_HYPERFRAMES_KEYS[index])
+  ) {
+    return false
+  }
+  return (
+    typeof parsed.id === 'string' &&
+    typeof parsed.width === 'number' &&
+    Number.isFinite(parsed.width) &&
+    typeof parsed.height === 'number' &&
+    Number.isFinite(parsed.height) &&
+    typeof parsed.fps === 'number' &&
+    Number.isFinite(parsed.fps) &&
+    typeof parsed.durationSeconds === 'number' &&
+    Number.isFinite(parsed.durationSeconds)
+  )
+}
+
+function buildHyperFramesConfig(): string {
   return `${JSON.stringify(
     {
-      id: COMPOSITION_ID,
-      width,
-      height,
-      fps: project.fps,
-      durationSeconds: project.durationSeconds
+      $schema: 'https://hyperframes.heygen.com/schema/hyperframes.json',
+      registry: 'https://raw.githubusercontent.com/heygen-com/hyperframes/main/registry',
+      paths: {
+        blocks: 'compositions',
+        components: 'compositions/components',
+        assets: 'assets'
+      },
+      media: {
+        autoProxy: true
+      }
+    },
+    null,
+    2
+  )}\n`
+}
+
+function buildMetaJson(project: VideoStudioProject): string {
+  return `${JSON.stringify(
+    {
+      id: project.id,
+      name: project.title,
+      createdAt: new Date(project.createdAt).toISOString()
+    },
+    null,
+    2
+  )}\n`
+}
+
+function buildPackageJson(project: VideoStudioProject): string {
+  const slug =
+    project.id
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, '-')
+      .replace(/^[._-]+|[._-]+$/g, '') || 'orca-video-project'
+  const cli = `npx --yes hyperframes@${HYPERFRAMES_PINNED_VERSION}`
+  return `${JSON.stringify(
+    {
+      name: slug,
+      private: true,
+      type: 'module',
+      scripts: {
+        dev: `${cli} preview`,
+        check: `${cli} check`,
+        render: `${cli} render`,
+        publish: `${cli} publish`
+      },
+      engines: {
+        hyperframes: HYPERFRAMES_PINNED_VERSION
+      }
+    },
+    null,
+    2
+  )}\n`
+}
+
+function buildGitignore(): string {
+  return '.orca/project-state.json\n.orca/tx.log\n.orca/.staging/\nrenders/\n'
+}
+
+function buildSchemaVersionJson(): string {
+  return `${JSON.stringify(
+    {
+      schemaVersion: 2,
+      engine: 'hyperframes',
+      engineVersion: HYPERFRAMES_PINNED_VERSION,
+      migratedAt: Date.now()
     },
     null,
     2
@@ -59,134 +172,76 @@ function buildProjectJson(project: VideoStudioProject): string {
   )}\n`
 }
 
-function buildIndexHtml(project: VideoStudioProject): string {
-  const { width, height } = videoStudioDimensionsForAspectRatio(project.aspectRatio)
-  const safeTitle = escapeHtml(project.title)
-  const safePrompt = escapeHtml(
-    project.prompt.trim() || 'Add your scenes inside scenes/ and index.html.'
-  )
-  const duration = project.durationSeconds
-  const exitAt = Math.max(1.2, duration - 0.8)
-
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=${width}, height=${height}" />
-    <title>${safeTitle}</title>
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
-    <style>
-      * {
-        box-sizing: border-box;
-      }
-      html,
-      body {
-        margin: 0;
-        width: 100%;
-        height: 100%;
-        background: #0b0f14;
-        color: #f8fafc;
-        font-family: Inter, system-ui, sans-serif;
-      }
-      #root {
-        position: relative;
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-      }
-      .clip {
-        position: absolute;
-        inset: 0;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 8%;
-        gap: 24px;
-        text-align: center;
-      }
-      .kicker {
-        margin: 0;
-        font-size: 24px;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        color: #94a3b8;
-      }
-      .headline {
-        margin: 0;
-        max-width: 18ch;
-        font-size: clamp(48px, 6vw, 96px);
-        line-height: 1.08;
-        font-weight: 700;
-        color: #f8fafc;
-      }
-      .summary {
-        margin: 0;
-        max-width: 52ch;
-        font-size: clamp(22px, 2.2vw, 32px);
-        line-height: 1.45;
-        color: #cbd5e1;
-      }
-    </style>
-  </head>
-  <body>
-    <div
-      id="root"
-      data-composition-id="${COMPOSITION_ID}"
-      data-start="0"
-      data-width="${width}"
-      data-height="${height}"
-      data-fps="${project.fps}"
-      data-duration="${duration}"
-    >
-      <section id="scene-opening" class="clip" data-start="0" data-duration="${duration}">
-        <p id="scene-kicker" class="kicker">Orca Video Studio</p>
-        <h1 id="scene-title" class="headline">${safeTitle}</h1>
-        <p id="scene-prompt" class="summary">${safePrompt}</p>
-      </section>
-    </div>
-    <script>
-      if (typeof gsap !== 'undefined') {
-        const tl = gsap.timeline({ paused: true })
-        tl.fromTo('#scene-kicker', { y: 20, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: 'power2.out' }, 0.1)
-        tl.fromTo('#scene-title', { y: 36, opacity: 0 }, { y: 0, opacity: 1, duration: 0.75, ease: 'power3.out' }, 0.25)
-        tl.fromTo('#scene-prompt', { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: 0.75, ease: 'power2.out' }, 0.5)
-        tl.to('#scene-title', { y: -6, duration: ${Math.max(0.5, exitAt - 1.2).toFixed(2)}, ease: 'none' }, 1.2)
-        window.__timelines = window.__timelines || {}
-        window.__timelines['${COMPOSITION_ID}'] = tl
-      }
-    </script>
-  </body>
-</html>
-`
-}
-
 /**
- * Scaffolds a valid HyperFrames composition directory (`project.json`, `hyperframes.json`,
- * `index.html`, `scenes/`, `assets/`, `renders/`). Preserves existing `index.html` edits
- * unless `options.overwrite` is explicitly true.
+ * Scaffolds a modular HyperFrames 0.9.94 project layout and performs non-destructive
+ * Stage 1/2 upgrades (`overwrite: false` preserves `scenes/`, custom `index.html`, and
+ * non-legacy `hyperframes.json`).
  */
 export async function scaffoldHyperFramesComposition(
   projectDir: string,
   project: VideoStudioProject,
-  options: { overwrite?: boolean } = {}
+  options: { overwrite?: boolean; styleProfileId?: string } = {}
 ): Promise<VideoStudioCompositionState> {
+  const overwrite = options.overwrite === true
+  const styleProfile = buildDefaultStyleProfile(project, options.styleProfileId)
+
   await mkdir(projectDir, { recursive: true })
   await Promise.all([
-    mkdir(join(projectDir, 'scenes'), { recursive: true }),
-    mkdir(join(projectDir, 'assets'), { recursive: true }),
-    mkdir(join(projectDir, 'renders'), { recursive: true })
+    mkdir(join(projectDir, 'compositions', 'components'), { recursive: true }),
+    mkdir(join(projectDir, 'styles'), { recursive: true }),
+    mkdir(join(projectDir, 'references'), { recursive: true }),
+    mkdir(join(projectDir, 'renders'), { recursive: true }),
+    mkdir(join(projectDir, '.orca'), { recursive: true }),
+    ...ASSET_SUBDIRS.map((sub) => mkdir(join(projectDir, 'assets', sub), { recursive: true }))
   ])
 
-  await Promise.all([
-    writeFile(join(projectDir, 'project.json'), buildProjectJson(project), 'utf8'),
-    writeFile(join(projectDir, 'hyperframes.json'), buildHyperFramesConfig(project), 'utf8')
-  ])
+  await writeFile(join(projectDir, 'project.json'), buildProjectJson(project), 'utf8')
+
+  const hyperframesPath = join(projectDir, 'hyperframes.json')
+  const existingConfigRaw = await readFile(hyperframesPath, 'utf8').catch(() => null)
+  if (
+    overwrite ||
+    existingConfigRaw === null ||
+    isExactLegacyHyperFramesConfig(existingConfigRaw)
+  ) {
+    await writeFile(hyperframesPath, buildHyperFramesConfig(), 'utf8')
+  }
 
   const indexPath = join(projectDir, 'index.html')
-  if (options.overwrite || !(await fileExists(indexPath))) {
-    await writeFile(indexPath, buildIndexHtml(project), 'utf8')
+  const existingIndexHtml = await readFile(indexPath, 'utf8').catch(() => null)
+  const shouldWriteIndex = overwrite || existingIndexHtml === null
+  if (shouldWriteIndex) {
+    await writeFile(indexPath, buildIndexHtml(project, styleProfile), 'utf8')
   }
+
+  const shouldWriteOpening =
+    shouldWriteIndex || existingIndexHtml.includes(`${OPENING_COMPOSITION_ID}.html`)
+  if (shouldWriteOpening) {
+    await writeIfMissingOrOverwrite(
+      join(projectDir, 'compositions', `${OPENING_COMPOSITION_ID}.html`),
+      buildOpeningCompositionHtml(project, styleProfile),
+      overwrite
+    )
+  }
+
+  const documentSeeds = buildDocumentSeeds(project, styleProfile)
+  await Promise.all([
+    writeIfMissingOrOverwrite(join(projectDir, 'meta.json'), buildMetaJson(project), overwrite),
+    writeIfMissingOrOverwrite(
+      join(projectDir, 'package.json'),
+      buildPackageJson(project),
+      overwrite
+    ),
+    writeIfMissingOrOverwrite(join(projectDir, '.gitignore'), buildGitignore(), overwrite),
+    writeIfMissingOrOverwrite(
+      join(projectDir, '.orca', 'schema-version.json'),
+      buildSchemaVersionJson(),
+      overwrite
+    ),
+    ...Object.entries(documentSeeds).map(([relPath, content]) =>
+      writeIfMissingOrOverwrite(join(projectDir, relPath), content, overwrite)
+    )
+  ])
 
   return inspectVideoStudioCompositionState(projectDir)
 }

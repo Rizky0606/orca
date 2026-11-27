@@ -8,71 +8,45 @@ import {
   scaffoldVideoStudioCompositionForTarget,
   startVideoStudioPreviewForTarget,
   startVideoStudioRenderForTarget,
-  stopVideoStudioPreviewForTarget,
-  subscribeVideoStudioJobsForTarget
+  stopVideoStudioPreviewForTarget
 } from '@/runtime/video-studio/video-studio-client'
 import type { ExecutionHostId } from '../../../../shared/execution-host/execution-host'
 import type { RuntimeClientTarget } from '../../../../shared/remote-runtime/host-catalog/runtime-client-target'
 import type { VideoStudioProject } from '../../../../shared/video-studio/video-studio-project'
 import type {
-  VideoStudioCheckResult,
   VideoStudioCompositionState,
   VideoStudioEngineStatus,
   VideoStudioPreviewState,
   VideoStudioRenderJobSnapshot
 } from '../../../../shared/video-studio/video-studio-rpc-contract'
 import {
-  fetchRenderBlobUrl,
+  loadProductionRenderVideo,
   mapProductionRpcError,
   openVideoStudioWorkspaceInApp,
   releaseVideoObjectUrl,
   runWithProductionBusy,
+  subscribeProductionProjectStream,
   triggerVideoDownload,
+  type VideoStudioCheckResultView,
   type VideoStudioProductionController
 } from './video-studio-production-actions'
 
 export type { VideoStudioProductionController }
 
-export function useVideoStudioProduction(params: {
-  hostId: ExecutionHostId
-  target: RuntimeClientTarget
+export function useVideoStudioEngineProbe(
+  target: RuntimeClientTarget,
   pairingRevision: number | undefined
-  project: VideoStudioProject | undefined
-  onReloadProjects: () => void
-}): VideoStudioProductionController {
-  const { hostId, target, pairingRevision, project, onReloadProjects } = params
-  const t = useTranslate()
-  const mounted = useRef(true)
-  const videoUrlRef = useRef<string | null>(null)
-  const lastJobStatusRef = useRef<string | undefined>(undefined)
-
+): {
+  engines: VideoStudioEngineStatus[] | null
+  probingEngines: boolean
+  reprobeEngines: () => void
+} {
   const [engines, setEngines] = useState<VideoStudioEngineStatus[] | null>(null)
   const [probingEngines, setProbingEngines] = useState(true)
-  const [composition, setComposition] = useState<VideoStudioCompositionState | null>(null)
-  const [checkResult, setCheckResult] = useState<VideoStudioCheckResult | null>(null)
-  const [job, setJob] = useState<VideoStudioRenderJobSnapshot | null>(null)
-  const [preview, setPreview] = useState<VideoStudioPreviewState>({ active: false })
-  const [busyAction, setBusyAction] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [selectedRenderId, setSelectedRenderId] = useState<string | null>(null)
-  const [videoUrl, setVideoUrl] = useState<string | null>(null)
-  const [loadingVideo, setLoadingVideo] = useState(false)
   const [probeTrigger, setProbeTrigger] = useState(0)
-
-  const projectId = project?.id
-  const handleCompletedRender = useEffectEvent(onReloadProjects)
-
-  useEffect(() => {
-    mounted.current = true
-    return () => {
-      mounted.current = false
-      releaseVideoObjectUrl(videoUrlRef)
-    }
-  }, [])
 
   useEffect(() => {
     let cancelled = false
-    setProbingEngines(true)
     void probeVideoStudioEnginesForTarget(target, pairingRevision)
       .then((res) => {
         if (!cancelled) {
@@ -90,17 +64,62 @@ export function useVideoStudioProduction(params: {
     }
   }, [target, pairingRevision, probeTrigger])
 
+  return {
+    engines,
+    probingEngines,
+    reprobeEngines: () => {
+      setProbingEngines(true)
+      setProbeTrigger((n) => n + 1)
+    }
+  }
+}
+
+export function useVideoStudioProduction(params: {
+  hostId: ExecutionHostId
+  target: RuntimeClientTarget
+  pairingRevision: number | undefined
+  project: VideoStudioProject | undefined
+  onReloadProjects: () => void
+  engineProbe?: {
+    engines: VideoStudioEngineStatus[] | null
+    probingEngines: boolean
+    reprobeEngines: () => void
+  }
+}): VideoStudioProductionController {
+  const { hostId, target, pairingRevision, project, onReloadProjects, engineProbe } = params
+  const t = useTranslate()
+  const mounted = useRef(true)
+  const videoUrlRef = useRef<string | null>(null)
+  const lastJobStatusRef = useRef<string | undefined>(undefined)
+
+  const fallbackProbe = useVideoStudioEngineProbe(target, pairingRevision)
+  const activeProbe = engineProbe ?? fallbackProbe
+
+  const [composition, setComposition] = useState<VideoStudioCompositionState | null>(null)
+  const [checkResult, setCheckResult] = useState<VideoStudioCheckResultView | null>(null)
+  const [job, setJob] = useState<VideoStudioRenderJobSnapshot | null>(null)
+  const [preview, setPreview] = useState<VideoStudioPreviewState>({ active: false })
+  const [busyAction, setBusyAction] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [selectedRenderId, setSelectedRenderId] = useState<string | null>(null)
+  const [videoUrl, setVideoUrl] = useState<string | null>(null)
+  const [loadingVideo, setLoadingVideo] = useState(false)
+  const [externalChangedPaths, setExternalChangedPaths] = useState<string[]>([])
+  const [compRefreshTick, setCompRefreshTick] = useState(0)
+
+  const projectId = project?.id
+  const handleCompletedRender = useEffectEvent(onReloadProjects)
+
   useEffect(() => {
-    setCheckResult(null)
-    setError(null)
-    setSelectedRenderId(null)
-    releaseVideoObjectUrl(videoUrlRef)
-    setVideoUrl(null)
-    lastJobStatusRef.current = undefined
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      releaseVideoObjectUrl(videoUrlRef)
+    }
+  }, [])
+
+  useEffect(() => {
     if (!projectId) {
-      setComposition(null)
-      setJob(null)
-      setPreview({ active: false })
       return
     }
     let cancelled = false
@@ -112,76 +131,50 @@ export function useVideoStudioProduction(params: {
         }
       })
       .catch(() => {})
-
-    let subscription: { unsubscribe: () => void } | undefined
-    void subscribeVideoStudioJobsForTarget(
-      target,
-      { projectId },
-      {
-        onEvent: (event) => {
-          if (cancelled) {
-            return
-          }
-          if (event.engines) {
-            setEngines(event.engines)
-          }
-          const nextJob = event.jobs.find((item) => item.projectId === projectId) ?? null
-          setJob(nextJob)
-          setPreview(event.previews[projectId] ?? { active: false })
-          const prevStatus = lastJobStatusRef.current
-          lastJobStatusRef.current = nextJob?.status
-          if (nextJob?.status === 'completed' && prevStatus === 'rendering') {
-            handleCompletedRender()
-            if (nextJob.record) {
-              setSelectedRenderId(nextJob.record.id)
-            }
-          }
-        }
-      }
-    ).then((sub) => {
-      if (cancelled) {
-        sub.unsubscribe()
-      } else {
-        subscription = sub
-      }
-    })
-
     return () => {
       cancelled = true
-      subscription?.unsubscribe()
     }
+  }, [target, pairingRevision, projectId, compRefreshTick])
+
+  useEffect(() => {
+    if (!projectId) {
+      return
+    }
+    return subscribeProductionProjectStream({
+      target,
+      projectId,
+      lastJobStatusRef,
+      setEngines: () => {},
+      setJob,
+      setCheckResult,
+      setPreview,
+      setSelectedRenderId,
+      onCompletedRender: handleCompletedRender,
+      onExternalEdit: (paths) => {
+        setExternalChangedPaths(paths)
+        setCompRefreshTick((n) => n + 1)
+      }
+    })
   }, [target, pairingRevision, projectId])
 
   const loadRender = (renderId: string, downloadName?: string) => {
     if (!projectId) {
       return
     }
-    setSelectedRenderId(renderId)
-    setError(null)
-    setLoadingVideo(true)
-    void runWithProductionBusy(
-      setBusyAction,
-      () => mounted.current,
-      'loadVideo',
-      async () => {
-        const nextUrl = await fetchRenderBlobUrl(target, pairingRevision, projectId, renderId)
-        if (!mounted.current) {
-          URL.revokeObjectURL(nextUrl)
-          return
-        }
-        releaseVideoObjectUrl(videoUrlRef)
-        videoUrlRef.current = nextUrl
-        setVideoUrl(nextUrl)
-        setLoadingVideo(false)
-        if (downloadName) {
-          triggerVideoDownload(nextUrl, downloadName)
-        }
-      }
-    ).catch((reason: unknown) => {
-      if (mounted.current) {
-        setLoadingVideo(false)
-        setError(mapProductionRpcError(t, reason))
-      }
+    loadProductionRenderVideo({
+      t,
+      target,
+      pairingRevision,
+      projectId,
+      renderId,
+      downloadName,
+      videoUrlRef,
+      isMounted: () => mounted.current,
+      setBusy: setBusyAction,
+      setSelectedRenderId,
+      setError,
+      setLoadingVideo,
+      setVideoUrl
     })
   }
 
@@ -205,8 +198,8 @@ export function useVideoStudioProduction(params: {
   }
 
   return {
-    engines,
-    probingEngines,
+    engines: activeProbe.engines,
+    probingEngines: activeProbe.probingEngines,
     composition,
     checkResult,
     job,
@@ -216,7 +209,15 @@ export function useVideoStudioProduction(params: {
     selectedRenderId,
     videoUrl,
     loadingVideo,
-    recheckEngines: () => setProbeTrigger((n) => n + 1),
+    externalChangedPaths,
+    dismissExternalChanges: () => {
+      setExternalChangedPaths([])
+      setCompRefreshTick((n) => n + 1)
+    },
+    recheckEngines: () => {
+      activeProbe.reprobeEngines()
+      setCompRefreshTick((n) => n + 1)
+    },
     scaffoldComposition: (overwrite = false) =>
       runAction('scaffold', async (id) => {
         const next = await scaffoldVideoStudioCompositionForTarget(

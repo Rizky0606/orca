@@ -16,6 +16,8 @@ import { useTranslate } from '@/i18n/use-translate'
 import type { VideoStudioProject } from '../../../../shared/video-studio/video-studio-project'
 import type { VideoStudioCheckFinding } from '../../../../shared/video-studio/video-studio-rpc-contract'
 import { VideoStudioRenderSection } from './VideoStudioRenderSection'
+import { VideoStudioValidationBanner } from './VideoStudioValidationBanner'
+import type { VideoStudioInspectorController } from './video-studio-inspector-types'
 import type { VideoStudioProductionController } from './use-video-studio-production'
 
 function keyedIssues(issues: readonly VideoStudioCheckFinding[]) {
@@ -30,10 +32,12 @@ function keyedIssues(issues: readonly VideoStudioCheckFinding[]) {
 
 export function VideoStudioProductionPanel({
   project,
-  production
+  production,
+  inspector
 }: {
   project: VideoStudioProject
   production: VideoStudioProductionController
+  inspector?: VideoStudioInspectorController
 }) {
   const t = useTranslate()
   const [confirmOverwrite, setConfirmOverwrite] = useState(false)
@@ -116,6 +120,22 @@ export function VideoStudioProductionPanel({
           {production.error}
         </p>
       ) : null}
+
+      <VideoStudioValidationBanner
+        composition={composition}
+        checkResult={production.checkResult}
+        externalChangedPaths={
+          inspector?.externalChangedPaths.length
+            ? inspector.externalChangedPaths
+            : (production.externalChangedPaths ?? [])
+        }
+        onReloadExternal={() => {
+          production.dismissExternalChanges?.()
+          inspector?.dismissExternalChanges()
+          inspector?.reloadAll()
+        }}
+        inspector={inspector}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         {!composition?.entryExists ? (

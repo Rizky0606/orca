@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "id": "ac_indoor_001",
+      "schemaVersion": 1,
+      "version": 1,
+      "name": "Indoor Split AC Unit",
+      "type": "object",
+      "format": "svg",
+      "tags": ["hvac", "explainer", "cutaway"],
+      "defaultState": "closed",
+      "states": {
+        "closed": { "file": "assets/objects/ac_indoor_001/closed.svg" },
+        "cutaway": { "file": "assets/objects/ac_indoor_001/cutaway.svg" },
+        "operating": { "file": "assets/objects/ac_indoor_001/operating.svg" }
+      },
+      "components": [
+        {
+          "id": "front_panel",
+          "selector": "#front-panel",
+          "animatable": true,
+          "allowedTransforms": ["translate", "opacity"]
+        },
+        {
+          "id": "evaporator_coils",
+          "parentComponentId": "front_panel",
+          "selector": "#evaporator-coils",
+          "animatable": true,
+          "allowedTransforms": ["opacity", "color"]
+        },
+        {
+          "id": "fan_blades",
+          "parentComponentId": "front_panel",
+          "selector": "#fan",
+          "animatable": true,
+          "allowedTransforms": ["rotate"]
+        }
+      ],
+      "supportedEngines": ["hyperframes"],
+      "dependencies": [],
+      "provenance": { "source": "library", "libraryAssetId": "ac_indoor_001", "libraryVersion": 1 },
+      "consistency": { "lockGeometry": true, "lockProportions": true, "lockMaterials": true },
+      "createdAt": 1764140400000,
+      "updatedAt": 1764140400000
+    }
+  ]
+}

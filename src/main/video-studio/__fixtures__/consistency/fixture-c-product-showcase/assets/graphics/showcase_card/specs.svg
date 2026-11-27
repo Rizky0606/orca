@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420" width="640" height="420" data-asset-id="showcase_card" data-state="specs">
+  <rect x="60" y="40" width="520" height="340" rx="28" fill="#0F172A" stroke="#0284C7" stroke-width="8" />
+  <rect x="110" y="100" width="420" height="36" rx="10" fill="#0F766E" />
+  <rect x="110" y="168" width="320" height="36" rx="10" fill="#0284C7" />
+  <rect x="110" y="236" width="240" height="36" rx="10" fill="#FEF08A" />
+</svg>

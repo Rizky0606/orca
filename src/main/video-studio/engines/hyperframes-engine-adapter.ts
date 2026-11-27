@@ -1,95 +1,86 @@
-import { z } from 'zod'
-import {
-  videoStudioDimensionsForAspectRatio,
-  type VideoStudioProject,
-  type VideoStudioRenderRecord
-} from '../../../shared/video-studio/video-studio-project'
 import type {
-  VideoStudioCheckResult,
-  VideoStudioCompositionState
-} from '../../../shared/video-studio/video-studio-rpc-contract'
+  VideoStudioProject,
+  VideoStudioRenderRecord
+} from '../../../shared/video-studio/video-studio-project'
+import type { VideoStudioCompositionState } from '../../../shared/video-studio/video-studio-rpc-contract'
 import { resolveVideoStudioRenderOutputFile } from '../video-studio-composition-paths'
 import { scaffoldHyperFramesComposition } from '../video-studio-hyperframes-template'
 import {
-  parseHyperFramesCheckResult,
-  parsePreviewUrl,
-  parseRenderProgressLine,
-  tryParseJson
+  HYPERFRAMES_PINNED_VERSION,
+  parseHyperFramesCheckJson,
+  parseRenderProgressLine
 } from './hyperframes-cli-parsers'
 import {
   probeHyperFramesEnvironment,
   resolveHyperFramesInvocation
 } from './hyperframes-environment-probe'
+import { launchHyperFramesPreviewProcess } from './hyperframes-preview-launch'
+import { computeProjectInputFingerprint } from './project-input-fingerprint'
+import { probeRenderMediaMetadata } from './render-media-metadata'
 import type {
+  EngineCapabilities,
+  VideoCheckOptions,
+  VideoEngineAdapter,
   VideoEngineProcessDeps,
-  VideoRenderEngineAdapter,
+  VideoPreviewStartOptions,
   VideoRenderProgressUpdate,
   VideoRenderRequest,
   VideoStudioPreviewHandle
 } from './video-render-engine'
 
-const MediaProbePayloadSchema = z
-  .object({
-    format: z
-      .object({
-        duration: z.string().optional()
-      })
-      .passthrough()
-      .optional(),
-    streams: z
-      .array(
-        z
-          .object({
-            codec_type: z.string().optional(),
-            width: z.number().optional(),
-            height: z.number().optional()
-          })
-          .passthrough()
-      )
-      .optional()
-  })
-  .passthrough()
+export { computeProjectInputFingerprint }
 
-async function probeMediaMetadata(
-  projectDir: string,
-  outputPath: string,
-  project: VideoStudioProject,
-  deps: VideoEngineProcessDeps
-): Promise<{ width: number; height: number; durationSeconds: number }> {
-  let { width, height } = videoStudioDimensionsForAspectRatio(project.aspectRatio)
-  let durationSeconds = project.durationSeconds
-  const ffprobeBin = await deps.resolveCommand('ffprobe')
-  if (!ffprobeBin) {
-    return { width, height, durationSeconds }
-  }
-  const probeRes = await deps
-    .runProcess({
-      program: ffprobeBin,
-      args: ['-v', 'error', '-show_format', '-show_streams', '-of', 'json', outputPath],
-      cwd: projectDir,
-      timeoutMs: 10_000
-    })
-    .catch(() => null)
-  const probeJson = probeRes ? tryParseJson(probeRes.stdout, MediaProbePayloadSchema) : null
-  const parsedDuration = probeJson?.format?.duration
-    ? Number(probeJson.format.duration)
-    : Number.NaN
-  if (Number.isFinite(parsedDuration) && parsedDuration > 0) {
-    durationSeconds = parsedDuration
-  }
-  const videoStream = probeJson?.streams?.find((s) => s.codec_type === 'video')
-  if (videoStream?.width && videoStream.height && videoStream.width > 0 && videoStream.height > 0) {
-    width = videoStream.width
-    height = videoStream.height
-  }
-  return { width, height, durationSeconds }
+const HYPERFRAMES_CAPABILITIES: EngineCapabilities = {
+  supportsPartialRender: true,
+  supportsPreviewServer: true,
+  supportsStructuredCheck: true,
+  supportsFrameSeeking: true,
+  supportsTransparentOutput: true,
+  supportsImageSequence: true,
+  supportsParametricComposition: true,
+  supportsAudio: true,
+  supportedFormats: ['mp4', 'webm', 'mov', 'gif', 'png-sequence', 'hls'],
+  supportedAssetTypes: [
+    'object',
+    'character',
+    'environment',
+    'graphic',
+    'model3d',
+    'audio',
+    'video',
+    'lottie',
+    'custom'
+  ]
 }
 
-export function createHyperFramesEngineAdapter(): VideoRenderEngineAdapter {
+function normalizeCheckOptions(
+  signalOrOptions?: AbortSignal | VideoCheckOptions
+): VideoCheckOptions {
+  if (signalOrOptions instanceof AbortSignal) {
+    return { signal: signalOrOptions, browser: true }
+  }
+  return {
+    signal: signalOrOptions?.signal,
+    browser: signalOrOptions?.browser ?? true
+  }
+}
+
+function normalizePreviewOptions(
+  signalOrOptions?: AbortSignal | VideoPreviewStartOptions
+): VideoPreviewStartOptions {
+  if (signalOrOptions instanceof AbortSignal) {
+    return { signal: signalOrOptions }
+  }
+  return signalOrOptions ?? {}
+}
+
+export function createHyperFramesEngineAdapter(): VideoEngineAdapter {
   return {
     id: 'hyperframes',
+    targetVersion: HYPERFRAMES_PINNED_VERSION,
+    capabilities: () => HYPERFRAMES_CAPABILITIES,
 
-    probeEnvironment: (deps) => probeHyperFramesEnvironment(deps),
+    probeEnvironment: (deps, options) => probeHyperFramesEnvironment(deps, options),
 
     scaffoldProject(
       projectDir: string,
@@ -102,91 +93,69 @@ export function createHyperFramesEngineAdapter(): VideoRenderEngineAdapter {
     async checkProject(
       projectDir: string,
       deps: VideoEngineProcessDeps,
-      signal?: AbortSignal
-    ): Promise<VideoStudioCheckResult> {
+      signalOrOptions?: AbortSignal | VideoCheckOptions
+    ) {
+      const { signal, browser } = normalizeCheckOptions(signalOrOptions)
       await deps.hydrateShellPath(false)
-      const invocation = await resolveHyperFramesInvocation(deps, true)
+      const invocation = await resolveHyperFramesInvocation(deps, {
+        allowNpxFallback: true,
+        projectDir
+      })
       if (!invocation) {
         throw new Error('video_studio_engine_unavailable')
       }
+      const { inputFingerprint, revisions } = await computeProjectInputFingerprint(projectDir)
       const started = Date.now()
-      const res = await deps.runProcess({
-        program: invocation.program,
-        args: [...invocation.prefixArgs, 'check', '--json'],
-        cwd: projectDir,
-        timeoutMs: 120_000,
-        signal
+      const cliArgs =
+        browser === false
+          ? [...invocation.prefixArgs, 'lint', '--json']
+          : [...invocation.prefixArgs, 'check', '--json']
+      const res = await deps
+        .runProcess({
+          program: invocation.program,
+          args: cliArgs,
+          cwd: projectDir,
+          timeoutMs: 120_000,
+          signal
+        })
+        .catch((error: unknown) => ({
+          code: 1,
+          signal: null,
+          stdout: '',
+          stderr: error instanceof Error ? error.message : String(error),
+          timedOut: false
+        }))
+      return parseHyperFramesCheckJson(res.stdout, res.stderr, res.code, Date.now() - started, {
+        engine: 'hyperframes',
+        inputFingerprint,
+        revisions,
+        staticLintMode: browser === false,
+        timedOut: res.timedOut,
+        aborted: signal?.aborted
       })
-      return parseHyperFramesCheckResult(res.stdout, res.stderr, res.code, Date.now() - started)
     },
 
     async startPreview(
       projectDir: string,
       deps: VideoEngineProcessDeps,
       onExit: () => void,
-      signal?: AbortSignal
+      signalOrOptions?: AbortSignal | VideoPreviewStartOptions
     ): Promise<VideoStudioPreviewHandle> {
+      const options = normalizePreviewOptions(signalOrOptions)
       await deps.hydrateShellPath(false)
-      const invocation = await resolveHyperFramesInvocation(deps, true)
+      const invocation = await resolveHyperFramesInvocation(deps, {
+        allowNpxFallback: true,
+        projectDir
+      })
       if (!invocation) {
         throw new Error('video_studio_engine_unavailable')
       }
-      const port = await deps.allocateLoopbackPort()
-      return new Promise<VideoStudioPreviewHandle>((resolve, reject) => {
-        let settled = false
-        let processHandle: ReturnType<typeof deps.spawnPreviewStream>
-        const cleanupTimer = setTimeout(() => {
-          if (!settled) {
-            settled = true
-            void processHandle?.stop()
-            reject(new Error('video_studio_preview_timeout'))
-          }
-        }, 20_000)
-
-        const onAbort = () => {
-          if (!settled) {
-            settled = true
-            clearTimeout(cleanupTimer)
-            void processHandle?.stop()
-            reject(new Error('video_studio_preview_cancelled'))
-          }
-        }
-        signal?.addEventListener('abort', onAbort, { once: true })
-
-        processHandle = deps.spawnPreviewStream({
-          program: invocation.program,
-          args: [
-            ...invocation.prefixArgs,
-            'preview',
-            '--foreground',
-            '--json',
-            '--port',
-            String(port)
-          ],
-          cwd: projectDir,
-          onOutputLine: (line) => {
-            if (settled) {
-              return
-            }
-            const url = parsePreviewUrl(line, port)
-            if (url) {
-              settled = true
-              clearTimeout(cleanupTimer)
-              signal?.removeEventListener('abort', onAbort)
-              resolve({ state: { active: true, url, port }, stop: () => processHandle.stop() })
-            }
-          },
-          onExit: (code) => {
-            if (!settled) {
-              settled = true
-              clearTimeout(cleanupTimer)
-              signal?.removeEventListener('abort', onAbort)
-              reject(new Error(`video_studio_preview_exited:${code ?? 'unknown'}`))
-            } else {
-              onExit()
-            }
-          }
-        })
+      return launchHyperFramesPreviewProcess({
+        projectDir,
+        invocation,
+        deps,
+        onExit,
+        options
       })
     },
 
@@ -198,23 +167,33 @@ export function createHyperFramesEngineAdapter(): VideoRenderEngineAdapter {
       signal?: AbortSignal
     ): Promise<VideoStudioRenderRecord> {
       await deps.hydrateShellPath(false)
-      const invocation = await resolveHyperFramesInvocation(deps, true)
+      const invocation = await resolveHyperFramesInvocation(deps, {
+        allowNpxFallback: true,
+        projectDir
+      })
       if (!invocation) {
         throw new Error('video_studio_engine_unavailable')
       }
       const outputPath = resolveVideoStudioRenderOutputFile(projectDir, request.fileName)
+      const renderArgs = [
+        ...invocation.prefixArgs,
+        'render',
+        '--quality',
+        request.quality,
+        '--fps',
+        String(request.project.fps),
+        '--output',
+        `renders/${request.fileName}`
+      ]
+      if (typeof request.startSeconds === 'number' && Number.isFinite(request.startSeconds)) {
+        renderArgs.push('--start', String(request.startSeconds))
+      }
+      if (typeof request.endSeconds === 'number' && Number.isFinite(request.endSeconds)) {
+        renderArgs.push('--end', String(request.endSeconds))
+      }
       const res = await deps.runProcessStreaming({
         program: invocation.program,
-        args: [
-          ...invocation.prefixArgs,
-          'render',
-          '--quality',
-          request.quality,
-          '--fps',
-          String(request.project.fps),
-          '--output',
-          `renders/${request.fileName}`
-        ],
+        args: renderArgs,
         cwd: projectDir,
         timeoutMs: 3_600_000,
         signal,
@@ -240,7 +219,7 @@ export function createHyperFramesEngineAdapter(): VideoRenderEngineAdapter {
         await deps.removeFile(outputPath).catch(() => {})
         throw new Error('video_studio_render_empty_output')
       }
-      const { width, height, durationSeconds } = await probeMediaMetadata(
+      const { width, height, durationSeconds } = await probeRenderMediaMetadata(
         projectDir,
         outputPath,
         request.project,

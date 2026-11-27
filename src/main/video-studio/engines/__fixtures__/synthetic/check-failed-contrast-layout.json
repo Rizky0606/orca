@@ -1,0 +1,91 @@
+{
+  "fixtureSource": "synthetic-edge-case",
+  "ok": false,
+  "strict": false,
+  "browserSkipped": true,
+  "lint": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": [],
+    "filesScanned": 2
+  },
+  "runtime": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": []
+  },
+  "layout": {
+    "ok": false,
+    "errorCount": 1,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": [
+      {
+        "code": "layout_overflow",
+        "severity": "error",
+        "time": 1.5,
+        "selector": "#hero-headline",
+        "sourceFile": "compositions/01-opening.html",
+        "message": "Element overflows canvas right edge by 48px at t=1.5s.",
+        "fixHint": "Reduce horizontal padding or constrain max-width within 1920px safe bounds."
+      }
+    ]
+  },
+  "contrast": {
+    "ok": false,
+    "errorCount": 1,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": [
+      {
+        "code": "wcag_aa_contrast",
+        "severity": "error",
+        "time": 2.5,
+        "selector": "#sub-caption",
+        "sourceFile": "compositions/01-opening.html",
+        "message": "Contrast ratio 2.41:1 is below WCAG AA 4.5:1 minimum for normal text.",
+        "fixHint": "Lighten foreground text color to achieve >= 4.5:1 against #0A1E3D.",
+        "suggestedColor": "#E2E8F0"
+      }
+    ]
+  },
+  "motion": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": []
+  },
+  "craft": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": []
+  },
+  "audio": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": []
+  },
+  "hdr": {
+    "autoPromotion": null,
+    "inspection": "available"
+  },
+  "snapshots": {
+    "enabled": false,
+    "files": [],
+    "times": [],
+    "findingFiles": []
+  },
+  "_meta": {
+    "version": "0.9.94",
+    "checkedAt": "2026-11-26T00:00:00.000Z"
+  }
+}

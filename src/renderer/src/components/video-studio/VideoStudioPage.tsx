@@ -22,7 +22,8 @@ import {
 import type { RuntimeClientTarget } from '../../../../shared/remote-runtime/host-catalog/runtime-client-target'
 import { VideoStudioProjects } from './VideoStudioProjects'
 import { useVideoStudioController } from './use-video-studio-controller'
-import { useVideoStudioProduction } from './use-video-studio-production'
+import { useVideoStudioInspector } from './use-video-studio-inspector'
+import { useVideoStudioEngineProbe, useVideoStudioProduction } from './use-video-studio-production'
 import { useVideoStudioSelection } from './video-studio-selection'
 
 function openServers() {
@@ -174,6 +175,46 @@ export function VideoStudioHostUnavailable({
   )
 }
 
+function VideoStudioProjectWorkspace({
+  hostId,
+  target,
+  pairingRevision,
+  controller,
+  selectedProject,
+  engineProbe
+}: {
+  hostId: ExecutionHostId
+  target: RuntimeClientTarget
+  pairingRevision?: number
+  controller: ReturnType<typeof useVideoStudioController>
+  selectedProject: ReturnType<typeof useVideoStudioController>['snapshot'] extends
+    | { projects: infer P }
+    | null
+    | undefined
+    ? P extends readonly (infer Item)[]
+      ? Item | undefined
+      : never
+    : never
+  engineProbe: ReturnType<typeof useVideoStudioEngineProbe>
+}) {
+  const production = useVideoStudioProduction({
+    hostId,
+    target,
+    pairingRevision,
+    project: selectedProject,
+    onReloadProjects: controller.refresh,
+    engineProbe
+  })
+  const inspector = useVideoStudioInspector({
+    target,
+    pairingRevision,
+    projectId: selectedProject?.id
+  })
+  return (
+    <VideoStudioProjects controller={controller} production={production} inspector={inspector} />
+  )
+}
+
 function VideoStudioOnHost({
   hostId,
   target,
@@ -184,17 +225,21 @@ function VideoStudioOnHost({
   pairingRevision?: number
 }) {
   const controller = useVideoStudioController(hostId, target, pairingRevision)
+  const engineProbe = useVideoStudioEngineProbe(target, pairingRevision)
   const selectedProject = controller.snapshot?.projects.find(
     ({ id }) => id === controller.projectId
   )
-  const production = useVideoStudioProduction({
-    hostId,
-    target,
-    pairingRevision,
-    project: selectedProject,
-    onReloadProjects: controller.refresh
-  })
-  return <VideoStudioProjects controller={controller} production={production} />
+  return (
+    <VideoStudioProjectWorkspace
+      key={selectedProject?.id ?? 'none'}
+      hostId={hostId}
+      target={target}
+      pairingRevision={pairingRevision}
+      controller={controller}
+      selectedProject={selectedProject}
+      engineProbe={engineProbe}
+    />
+  )
 }
 
 export default function VideoStudioPage(): React.JSX.Element {

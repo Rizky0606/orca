@@ -12,6 +12,7 @@ export function useVideoStudioStages(): Record<Stage, string> {
   return {
     research: t('videoStudio.research', 'Research'),
     script: t('videoStudio.script', 'Script'),
+    style: t('videoStudio.style', 'Style'),
     production: t('videoStudio.production', 'Production')
   }
 }
@@ -28,7 +29,7 @@ export function VideoStudioWorkflow({
 }) {
   const t = useTranslate()
   const labels = useVideoStudioStages()
-  const stages: Stage[] = ['research', 'script', 'production']
+  const stages: Stage[] = ['research', 'script', 'style', 'production']
   return (
     <fieldset className="grid min-w-0 gap-2">
       <legend className="mb-2 text-sm font-medium">

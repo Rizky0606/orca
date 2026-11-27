@@ -14,29 +14,24 @@ import {
 } from '@orca/process-host/process-tree-termination'
 import { ORCAD_WSL_HOST_ENV } from '../../../shared/remote-runtime/serve-supervisor/orcad-server-launch-env'
 import { hydrateShellPathForAgentDetection } from '../../ipc/command-path/agent-detection-shell-path'
-import { resolveCommandOnLocalPath } from '../../ipc/command-path/command-path-resolver'
-import { mergePersistedWindowsPathAsync } from '../../pty/environment/windows-environment-path'
+import {
+  invalidatePersistedWindowsPathCache,
+  mergePersistedWindowsPathAsync
+} from '../../pty/environment/windows-environment-path'
 import {
   parseWindowsDriveMountPoints,
   withoutWindowsDriveMountDirs
 } from '../../wsl/filesystem/wsl-guest-windows-drive-path'
+import { buildSanitizedVideoEngineEnv } from './video-engine-env-allowlist'
+import { enrichVideoEngineEnv, resolveVideoToolCommand } from './video-tool-paths'
 import type { VideoEngineProcessDeps, VideoProcessResult } from './video-render-engine'
 
-function copyDefinedProcessEnv(): Record<string, string> {
-  const env: Record<string, string> = {}
-  for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined) {
-      env[key] = value
-    }
-  }
-  return env
-}
+export { buildSanitizedVideoEngineEnv }
 
-async function resolveExecutable(program: string, env: NodeJS.ProcessEnv): Promise<string> {
-  if (process.platform === 'win32') {
-    return (await resolveCommandOnLocalPath(program, { env })) ?? program
-  }
-  return program
+async function resolveExecutable(program: string, env: Record<string, string>): Promise<string> {
+  return (
+    (await resolveVideoToolCommand({ program, hostEnv: process.env, engineEnv: env })) ?? program
+  )
 }
 
 async function allocateFreeLoopbackPort(): Promise<number> {
@@ -78,7 +73,7 @@ async function stopChildTree(child: ReturnType<typeof spawnProcess>): Promise<vo
 
 export function createHostVideoEngineDeps(): VideoEngineProcessDeps {
   let cachedWslMounts: readonly string[] | null = null
-  let latestEnv: NodeJS.ProcessEnv | null = null
+  let latestEnv: Record<string, string> | null = null
 
   const readWslMountsAsync = async (): Promise<readonly string[]> => {
     if (cachedWslMounts !== null) {
@@ -106,16 +101,20 @@ export function createHostVideoEngineDeps(): VideoEngineProcessDeps {
     return cachedWslMounts
   }
 
-  const getAsyncEnv = async (): Promise<NodeJS.ProcessEnv> => {
-    const env = copyDefinedProcessEnv()
+  const getAsyncEnv = async (forceRefresh = false): Promise<Record<string, string>> => {
+    const env = buildSanitizedVideoEngineEnv(process.env)
     if (process.platform === 'win32') {
-      await mergePersistedWindowsPathAsync(env)
+      if (forceRefresh) {
+        invalidatePersistedWindowsPathCache()
+      }
+      await mergePersistedWindowsPathAsync(env, { forceRefresh })
     } else {
       const mounts = await readWslMountsAsync()
       if (mounts.length > 0 && env.PATH) {
         env.PATH = withoutWindowsDriveMountDirs(env.PATH, mounts)
       }
     }
+    await enrichVideoEngineEnv(process.env, env)
     latestEnv = env
     return env
   }
@@ -123,11 +122,11 @@ export function createHostVideoEngineDeps(): VideoEngineProcessDeps {
   return {
     hydrateShellPath: async (refresh = true) => {
       await hydrateShellPathForAgentDetection(undefined, refresh)
-      await getAsyncEnv()
+      await getAsyncEnv(refresh)
     },
     resolveCommand: async (program) => {
       const env = await getAsyncEnv()
-      return resolveCommandOnLocalPath(program, { env })
+      return resolveVideoToolCommand({ program, hostEnv: process.env, engineEnv: env })
     },
     allocateLoopbackPort: allocateFreeLoopbackPort,
     runProcess: async (spec) => {
@@ -230,11 +229,12 @@ export function createHostVideoEngineDeps(): VideoEngineProcessDeps {
       })
     },
     spawnPreviewStream: (spec) => {
+      const env = latestEnv ?? buildSanitizedVideoEngineEnv(process.env)
       const child = spawnProcess({
         program: spec.program,
         args: spec.args,
         cwd: spec.cwd,
-        env: latestEnv ?? process.env,
+        env,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: process.platform !== 'win32'
       })
@@ -263,6 +263,7 @@ export function createHostVideoEngineDeps(): VideoEngineProcessDeps {
         })
       })
       return {
+        pid: child.pid,
         stop: () => stopChildTree(child),
         exited
       }

@@ -4,6 +4,7 @@ import type {
   VideoStudioCompositionState,
   VideoStudioPreviewState
 } from '../../shared/video-studio/video-studio-rpc-contract'
+import { canonicalRealpath, isWithinCanonicalRoot } from './video-studio-path-containment'
 
 function assertSafeSegment(segment: string, errorCode: string): void {
   const trimmed = segment.trim()
@@ -40,6 +41,27 @@ export function resolveVideoStudioProjectsRoot(profileDir: string): string {
 }
 
 /**
+ * Returns the host-managed security directory strictly outside project directories.
+ */
+export function resolveHostVideoSecurityDir(profileDir: string): string {
+  return join(resolve(profileDir), 'video-studio', 'security')
+}
+
+/**
+ * Returns the host-managed shared StyleProfile library directory.
+ */
+export function resolveHostVideoStylesDir(profileDir: string): string {
+  return join(resolve(profileDir), 'video-studio', 'styles')
+}
+
+/**
+ * Returns the host-managed shared Asset library directory.
+ */
+export function resolveHostVideoAssetsDir(profileDir: string): string {
+  return join(resolve(profileDir), 'video-studio', 'assets')
+}
+
+/**
  * Validates `projectId` against path traversal and resolves its per-project
  * directory under `<profileDir>/video-studio/projects/<projectId>`.
  */
@@ -62,18 +84,47 @@ export function resolveVideoStudioRenderOutputFile(projectDir: string, fileName:
   )
 }
 
+const SKIPPED_SCAN_DIRS = new Set(['node_modules'])
+
 async function collectRelativeFiles(
-  rootDir: string,
+  rootReal: string,
   currentDir: string,
-  out: string[]
+  out: string[],
+  visitedDirs: Set<string>
 ): Promise<void> {
   const entries = await readdir(currentDir, { withFileTypes: true }).catch(() => [])
   for (const entry of entries) {
+    if (entry.name.startsWith('.')) {
+      continue
+    }
     const full = join(currentDir, entry.name)
+    if (entry.isSymbolicLink()) {
+      const targetReal = await canonicalRealpath(full).catch(() => null)
+      if (!targetReal || !isWithinCanonicalRoot(rootReal, targetReal, false)) {
+        continue
+      }
+      const targetStats = await stat(targetReal).catch(() => null)
+      if (targetStats?.isDirectory()) {
+        if (!SKIPPED_SCAN_DIRS.has(entry.name) && !visitedDirs.has(targetReal)) {
+          visitedDirs.add(targetReal)
+          await collectRelativeFiles(rootReal, full, out, visitedDirs)
+        }
+      } else if (targetStats?.isFile()) {
+        out.push(relative(rootReal, full).split(sep).join('/'))
+      }
+      continue
+    }
     if (entry.isDirectory()) {
-      await collectRelativeFiles(rootDir, full, out)
-    } else if (entry.isFile() && !entry.name.startsWith('.')) {
-      out.push(relative(rootDir, full).split(sep).join('/'))
+      if (SKIPPED_SCAN_DIRS.has(entry.name)) {
+        continue
+      }
+      const dirReal = await canonicalRealpath(full).catch(() => null)
+      if (dirReal && !visitedDirs.has(dirReal)) {
+        visitedDirs.add(dirReal)
+        await collectRelativeFiles(rootReal, full, out, visitedDirs)
+      }
+    } else if (entry.isFile()) {
+      out.push(relative(rootReal, full).split(sep).join('/'))
     }
   }
 }
@@ -86,7 +137,8 @@ export async function ensureVideoStudioProjectsRoot(profileDir: string): Promise
 }
 
 /**
- * Inspects a project composition directory without leaking host paths.
+ * Inspects a project composition directory (scanning both `compositions/` and legacy `scenes/`)
+ * without leaking host paths.
  */
 export async function inspectVideoStudioCompositionState(
   projectDir: string,
@@ -102,8 +154,9 @@ export async function inspectVideoStudioCompositionState(
       ...(preview?.url ? { previewUrl: preview.url } : {})
     }
   }
+  const rootReal = await canonicalRealpath(projectDir).catch(() => resolve(projectDir))
   const files: string[] = []
-  await collectRelativeFiles(projectDir, projectDir, files)
+  await collectRelativeFiles(rootReal, rootReal, files, new Set([rootReal]))
   files.sort()
   const entryExists = files.includes('index.html')
   const initialized = entryExists && files.includes('hyperframes.json')

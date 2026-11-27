@@ -1,0 +1,9 @@
+# fixtureSource: synthetic-edge-case
+◆  Rendering my-project → renders/output.mp4
+@hf-progress {"code":"extract_video","done":15,"total":30,"pct":15}
+@hf-progress {"code":"capture","done":60,"total":300,"pct":24}
+@hf-progress {"code":"capture","done":180,"total":300,"pct":46}
+@hf-progress {"code":"capture","done":300,"total":300,"pct":60}
+@hf-progress {"code":"encode","done":150,"total":300,"pct":75}
+@hf-progress {"code":"encode","done":300,"total":300,"pct":90}
+◇  renders/output.mp4

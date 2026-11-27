@@ -2,24 +2,40 @@ import type {
   VideoStudioProject,
   VideoStudioRenderRecord
 } from '../../../shared/video-studio/video-studio-project'
+import type { VideoStudioCompositionState } from '../../../shared/video-studio/video-studio-rpc-contract'
 import type {
-  VideoStudioCheckResult,
-  VideoStudioCompositionState,
-  VideoStudioEngineStatus
-} from '../../../shared/video-studio/video-studio-rpc-contract'
-import type {
+  EngineCapabilities,
+  HyperFramesEnvironmentReport,
+  VideoCheckOptions,
+  VideoEngineAdapter,
+  VideoEngineCheckResult,
   VideoEngineProcessDeps,
-  VideoRenderEngineAdapter,
+  VideoPreviewStartOptions,
   VideoRenderProgressUpdate,
   VideoRenderRequest,
   VideoStudioPreviewHandle
 } from './video-render-engine'
 
-/** Reserved Phase 6 Remotion engine slot; refuses execution cleanly without mock outputs. */
-export const remotionEngineAdapter: VideoRenderEngineAdapter = {
-  id: 'remotion',
+const REMOTION_CAPABILITIES: EngineCapabilities = {
+  supportsPartialRender: false,
+  supportsPreviewServer: false,
+  supportsStructuredCheck: false,
+  supportsFrameSeeking: false,
+  supportsTransparentOutput: false,
+  supportsImageSequence: false,
+  supportsParametricComposition: false,
+  supportsAudio: false,
+  supportedFormats: [],
+  supportedAssetTypes: []
+}
 
-  async probeEnvironment(_deps: VideoEngineProcessDeps): Promise<VideoStudioEngineStatus> {
+/** Reserved Phase 6 Remotion engine slot; refuses execution cleanly without mock outputs. */
+export const remotionEngineAdapter: VideoEngineAdapter = {
+  id: 'remotion',
+  targetVersion: 'planned',
+  capabilities: () => REMOTION_CAPABILITIES,
+
+  async probeEnvironment(_deps: VideoEngineProcessDeps): Promise<HyperFramesEnvironmentReport> {
     return {
       engine: 'remotion',
       available: false,
@@ -40,16 +56,33 @@ export const remotionEngineAdapter: VideoRenderEngineAdapter = {
   async checkProject(
     _projectDir: string,
     _deps: VideoEngineProcessDeps,
-    _signal?: AbortSignal
-  ): Promise<VideoStudioCheckResult> {
-    throw new Error('video_studio_engine_unavailable')
+    _signalOrOptions?: AbortSignal | VideoCheckOptions
+  ): Promise<VideoEngineCheckResult> {
+    const reason = 'Remotion runtime is scheduled for Phase 06.'
+    return {
+      passed: false,
+      status: 'unsupported',
+      engine: 'remotion',
+      inputFingerprint: '',
+      findings: [],
+      errors: [],
+      warnings: [],
+      skippedChecks: [],
+      sectionStatuses: {},
+      productionGate: {
+        allowed: false,
+        blockingReasons: [reason]
+      },
+      summary: reason,
+      checkedAt: Date.now()
+    }
   },
 
   async startPreview(
     _projectDir: string,
     _deps: VideoEngineProcessDeps,
     _onExit: () => void,
-    _signal?: AbortSignal
+    _signalOrOptions?: AbortSignal | VideoPreviewStartOptions
   ): Promise<VideoStudioPreviewHandle> {
     throw new Error('video_studio_engine_unavailable')
   },

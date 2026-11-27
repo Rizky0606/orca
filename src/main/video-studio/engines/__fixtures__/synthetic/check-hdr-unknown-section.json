@@ -1,0 +1,87 @@
+{
+  "fixtureSource": "synthetic-edge-case",
+  "ok": true,
+  "strict": false,
+  "browserSkipped": false,
+  "lint": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": [],
+    "filesScanned": 2
+  },
+  "runtime": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": []
+  },
+  "layout": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": []
+  },
+  "motion": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": []
+  },
+  "contrast": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": []
+  },
+  "craft": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": []
+  },
+  "audio": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 0,
+    "findings": []
+  },
+  "hdr": {
+    "autoPromotion": "pq-10bit",
+    "inspection": "available"
+  },
+  "experimentalAudit": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 1,
+    "infoCount": 0,
+    "findings": [
+      {
+        "code": "hdr_gamut_clipping_risk",
+        "severity": "warning",
+        "time": 4.0,
+        "selector": "[data-composition-id=\"opening\"]",
+        "sourceFile": "compositions/01-opening.html",
+        "message": "Wide-gamut CSS color exceeds sRGB fallback threshold.",
+        "fixHint": "Provide an explicit sRGB fallback color before color(display-p3 ...)."
+      }
+    ]
+  },
+  "snapshots": {
+    "enabled": true,
+    "files": [".hyperframes/artifacts/snapshots/t-0.500.png"],
+    "times": [0.5],
+    "findingFiles": []
+  },
+  "_meta": {
+    "version": "0.9.94",
+    "checkedAt": "2026-11-26T00:00:00.000Z"
+  }
+}

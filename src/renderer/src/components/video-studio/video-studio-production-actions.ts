@@ -3,7 +3,8 @@ import { activateAndRevealFolderWorkspaceWithOutcome } from '@/lib/workspace/act
 import { RuntimeRpcCallError } from '@/runtime/rpc/calls/runtime-rpc-result'
 import {
   openVideoStudioCompositionWorkspaceForTarget,
-  readVideoStudioRenderOutputChunkForTarget
+  readVideoStudioRenderOutputChunkForTarget,
+  subscribeVideoStudioJobsForTarget
 } from '@/runtime/video-studio/video-studio-client'
 import { useAppStore } from '@/store'
 import type { ExecutionHostId } from '../../../../shared/execution-host/execution-host'
@@ -16,12 +17,21 @@ import type {
   VideoStudioPreviewState,
   VideoStudioRenderJobSnapshot
 } from '../../../../shared/video-studio/video-studio-rpc-contract'
+import type { ValidationStatus } from '../../../../shared/video-studio/video-studio-validation-contract'
+
+export type VideoStudioCheckResultView = VideoStudioCheckResult & {
+  status?: ValidationStatus
+  stale?: boolean
+  skippedChecks?: string[]
+  productionGate?: { allowed: boolean; blockingReasons: string[] }
+  browserSkipped?: boolean
+}
 
 export type VideoStudioProductionController = {
   engines: VideoStudioEngineStatus[] | null
   probingEngines: boolean
   composition: VideoStudioCompositionState | null
-  checkResult: VideoStudioCheckResult | null
+  checkResult: VideoStudioCheckResultView | null
   job: VideoStudioRenderJobSnapshot | null
   preview: VideoStudioPreviewState
   busyAction: string | null
@@ -29,6 +39,8 @@ export type VideoStudioProductionController = {
   selectedRenderId: string | null
   videoUrl: string | null
   loadingVideo: boolean
+  externalChangedPaths?: string[]
+  dismissExternalChanges?: () => void
   recheckEngines: () => void
   scaffoldComposition: (overwrite?: boolean) => void
   openInWorkspace: () => void
@@ -92,6 +104,119 @@ export function triggerVideoDownload(url: string, fileName: string): void {
   anchor.click()
 }
 
+export function loadProductionRenderVideo(params: {
+  t: Translate
+  target: RuntimeClientTarget
+  pairingRevision: number | undefined
+  projectId: string
+  renderId: string
+  downloadName?: string
+  videoUrlRef: { current: string | null }
+  isMounted: () => boolean
+  setBusy: (action: string | null) => void
+  setSelectedRenderId: (id: string | null) => void
+  setError: (error: string | null) => void
+  setLoadingVideo: (loading: boolean) => void
+  setVideoUrl: (url: string | null) => void
+}): void {
+  const {
+    t,
+    target,
+    pairingRevision,
+    projectId,
+    renderId,
+    downloadName,
+    videoUrlRef,
+    isMounted,
+    setBusy,
+    setSelectedRenderId,
+    setError,
+    setLoadingVideo,
+    setVideoUrl
+  } = params
+  setSelectedRenderId(renderId)
+  setError(null)
+  setLoadingVideo(true)
+  void runWithProductionBusy(setBusy, isMounted, 'loadVideo', async () => {
+    const nextUrl = await fetchRenderBlobUrl(target, pairingRevision, projectId, renderId)
+    if (!isMounted()) {
+      URL.revokeObjectURL(nextUrl)
+      return
+    }
+    releaseVideoObjectUrl(videoUrlRef)
+    videoUrlRef.current = nextUrl
+    setVideoUrl(nextUrl)
+    setLoadingVideo(false)
+    if (downloadName) {
+      triggerVideoDownload(nextUrl, downloadName)
+    }
+  }).catch((reason: unknown) => {
+    if (isMounted()) {
+      setLoadingVideo(false)
+      setError(mapProductionRpcError(t, reason))
+    }
+  })
+}
+
+export function subscribeProductionProjectStream(params: {
+  target: RuntimeClientTarget
+  projectId: string
+  lastJobStatusRef: { current: string | undefined }
+  setEngines: (engines: VideoStudioEngineStatus[]) => void
+  setJob: (job: VideoStudioRenderJobSnapshot | null) => void
+  setCheckResult: (checkResult: VideoStudioCheckResult) => void
+  setPreview: (preview: VideoStudioPreviewState) => void
+  setSelectedRenderId: (renderId: string) => void
+  onCompletedRender: () => void
+  onExternalEdit: (changedPaths: string[]) => void
+}): () => void {
+  let cancelled = false
+  let subscription: { unsubscribe: () => void } | undefined
+  void subscribeVideoStudioJobsForTarget(
+    params.target,
+    { projectId: params.projectId },
+    {
+      onEvent: (event) => {
+        if (cancelled) {
+          return
+        }
+        if (event.engines) {
+          params.setEngines(event.engines)
+        }
+        const nextJob = event.jobs.find((item) => item.projectId === params.projectId) ?? null
+        params.setJob(nextJob)
+        if (nextJob?.checkResult) {
+          params.setCheckResult(nextJob.checkResult)
+        }
+        params.setPreview(event.previews[params.projectId] ?? { active: false })
+        const prevStatus = params.lastJobStatusRef.current
+        params.lastJobStatusRef.current = nextJob?.status
+        if (nextJob?.status === 'completed' && prevStatus === 'rendering') {
+          params.onCompletedRender()
+          if (nextJob.record) {
+            params.setSelectedRenderId(nextJob.record.id)
+          }
+        }
+      },
+      onFilesChanged: (event) => {
+        if (!cancelled && event.externalEdit && event.projectId === params.projectId) {
+          params.onExternalEdit(event.changedPaths)
+        }
+      }
+    }
+  ).then((sub) => {
+    if (cancelled) {
+      sub.unsubscribe()
+    } else {
+      subscription = sub
+    }
+  })
+  return () => {
+    cancelled = true
+    subscription?.unsubscribe()
+  }
+}
+
 export async function openVideoStudioWorkspaceInApp(params: {
   target: RuntimeClientTarget
   pairingRevision: number | undefined
@@ -132,6 +257,36 @@ export function mapProductionRpcError(t: Translate, reason: unknown): string {
   }
   if (code === 'video_studio_render_not_found' || code === 'video_studio_render_file_missing') {
     return t('videoStudio.renderMissingError', 'The rendered video file could not be found.')
+  }
+  if (code === 'video_studio_execution_approval_required') {
+    return t(
+      'videoStudio.executionApprovalRequiredError',
+      'Approve execution for this composition before running Chrome check, preview, or render.'
+    )
+  }
+  if (code === 'video_studio_file_conflict') {
+    return t(
+      'videoStudio.fileConflictError',
+      'Project files changed on disk. Reload the latest state and try again.'
+    )
+  }
+  if (code === 'video_studio_style_readonly') {
+    return t(
+      'videoStudio.styleReadonlyError',
+      'Built-in presets are read-only. Duplicate to your Host Library before saving changes.'
+    )
+  }
+  if (code === 'video_studio_asset_in_use') {
+    return t(
+      'videoStudio.assetInUseError',
+      'This asset is referenced by scenes or HTML/JS files. Use force removal to detach it.'
+    )
+  }
+  if (code === 'video_studio_scene_not_found') {
+    return t('videoStudio.sceneNotFoundError', 'This storyboard frame no longer exists on disk.')
+  }
+  if (code === 'video_studio_style_not_found') {
+    return t('videoStudio.styleNotFoundError', 'The selected style profile could not be found.')
   }
   return t('videoStudio.productionActionFailed', 'The video engine could not complete this action.')
 }

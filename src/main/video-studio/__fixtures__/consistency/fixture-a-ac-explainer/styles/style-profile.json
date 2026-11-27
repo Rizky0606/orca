@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "id": "technical-explainer-01",
+  "version": 1,
+  "name": "Technical Explainer 01",
+  "description": "Warm cream ground, charcoal ink, cobalt blue and safety orange accents, orthographic camera, word-highlight captions.",
+  "category": "technical-explainer",
+  "tier": "snapshot",
+  "provenance": {
+    "sourceStyleId": "technical-explainer-01",
+    "sourceTier": "built-in",
+    "sourceVersion": 1,
+    "appliedAt": 1764140400000
+  },
+  "visual": {
+    "palette": {
+      "background": "#F7F3E9",
+      "surface": "#EFE7D6",
+      "primaryText": "#1E242B",
+      "secondaryText": "#4B5563",
+      "accentPrimary": "#2563EB",
+      "accentSecondary": "#EA580C",
+      "highlight": "#FACC15",
+      "border": "#D6CEBE"
+    },
+    "lighting": "soft-studio-orthographic",
+    "renderingStyle": "2.5d-semi-realistic",
+    "cornerRadiusPx": 18
+  },
+  "typography": {
+    "displayFont": "Space Grotesk",
+    "bodyFont": "Inter",
+    "monoFont": "JetBrains Mono",
+    "titleWeight": 700,
+    "bodyWeight": 500,
+    "headingScale": "balanced"
+  },
+  "camera": {
+    "projection": "orthographic",
+    "allowedMoves": ["pan", "smooth-zoom"],
+    "framingRule": "Keep subject inside 80% title safe frame with bottom word-highlight subtitle bar"
+  },
+  "motion": {
+    "pacing": "snappy",
+    "defaultEasing": "cubic-bezier(0.22, 1, 0.36, 1)",
+    "transitionVocabulary": ["cut", "slide"],
+    "motionPresetRefs": ["diagram.flow_path", "camera.smooth_zoom"]
+  },
+  "effects": {
+    "allowedEffects": ["subtle-drop-shadow", "cutaway-reveal"],
+    "bannedEffects": ["crt-scanlines", "heavy-glitch"]
+  },
+  "composition": {
+    "headerZonePercent": 18,
+    "focalZonePercent": 62,
+    "actionSafePercent": 90,
+    "titleSafePercent": 80
+  },
+  "subtitle": {
+    "mode": "word-highlight",
+    "backgroundColor": "#111827",
+    "textColor": "#F9FAFB",
+    "highlightColor": "#FACC15",
+    "position": "bottom"
+  }
+}

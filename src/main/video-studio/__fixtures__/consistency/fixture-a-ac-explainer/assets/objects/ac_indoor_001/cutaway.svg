@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420" width="640" height="420" data-asset-id="ac_indoor_001" data-state="cutaway">
+  <g id="chassis">
+    <rect x="40" y="60" width="560" height="240" rx="28" fill="#EFE7D6" stroke="#1E242B" stroke-width="8" />
+  </g>
+  <g id="evaporator-coils">
+    <rect x="76" y="88" width="488" height="72" rx="14" fill="#FACC15" stroke="#EA580C" stroke-width="5" />
+    <line x1="110" y1="108" x2="530" y2="108" stroke="#EA580C" stroke-width="6" />
+    <line x1="110" y1="138" x2="530" y2="138" stroke="#2563EB" stroke-width="6" />
+  </g>
+</svg>

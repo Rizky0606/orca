@@ -1,0 +1,8 @@
+{
+  "ok": false,
+  "error": {
+    "code": "unknown_flag",
+    "message": "Unknown flag: --browser",
+    "hint": "Did you mean --browser-gpu? Its flags: --json, --lint-verbose, --samples, --range, --components, --at, --at-transitions, --max-transition-samples, --max-issues, --collapse-static, --tolerance, --budget, --cache, --timeout, --contrast, --craft, --strict, --prepare-media, --proxy, --browser-gpu, --snapshots, --include-unmounted, --caption-zone, --safe-zone, --frame-check, --layout. Run 'hyperframes check --help' for what each does."
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "id": "clean-editorial-01",
+  "version": 1,
+  "name": "Clean Editorial 01",
+  "description": "Crisp cool slate ground, pure white cards, emerald teal accent, flat lighting, anchor-rail captions.",
+  "category": "editorial",
+  "tier": "snapshot",
+  "provenance": {
+    "sourceStyleId": "clean-editorial-01",
+    "sourceTier": "built-in",
+    "sourceVersion": 1,
+    "appliedAt": 1764140400000
+  },
+  "visual": {
+    "palette": {
+      "background": "#F8FAFC",
+      "surface": "#FFFFFF",
+      "primaryText": "#0F172A",
+      "secondaryText": "#475569",
+      "accentPrimary": "#0F766E",
+      "accentSecondary": "#0284C7",
+      "highlight": "#FEF08A",
+      "border": "#E2E8F0"
+    },
+    "lighting": "clean-flat-daylight",
+    "renderingStyle": "crisp-2d-vector",
+    "cornerRadiusPx": 16
+  },
+  "typography": {
+    "displayFont": "Inter",
+    "bodyFont": "Inter",
+    "monoFont": "JetBrains Mono",
+    "titleWeight": 700,
+    "bodyWeight": 400,
+    "headingScale": "balanced"
+  },
+  "camera": {
+    "projection": "2d-flat",
+    "allowedMoves": ["smooth-zoom"],
+    "framingRule": "Generous negative space inside 80% safe frame"
+  },
+  "motion": {
+    "pacing": "measured",
+    "defaultEasing": "cubic-bezier(0.25, 1, 0.5, 1)",
+    "transitionVocabulary": ["cut", "dissolve"],
+    "motionPresetRefs": ["camera.smooth_zoom"]
+  },
+  "effects": { "allowedEffects": ["subtle-border"], "bannedEffects": ["heavy-glitch"] },
+  "composition": {
+    "headerZonePercent": 20,
+    "focalZonePercent": 60,
+    "actionSafePercent": 90,
+    "titleSafePercent": 80
+  },
+  "subtitle": {
+    "mode": "anchor-rail",
+    "backgroundColor": "#0F766E",
+    "textColor": "#F8FAFC",
+    "highlightColor": "#FEF08A",
+    "position": "lower-third"
+  }
+}

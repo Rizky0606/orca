@@ -2,28 +2,78 @@ import type {
   VideoStudioProject,
   VideoStudioRenderQuality
 } from '../../shared/video-studio/video-studio-project'
-import type { VideoStudioCheckResult } from '../../shared/video-studio/video-studio-rpc-contract'
+import type { VideoEngineCheckResult } from '../../shared/video-studio/video-studio-validation-contract'
 import type { VideoStudioCatalog } from './video-studio-catalog'
+import { computeProjectInputFingerprint } from './engines/project-input-fingerprint'
 import type {
   VideoEngineProcessDeps,
   VideoRenderEngineAdapter
 } from './engines/video-render-engine'
 import { appendJobLogLine, type ActiveJobEntry } from './video-studio-job-state'
+import {
+  withExecutionVerifiedSnapshot,
+  type VideoStudioTrustStore
+} from './video-studio-trust-store'
 
 export async function runVideoStudioCheckTask(params: {
+  projectId: string
   projectDir: string
   adapter: VideoRenderEngineAdapter
   engineDeps: VideoEngineProcessDeps
+  trustStore: VideoStudioTrustStore
+  browser?: boolean
+  beforeExecutionSpawn?: () => Promise<void>
   entry: ActiveJobEntry
   abortController: AbortController
   isCurrent: () => boolean
   onUpdate: () => void
   onFail: (error: unknown) => void
-}): Promise<VideoStudioCheckResult> {
-  const { projectDir, adapter, engineDeps, entry, abortController, isCurrent, onUpdate, onFail } =
-    params
+}): Promise<VideoEngineCheckResult> {
+  const {
+    projectId,
+    projectDir,
+    adapter,
+    engineDeps,
+    trustStore,
+    browser,
+    beforeExecutionSpawn,
+    entry,
+    abortController,
+    isCurrent,
+    onUpdate,
+    onFail
+  } = params
   try {
-    const checkResult = await adapter.checkProject(projectDir, engineDeps, abortController.signal)
+    const invokeCheck = () =>
+      adapter.checkProject(
+        projectDir,
+        engineDeps,
+        browser === false
+          ? { signal: abortController.signal, browser: false }
+          : abortController.signal
+      )
+    const rawResult =
+      browser === false
+        ? await invokeCheck()
+        : await withExecutionVerifiedSnapshot(
+            trustStore,
+            {
+              projectId,
+              projectDir,
+              mode: 'check',
+              prepare: beforeExecutionSpawn
+            },
+            invokeCheck
+          )
+    const inputFingerprint =
+      rawResult.inputFingerprint ||
+      (await computeProjectInputFingerprint(projectDir).catch(() => ({ inputFingerprint: '' })))
+        .inputFingerprint
+    const checkResult: VideoEngineCheckResult = {
+      ...rawResult,
+      inputFingerprint,
+      stale: false
+    }
     if (isCurrent()) {
       entry.snapshot = {
         ...entry.snapshot,
@@ -52,6 +102,8 @@ export async function runVideoStudioRenderTask(params: {
   renderId: string
   fileName: string
   quality: VideoStudioRenderQuality
+  startSeconds?: number
+  endSeconds?: number
   adapter: VideoRenderEngineAdapter
   engineDeps: VideoEngineProcessDeps
   catalog: VideoStudioCatalog
@@ -67,6 +119,8 @@ export async function runVideoStudioRenderTask(params: {
     renderId,
     fileName,
     quality,
+    startSeconds,
+    endSeconds,
     adapter,
     engineDeps,
     catalog,
@@ -79,7 +133,7 @@ export async function runVideoStudioRenderTask(params: {
   try {
     const record = await adapter.renderProject(
       projectDir,
-      { renderId, fileName, quality, project },
+      { renderId, fileName, quality, project, startSeconds, endSeconds },
       engineDeps,
       (update) => {
         if (!isCurrent()) {
