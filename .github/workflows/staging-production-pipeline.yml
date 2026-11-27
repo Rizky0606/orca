@@ -70,11 +70,19 @@ jobs:
           pnpm run verify:built-skills-cli
           pnpm run build:mobile-web
 
-      - name: Run Video Studio & Mobile unit tests
+      - name: Run General Chat, Video Studio & Mobile unit tests
         env:
           ORCA_BACKGROUND_LAUNCH: '1'
         run: |
           node node_modules/vitest/vitest.mjs run --config config/vitest.config.ts \
+            src/shared/general-chat/general-chat-research-contract.test.ts \
+            src/main/general-chat/general-chat-home.test.ts \
+            src/main/general-chat/research/general-chat-deep-research.test.ts \
+            src/main/general-chat/search/general-chat-web-search-service.test.ts \
+            src/main/general-chat/search/web-fetch-ssrf-guard.test.ts \
+            src/main/runtime/rpc/methods/general-chat/general-chat-methods.test.ts \
+            src/main/runtime/rpc/server/runtime-rpc-general-chat-routing.test.ts \
+            src/renderer/src/runtime/general-chat/general-chat-client.test.ts \
             src/shared/video-studio/video-studio-project.test.ts \
             src/main/video-studio/video-studio-catalog.test.ts \
             src/main/video-studio/video-studio-composition-paths.test.ts \

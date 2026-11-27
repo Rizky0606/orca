@@ -13,12 +13,9 @@ import { createRevisionClock, type RevisionClock } from '../../runtime/events/re
 import type { GeneralChatWebSearchService } from '../search/general-chat-web-search-service'
 import { resolveGeneralChatResearchJobDir } from './general-chat-research-paths'
 import { GeneralChatResearchJobStore } from './general-chat-research-job-store'
-import {
-  planResearchSteps,
-  synthesizeResearchReport,
-  type ResearchTextGenerator
-} from './general-chat-research-synthesis'
+import type { ResearchTextGenerator } from './general-chat-research-synthesis'
 import { GeneralChatSourceStore } from './general-chat-source-store'
+import { executeGeneralChatDeepResearchJob } from './general-chat-deep-research-execution'
 
 export const GENERAL_CHAT_RESEARCH_NOT_FOUND_CODE = 'general_chat_research_not_found'
 export const GENERAL_CHAT_RESEARCH_INVALID_TRANSITION_CODE =
@@ -226,149 +223,18 @@ export class GeneralChatDeepResearchManager {
   }
 
   private async executeJob(jobId: string, maxSteps: number, signal: AbortSignal): Promise<void> {
-    let job = await this.jobStore.get(jobId)
-    if (!job) {
-      return
-    }
-    try {
-      if (job.steps.length === 0) {
-        job = await this.saveAndNotify({
-          ...job,
-          status: 'planning',
-          startedAt: job.startedAt ?? Date.now(),
-          updatedAt: Date.now()
-        })
-        const plannedSteps = await planResearchSteps({
-          topic: job.topic,
-          maxSteps,
-          generateText: this.options.generateText
-        })
-        if (this.isInterrupted(jobId, signal)) {
-          await this.handleInterrupt(jobId, job)
-          return
-        }
-        job = await this.saveAndNotify({
-          ...job,
-          steps: plannedSteps,
-          updatedAt: Date.now()
-        })
-      }
-
-      for (let i = 0; i < job.steps.length; i += 1) {
-        if (this.isInterrupted(jobId, signal)) {
-          await this.handleInterrupt(jobId, job)
-          return
-        }
-        const step = job.steps[i]!
-        if (step.status === 'completed' || step.status === 'skipped') {
-          continue
-        }
-        job = await this.saveAndNotify({
-          ...job,
-          status: 'searching',
-          currentStepIndex: i,
-          steps: job.steps.map((entry, idx) =>
-            idx === i ? { ...entry, status: 'running' } : entry
-          ),
-          updatedAt: Date.now()
-        })
-
-        let discovered: GeneralChatSource[] = []
-        let stepNote: string | undefined
-        try {
-          const searchResult = await this.options.searchService.search({
-            sessionId: job.sessionId ?? `job-${job.id}`,
-            query: step.query,
-            providerPreference: job.providerPreference,
-            maxResults: 4,
-            fetchTopPages: 2,
-            origin: 'deep-research',
-            jobId: job.id,
-            signal
-          })
-          discovered = searchResult.sources
-        } catch (error) {
-          if (this.isInterrupted(jobId, signal)) {
-            await this.handleInterrupt(jobId, job)
-            return
-          }
-          stepNote = error instanceof Error ? error.message : 'Search step failed'
-        }
-
-        if (this.isInterrupted(jobId, signal)) {
-          await this.handleInterrupt(jobId, job)
-          return
-        }
-
-        const storedJobSources = await this.sourceStore.appendJobSources(job.id, discovered)
-        if (job.sessionId && discovered.length > 0) {
-          await this.sourceStore.appendSessionSources(job.sessionId, discovered)
-        }
-
-        job = await this.saveAndNotify({
-          ...job,
-          status: 'reading',
-          queriesExecuted: job.queriesExecuted + 1,
-          sourcesCollected: storedJobSources.length,
-          pagesRead: storedJobSources.filter((s) => Boolean(s.extractedText)).length,
-          citationIds: storedJobSources.map((s) => s.id),
-          steps: job.steps.map((entry, idx) =>
-            idx === i
-              ? {
-                  ...entry,
-                  status: stepNote && discovered.length === 0 ? 'failed' : 'completed',
-                  sourceIds: discovered.map((s) => s.id),
-                  note: stepNote
-                }
-              : entry
-          ),
-          updatedAt: Date.now()
-        })
-      }
-
-      if (this.isInterrupted(jobId, signal)) {
-        await this.handleInterrupt(jobId, job)
-        return
-      }
-
-      job = await this.saveAndNotify({
-        ...job,
-        status: 'synthesizing',
-        updatedAt: Date.now()
-      })
-      const citations = await this.sourceStore.listJobSources(job.id)
-      const reportMarkdown = await synthesizeResearchReport({
-        topic: job.topic,
-        steps: job.steps,
-        sources: citations,
-        generateText: this.options.generateText
-      })
-      if (this.isInterrupted(jobId, signal)) {
-        await this.handleInterrupt(jobId, job)
-        return
-      }
-      await this.saveAndNotify({
-        ...job,
-        status: 'completed',
-        reportMarkdown,
-        citationIds: citations.map((c) => c.id),
-        sourcesCollected: citations.length,
-        pagesRead: citations.filter((c) => Boolean(c.extractedText)).length,
-        updatedAt: Date.now(),
-        completedAt: Date.now()
-      })
-    } catch (error) {
-      if (this.isInterrupted(jobId, signal)) {
-        await this.handleInterrupt(jobId, (await this.jobStore.get(jobId)) ?? job)
-        return
-      }
-      await this.saveAndNotify({
-        ...job,
-        status: 'failed',
-        errorMessage: error instanceof Error ? error.message : 'Deep Research failed',
-        updatedAt: Date.now()
-      })
-    }
+    await executeGeneralChatDeepResearchJob({
+      jobId,
+      maxSteps,
+      signal,
+      searchService: this.options.searchService,
+      sourceStore: this.sourceStore,
+      jobStore: this.jobStore,
+      generateText: this.options.generateText,
+      isInterrupted: (id, activeSignal) => Boolean(this.isInterrupted(id, activeSignal)),
+      saveAndNotify: (job) => this.saveAndNotify(job),
+      handleInterrupt: (id, fallback) => this.handleInterrupt(id, fallback)
+    })
   }
 
   private async handleInterrupt(jobId: string, fallback: DeepResearchJob): Promise<void> {

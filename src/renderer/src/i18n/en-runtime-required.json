@@ -3423,6 +3423,13 @@
       "suspendExitedWithoutCode": "Suspend exited with code unknown."
     }
   },
+  "generalChat": {
+    "mode": {
+      "deepResearch": "Deep Research",
+      "normal": "Normal",
+      "webSearch": "Web Search"
+    }
+  },
   "jira": {
     "workspace": {
       "linkedCount_one": "{{count}} workspace linked to {{key}}",
@@ -3595,6 +3602,12 @@
       "skills": {
         "count_one": "{{count}} skill",
         "count_other": "{{count}} skills"
+      }
+    },
+    "browser": {
+      "webSearchProviders": {
+        "description": "Built-in DuckDuckGo search works with zero keys. Add optional encrypted keys for Tavily, Brave, or Exa.",
+        "title": "General Chat Web Search & API keys"
       }
     },
     "diagnostics": {

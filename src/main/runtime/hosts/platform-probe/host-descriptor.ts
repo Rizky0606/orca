@@ -1,6 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto'
-import { renameSync, rmSync, writeFileSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import {
   RuntimeHostDescriptorSchema,
@@ -74,10 +73,10 @@ export async function loadOrCreateHostInstallationId(userDataPath: string): Prom
     const installationId = randomUUID()
     const draftPath = `${filePath}.${installationId}.draft`
     try {
-      writeFileSync(draftPath, JSON.stringify({ installationId }), { flag: 'wx', mode: 0o600 })
-      renameSync(draftPath, filePath)
+      await writeFile(draftPath, JSON.stringify({ installationId }), { flag: 'wx', mode: 0o600 })
+      await rename(draftPath, filePath)
     } finally {
-      rmSync(draftPath, { force: true })
+      await rm(draftPath, { force: true })
     }
     return installationId
   })

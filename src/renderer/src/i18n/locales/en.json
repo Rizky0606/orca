@@ -1111,7 +1111,16 @@
         "inputLabel": "{{provider}} API key",
         "replacePlaceholder": "Replace saved key…",
         "enterPlaceholder": "Paste optional key…",
-        "removeKey": "Remove {{provider}} key"
+        "removeKey": "Remove {{provider}} key",
+        "searchKeywords": {
+          "webSearch": "web search",
+          "deepResearch": "deep research",
+          "generalChat": "general chat",
+          "tavily": "tavily",
+          "brave": "brave",
+          "exa": "exa",
+          "duckduckgo": "duckduckgo"
+        }
       }
     },
     "agents": {
@@ -30768,7 +30777,10 @@
       "createVideo": "Send to Video Studio"
     },
     "mode": {
-      "ariaLabel": "Chat mode"
+      "ariaLabel": "Chat mode",
+      "normal": "Normal",
+      "webSearch": "Web Search",
+      "deepResearch": "Deep Research"
     },
     "sources": {
       "button": "Sources",

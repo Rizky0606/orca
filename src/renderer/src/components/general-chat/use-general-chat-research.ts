@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { sendStructuredAgentSessionMessage } from '@/components/native-chat/session/structured/delivery/structured-agent-session-message-sender'
 import type { NativeChatStructuredPrepareTurn } from '@/components/native-chat/native-chat-view-types'
 import { useVideoStudioSelection } from '@/components/video-studio/video-studio-selection'
@@ -6,15 +6,11 @@ import {
   cancelGeneralChatDeepResearchForTarget,
   clearGeneralChatSourcesForTarget,
   deleteGeneralChatSourceForTarget,
-  getGeneralChatDeepResearchForTarget,
   handoffGeneralChatToVideoStudioForTarget,
-  listGeneralChatDeepResearchForTarget,
-  listGeneralChatSourcesForTarget,
   pauseGeneralChatDeepResearchForTarget,
   resumeGeneralChatDeepResearchForTarget,
   searchGeneralChatWebForTarget,
-  startGeneralChatDeepResearchForTarget,
-  subscribeGeneralChatDeepResearchForTarget
+  startGeneralChatDeepResearchForTarget
 } from '@/runtime/general-chat/general-chat-client'
 import { useAppStore } from '@/store'
 import type { ExecutionHostId } from '../../../../shared/execution-host/execution-host'
@@ -26,6 +22,7 @@ import {
   type GeneralChatSource
 } from '../../../../shared/general-chat/general-chat-contract'
 import type { RuntimeClientTarget } from '../../../../shared/remote-runtime/host-catalog/runtime-client-target'
+import { useGeneralChatResearchData } from './use-general-chat-research-data'
 
 export type GeneralChatResearchController = {
   mode: GeneralChatMode
@@ -69,100 +66,11 @@ export function useGeneralChatResearch({
 }): GeneralChatResearchController {
   const [mode, setMode] = useState<GeneralChatMode>('normal')
   const [openPanel, setOpenPanel] = useState<'sources' | 'research' | null>(null)
-  const [sources, setSources] = useState<GeneralChatSource[]>([])
-  const [jobs, setJobs] = useState<DeepResearchJob[]>([])
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
-  const [selectedCitations, setSelectedCitations] = useState<GeneralChatSource[]>([])
   const [searching, setSearching] = useState(false)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-
-  const refreshSources = useCallback(async () => {
-    if (!sessionId) {
-      setSources([])
-      return
-    }
-    const res = await listGeneralChatSourcesForTarget(target, sessionId).catch(() => null)
-    if (res) {
-      setSources(res.sources)
-    }
-  }, [sessionId, target])
-
-  useEffect(() => {
-    setError(null)
-    setSelectedCitations([])
-    if (!enabled || !sessionId) {
-      setSources([])
-      setJobs([])
-      setSelectedJobId(null)
-      return
-    }
-    let active = true
-    void refreshSources()
-    void listGeneralChatDeepResearchForTarget(target, sessionId)
-      .then((res) => {
-        if (!active) {
-          return
-        }
-        setJobs(res.jobs)
-        setSelectedJobId((prev) => prev ?? res.jobs[0]?.id ?? null)
-      })
-      .catch(() => undefined)
-    let subscription: { unsubscribe: () => void } | undefined
-    void subscribeGeneralChatDeepResearchForTarget(
-      target,
-      { sessionId },
-      {
-        onEvent: (event) => {
-          if (!active) {
-            return
-          }
-          setJobs(event.jobs)
-          setSelectedJobId((prev) =>
-            prev && event.jobs.some((entry) => entry.id === prev)
-              ? prev
-              : (event.jobs[0]?.id ?? null)
-          )
-          void refreshSources()
-        }
-      }
-    )
-      .then((sub) => {
-        if (!active) {
-          sub.unsubscribe()
-        } else {
-          subscription = sub
-        }
-      })
-      .catch(() => undefined)
-    return () => {
-      active = false
-      subscription?.unsubscribe()
-    }
-  }, [enabled, refreshSources, sessionId, target])
-
-  const selectedJob = useMemo(
-    () => jobs.find((entry) => entry.id === selectedJobId) ?? jobs[0] ?? null,
-    [jobs, selectedJobId]
-  )
-
-  useEffect(() => {
-    if (!enabled || !selectedJob) {
-      setSelectedCitations([])
-      return
-    }
-    let active = true
-    void getGeneralChatDeepResearchForTarget(target, selectedJob.id)
-      .then((detail) => {
-        if (active) {
-          setSelectedCitations(detail.citations)
-        }
-      })
-      .catch(() => undefined)
-    return () => {
-      active = false
-    }
-  }, [enabled, selectedJob, selectedJob?.updatedAt, target])
+  const { sources, setSources, jobs, selectedJob, setSelectedJobId, selectedCitations } =
+    useGeneralChatResearchData({ enabled, sessionId, target })
 
   const togglePanel = useCallback((panel: 'sources' | 'research') => {
     setOpenPanel((prev) => (prev === panel ? null : panel))
@@ -189,7 +97,7 @@ export function useGeneralChatResearch({
         })
       setSearching(false)
     },
-    [sessionId, target]
+    [sessionId, setSources, target]
   )
 
   const deleteSource = useCallback(
@@ -203,7 +111,7 @@ export function useGeneralChatResearch({
         .catch(() => undefined)
       setBusyAction(null)
     },
-    [sessionId, target]
+    [sessionId, setSources, target]
   )
 
   const clearSources = useCallback(async () => {
@@ -215,7 +123,7 @@ export function useGeneralChatResearch({
       .then((res) => setSources(res.sources))
       .catch(() => undefined)
     setBusyAction(null)
-  }, [sessionId, target])
+  }, [sessionId, setSources, target])
 
   const startResearch = useCallback(
     async (topic: string) => {
@@ -235,7 +143,7 @@ export function useGeneralChatResearch({
         })
       setBusyAction(null)
     },
-    [agent, sessionId, target]
+    [agent, sessionId, setSelectedJobId, target]
   )
 
   const pauseJob = useCallback(
@@ -337,7 +245,7 @@ export function useGeneralChatResearch({
       }
       return { text: formatWebSearchContextPrompt(text, res.sources) }
     }
-  }, [mode, sessionId, startResearch, target])
+  }, [mode, sessionId, setSources, startResearch, target])
 
   return {
     mode,

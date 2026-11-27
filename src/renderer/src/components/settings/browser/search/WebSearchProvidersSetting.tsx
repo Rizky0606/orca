@@ -16,6 +16,8 @@ import type {
   SearchProviderStatus
 } from '../../../../../../shared/general-chat/general-chat-contract'
 import { SearchableSetting } from '../../section-layout/SearchableSetting'
+import { translateSearchKeyword } from '../../search/settings-search-keywords'
+import type { Translate } from '@/i18n/use-translate'
 
 const PROVIDER_LABELS: Record<ConfigurableSearchProvider, string> = {
   tavily: 'Tavily Search API',
@@ -38,9 +40,7 @@ async function saveProviderKeyRequest(
   return response.providers
 }
 
-export function getWebSearchProvidersSearchEntry(
-  translateFn: (key: string, fallback: string) => string
-) {
+export function getWebSearchProvidersSearchEntry(translateFn: Translate) {
   return {
     title: translateFn(
       'settings.browser.webSearchProviders.title',
@@ -51,13 +51,48 @@ export function getWebSearchProvidersSearchEntry(
       'Built-in DuckDuckGo search works with zero keys. Add optional encrypted keys for Tavily, Brave, or Exa.'
     ),
     keywords: [
-      'web search',
-      'deep research',
-      'general chat',
-      'tavily',
-      'brave',
-      'exa',
-      'duckduckgo'
+      ...translateSearchKeyword(
+        'settings.browser.webSearchProviders.searchKeywords.webSearch',
+        'web search',
+        undefined,
+        translateFn
+      ),
+      ...translateSearchKeyword(
+        'settings.browser.webSearchProviders.searchKeywords.deepResearch',
+        'deep research',
+        undefined,
+        translateFn
+      ),
+      ...translateSearchKeyword(
+        'settings.browser.webSearchProviders.searchKeywords.generalChat',
+        'general chat',
+        undefined,
+        translateFn
+      ),
+      ...translateSearchKeyword(
+        'settings.browser.webSearchProviders.searchKeywords.tavily',
+        'tavily',
+        { englishOnly: true },
+        translateFn
+      ),
+      ...translateSearchKeyword(
+        'settings.browser.webSearchProviders.searchKeywords.brave',
+        'brave',
+        { englishOnly: true },
+        translateFn
+      ),
+      ...translateSearchKeyword(
+        'settings.browser.webSearchProviders.searchKeywords.exa',
+        'exa',
+        { englishOnly: true },
+        translateFn
+      ),
+      ...translateSearchKeyword(
+        'settings.browser.webSearchProviders.searchKeywords.duckduckgo',
+        'duckduckgo',
+        { englishOnly: true },
+        translateFn
+      )
     ]
   }
 }
@@ -74,6 +109,7 @@ export function WebSearchProvidersSetting({
   )
   const [busyProvider, setBusyProvider] = useState<ConfigurableSearchProvider | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const searchEntry = getWebSearchProvidersSearchEntry(t)
 
   const target = runtimeRpcTargetForAuthorityKey(hostId)
 
@@ -123,20 +159,9 @@ export function WebSearchProvidersSetting({
 
   return (
     <SearchableSetting
-      title={t('settings.browser.webSearchProviders.title', 'General Chat Web Search & API keys')}
-      description={t(
-        'settings.browser.webSearchProviders.description',
-        'Built-in DuckDuckGo search works with zero keys. Add optional encrypted keys for Tavily, Brave, or Exa.'
-      )}
-      keywords={[
-        'web search',
-        'deep research',
-        'general chat',
-        'tavily',
-        'brave',
-        'exa',
-        'duckduckgo'
-      ]}
+      title={searchEntry.title}
+      description={searchEntry.description}
+      keywords={searchEntry.keywords}
       className="space-y-3 py-3"
     >
       <div className="space-y-1">
