@@ -201,7 +201,7 @@ export function validateMasterAssetInvariants(asset: MasterAssetRecord): {
       }
       visitState.set(current, 1)
       chain.push(current)
-      const parentId = componentById.get(current)?.parentComponentId
+      const parentId: string | undefined = componentById.get(current)?.parentComponentId
       current =
         parentId && componentById.has(parentId) && parentId !== current ? parentId : undefined
     }
